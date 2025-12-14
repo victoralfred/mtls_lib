@@ -84,6 +84,12 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
 
     /* Load CA certificate */
     if (config->ca_cert_pem) {
+        /* Validate PEM data length */
+        if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > 1024 * 1024) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate PEM length invalid (max 1MB)");
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         /* Check for integer overflow */
         if (config->ca_cert_pem_len > INT_MAX) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate PEM too large");
@@ -118,6 +124,12 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
 
     /* Load client/server certificate and key if provided */
     if (config->cert_pem) {
+        /* Validate PEM data length */
+        if (config->cert_pem_len == 0 || config->cert_pem_len > 1024 * 1024) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate PEM length invalid (max 1MB)");
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         /* Check for integer overflow */
         if (config->cert_pem_len > INT_MAX) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate PEM too large");
@@ -144,6 +156,12 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
     }
 
     if (config->key_pem) {
+        /* Validate PEM data length */
+        if (config->key_pem_len == 0 || config->key_pem_len > 1024 * 1024) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key PEM length invalid (max 1MB)");
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         /* Check for integer overflow */
         if (config->key_pem_len > INT_MAX) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key PEM too large");

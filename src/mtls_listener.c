@@ -94,7 +94,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
 
     conn->ctx = listener->ctx;
     conn->sock = MTLS_INVALID_SOCKET;
-    conn->state = MTLS_CONN_STATE_NONE;
+    atomic_init(&conn->state, MTLS_CONN_STATE_NONE);
     conn->is_server = true;
 
     /* Accept connection */
@@ -124,7 +124,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     }
 
     /* Perform TLS handshake (server mode) */
-    conn->state = MTLS_CONN_STATE_HANDSHAKING;
+    atomic_store(&conn->state, MTLS_CONN_STATE_HANDSHAKING);
     if (SSL_accept(conn->ssl) <= 0) {
         unsigned long ssl_err = ERR_get_error();
         MTLS_ERR_SET(err, MTLS_ERR_TLS_HANDSHAKE_FAILED, "TLS handshake failed");
@@ -184,7 +184,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
         }
     }
 
-    conn->state = MTLS_CONN_STATE_ESTABLISHED;
+    atomic_store(&conn->state, MTLS_CONN_STATE_ESTABLISHED);
     return conn;
 }
 

@@ -44,7 +44,7 @@ struct mtls_conn {
     mtls_ctx* ctx;
     mtls_socket_t sock;
     SSL* ssl;
-    mtls_conn_state state;
+    atomic_int state;  /* Thread-safe connection state */
     mtls_addr remote_addr;
     mtls_addr local_addr;
     bool is_server;

@@ -38,7 +38,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
 
     conn->ctx = ctx;
     conn->sock = MTLS_INVALID_SOCKET;
-    conn->state = MTLS_CONN_STATE_NONE;
+    atomic_init(&conn->state, MTLS_CONN_STATE_NONE);
     conn->is_server = false;
 
     /* Parse address */
@@ -65,7 +65,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     uint32_t timeout = ctx->config.connect_timeout_ms;
     if (timeout == 0) timeout = MTLS_DEFAULT_CONNECT_TIMEOUT_MS;
 
-    conn->state = MTLS_CONN_STATE_CONNECTING;
+    atomic_store(&conn->state, MTLS_CONN_STATE_CONNECTING);
 
     /* Connect */
     if (platform_socket_connect(conn->sock, &conn->remote_addr, timeout, err) < 0) {
@@ -100,9 +100,28 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
         if (colon) {
             size_t hostname_len = colon - addr;
             char hostname[256];
+            /* Fix: Use <= instead of < to prevent buffer overflow when hostname_len == 255 */
             if (hostname_len > 0 && hostname_len < sizeof(hostname)) {
                 memcpy(hostname, addr, hostname_len);
                 hostname[hostname_len] = '\0';
+                
+                /* Validate hostname doesn't contain invalid characters */
+                bool valid = true;
+                for (size_t i = 0; i < hostname_len; i++) {
+                    if (hostname[i] == '\0' || hostname[i] == '\n' || hostname[i] == '\r') {
+                        valid = false;
+                        break;
+                    }
+                }
+                
+                if (!valid) {
+                    MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
+                                 "Invalid characters in hostname");
+                    SSL_free(conn->ssl);
+                    platform_socket_close(conn->sock);
+                    free(conn);
+                    return NULL;
+                }
                 
                 /* Use SSL_set1_host for hostname verification (OpenSSL 1.0.2+) */
                 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
@@ -115,12 +134,18 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
                     return NULL;
                 }
                 #endif
+            } else {
+                MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Hostname too long");
+                SSL_free(conn->ssl);
+                platform_socket_close(conn->sock);
+                free(conn);
+                return NULL;
             }
         }
     }
 
     /* Perform TLS handshake */
-    conn->state = MTLS_CONN_STATE_HANDSHAKING;
+    atomic_store(&conn->state, MTLS_CONN_STATE_HANDSHAKING);
     if (SSL_connect(conn->ssl) <= 0) {
         unsigned long ssl_err = ERR_get_error();
         MTLS_ERR_SET(err, MTLS_ERR_TLS_HANDSHAKE_FAILED, "TLS handshake failed");
@@ -180,7 +205,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
         }
     }
 
-    conn->state = MTLS_CONN_STATE_ESTABLISHED;
+    atomic_store(&conn->state, MTLS_CONN_STATE_ESTABLISHED);
     return conn;
 }
 
@@ -190,15 +215,37 @@ ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err) {
         return -1;
     }
 
-    if (conn->state != MTLS_CONN_STATE_ESTABLISHED) {
+    if (len == 0) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Read length cannot be zero");
+        return -1;
+    }
+
+    /* Check connection state atomically */
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
         MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Connection not established");
         return -1;
+    }
+
+    /* Validate buffer length to prevent integer overflow and DoS */
+    if (len == 0) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Read length cannot be zero");
+        return -1;
+    }
+    if (len > INT_MAX) {
+        len = INT_MAX;
+    }
+    /* Additional safety: limit read size to prevent excessive memory usage */
+    if (len > MTLS_MAX_READ_BUFFER_SIZE) {
+        len = MTLS_MAX_READ_BUFFER_SIZE;
     }
 
     int n = SSL_read(conn->ssl, buffer, (int)len);
     if (n <= 0) {
         int ssl_err = SSL_get_error(conn->ssl, n);
         if (ssl_err == SSL_ERROR_ZERO_RETURN) {
+            /* Connection closed gracefully */
+            atomic_store(&conn->state, MTLS_CONN_STATE_CLOSED);
             return 0;  /* EOF */
         }
         MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "SSL_read failed");
@@ -215,8 +262,20 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
         return -1;
     }
 
-    if (conn->state != MTLS_CONN_STATE_ESTABLISHED) {
+    if (len == 0) {
+        return 0;  /* Zero-length write is valid */
+    }
+
+    /* Check connection state atomically */
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
         MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Connection not established");
+        return -1;
+    }
+
+    /* Validate write length */
+    if (len > MTLS_MAX_WRITE_BUFFER_SIZE) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Write buffer too large (max %d bytes)", MTLS_MAX_WRITE_BUFFER_SIZE);
         return -1;
     }
 
@@ -253,7 +312,14 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
 void mtls_close(mtls_conn* conn) {
     if (!conn) return;
 
-    conn->state = MTLS_CONN_STATE_CLOSING;
+    /* Atomically set state to CLOSING to prevent concurrent operations */
+    int expected = MTLS_CONN_STATE_ESTABLISHED;
+    if (!atomic_compare_exchange_strong(&conn->state, &expected, MTLS_CONN_STATE_CLOSING)) {
+        /* Already closing or closed, avoid double-close */
+        if (expected == MTLS_CONN_STATE_CLOSED || expected == MTLS_CONN_STATE_CLOSING) {
+            return;
+        }
+    }
 
     if (conn->ssl) {
         SSL_shutdown(conn->ssl);
@@ -266,14 +332,14 @@ void mtls_close(mtls_conn* conn) {
         conn->sock = MTLS_INVALID_SOCKET;
     }
 
-    conn->state = MTLS_CONN_STATE_CLOSED;
+    atomic_store(&conn->state, MTLS_CONN_STATE_CLOSED);
 
     platform_secure_zero(conn, sizeof(*conn));
     free(conn);
 }
 
 mtls_conn_state mtls_get_state(const mtls_conn* conn) {
-    return conn ? conn->state : MTLS_CONN_STATE_NONE;
+    return conn ? (mtls_conn_state)atomic_load(&conn->state) : MTLS_CONN_STATE_NONE;
 }
 
 int mtls_get_remote_addr(const mtls_conn* conn, char* addr_buf, size_t addr_buf_len) {

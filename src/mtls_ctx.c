@@ -69,6 +69,39 @@ int mtls_config_validate(const mtls_config* config, mtls_err* err) {
         return -1;
     }
 
+    /* Validate file path lengths to prevent buffer overflows */
+    if (config->ca_cert_path && strlen(config->ca_cert_path) > 4096) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate path too long");
+        return -1;
+    }
+    if (config->cert_path && strlen(config->cert_path) > 4096) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate path too long");
+        return -1;
+    }
+    if (config->key_path && strlen(config->key_path) > 4096) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key path too long");
+        return -1;
+    }
+    if (config->crl_path && strlen(config->crl_path) > 4096) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CRL path too long");
+        return -1;
+    }
+
+    /* Validate allowed SANs strings */
+    if (config->allowed_sans) {
+        for (size_t i = 0; i < config->allowed_sans_count; i++) {
+            if (!config->allowed_sans[i]) {
+                MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Allowed SAN at index %zu is NULL", i);
+                return -1;
+            }
+            size_t san_len = strlen(config->allowed_sans[i]);
+            if (san_len == 0 || san_len > 512) {
+                MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Allowed SAN at index %zu has invalid length", i);
+                return -1;
+            }
+        }
+    }
+
     return 0;
 }
 

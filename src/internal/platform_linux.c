@@ -273,6 +273,13 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
         return -1;
     }
 
+    /* Validate input length to prevent DoS */
+    size_t addr_str_len = strlen(addr_str);
+    if (addr_str_len == 0 || addr_str_len > 512) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Address string too long");
+        return -1;
+    }
+
     char host[256];
     char port[16];
     const char* colon;
@@ -297,8 +304,10 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
         colon = bracket + 1;
         if (*colon == ':') {
-            strncpy(port, colon + 1, sizeof(port) - 1);
-            port[sizeof(port) - 1] = '\0';
+            size_t port_len = strlen(colon + 1);
+            size_t copy_len = (port_len < sizeof(port) - 1) ? port_len : sizeof(port) - 1;
+            memcpy(port, colon + 1, copy_len);
+            port[copy_len] = '\0';  /* Ensure null termination */
         } else {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
                          "Missing port in address");
@@ -322,8 +331,18 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
         memcpy(host, addr_str, host_len);
         host[host_len] = '\0';
 
-        strncpy(port, colon + 1, sizeof(port) - 1);
-        port[sizeof(port) - 1] = '\0';
+        size_t port_len = strlen(colon + 1);
+        size_t copy_len = (port_len < sizeof(port) - 1) ? port_len : sizeof(port) - 1;
+        memcpy(port, colon + 1, copy_len);
+        port[copy_len] = '\0';  /* Ensure null termination */
+    }
+
+    /* Validate port number */
+    char* port_end;
+    unsigned long port_num = strtoul(port, &port_end, 10);
+    if (*port_end != '\0' || port_num == 0 || port_num > 65535) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
+        return -1;
     }
 
     /* Resolve address */

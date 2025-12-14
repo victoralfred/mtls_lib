@@ -78,7 +78,9 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
         return -1;
     }
 
-    if (conn->state != MTLS_CONN_STATE_ESTABLISHED) {
+    /* Check connection state atomically */
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
         MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Connection not established");
         return -1;
     }
@@ -251,13 +253,23 @@ static bool san_matches_pattern(const char* san, const char* pattern) {
         const char* san_dot = strchr(san, '.');
 
         if (san_dot && strcmp(san_dot + 1, pattern_domain) == 0) {
-            /* Ensure wildcard only matches one label */
-            const char* san_second_dot = strchr(san, '.');
-            if (san_second_dot && strchr(san_second_dot + 1, '.') == NULL) {
-                /* Wildcard matched exactly one label */
-                return false;
+            /* Ensure wildcard only matches one label (not multiple labels) */
+            /* Check that there's exactly one dot before the domain part */
+            size_t prefix_len = san_dot - san;
+            if (prefix_len > 0 && prefix_len <= 63) {  /* DNS label max length */
+                /* Check that there are no dots in the prefix (single label) */
+                bool has_dot_in_prefix = false;
+                for (const char* p = san; p < san_dot; p++) {
+                    if (*p == '.') {
+                        has_dot_in_prefix = true;
+                        break;
+                    }
+                }
+                if (!has_dot_in_prefix) {
+                    return true;  /* Valid wildcard match */
+                }
             }
-            return true;
+            return false;  /* Invalid: wildcard matched multiple labels or invalid length */
         }
     }
 
@@ -367,7 +379,9 @@ int mtls_get_peer_organization(mtls_conn* conn, char* org_buf, size_t org_buf_le
 
     org_buf[0] = '\0';
 
-    if (conn->state != MTLS_CONN_STATE_ESTABLISHED) {
+    /* Check connection state atomically */
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
         return -1;
     }
 
@@ -408,7 +422,9 @@ int mtls_get_peer_org_unit(mtls_conn* conn, char* ou_buf, size_t ou_buf_len) {
 
     ou_buf[0] = '\0';
 
-    if (conn->state != MTLS_CONN_STATE_ESTABLISHED) {
+    /* Check connection state atomically */
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
         return -1;
     }
 

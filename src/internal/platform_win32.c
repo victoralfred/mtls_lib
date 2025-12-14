@@ -256,6 +256,13 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
         return -1;
     }
 
+    /* Validate input length to prevent DoS */
+    size_t addr_str_len = strlen(addr_str);
+    if (addr_str_len == 0 || addr_str_len > 512) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Address string too long");
+        return -1;
+    }
+
     char host[256];
     char port[16];
     const char* colon;
@@ -305,6 +312,14 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
         host[host_len] = '\0';
 
         strncpy_s(port, sizeof(port), colon + 1, _TRUNCATE);
+    }
+
+    /* Validate port number */
+    char* port_end;
+    unsigned long port_num = strtoul(port, &port_end, 10);
+    if (*port_end != '\0' || port_num == 0 || port_num > 65535) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
+        return -1;
     }
 
     /* Resolve address */

@@ -31,8 +31,13 @@ void mtls_err_set(mtls_err* err, mtls_error_code code, const char* fmt, ...) {
         va_start(args, fmt);
         vsnprintf(err->message, MTLS_ERR_MESSAGE_SIZE, fmt, args);
         va_end(args);
+        err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';  /* Ensure null termination */
     } else {
-        strncpy(err->message, mtls_err_code_name(code), MTLS_ERR_MESSAGE_SIZE - 1);
+        const char* code_name = mtls_err_code_name(code);
+        size_t code_len = strlen(code_name);
+        size_t copy_len = (code_len < MTLS_ERR_MESSAGE_SIZE - 1) ? code_len : MTLS_ERR_MESSAGE_SIZE - 1;
+        memcpy(err->message, code_name, copy_len);
+        err->message[copy_len] = '\0';  /* Ensure null termination */
     }
 }
 
@@ -50,8 +55,13 @@ void mtls_err_set_internal(mtls_err* err, mtls_error_code code,
         va_start(args, fmt);
         vsnprintf(err->message, MTLS_ERR_MESSAGE_SIZE, fmt, args);
         va_end(args);
+        err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';  /* Ensure null termination */
     } else {
-        strncpy(err->message, mtls_err_code_name(code), MTLS_ERR_MESSAGE_SIZE - 1);
+        const char* code_name = mtls_err_code_name(code);
+        size_t code_len = strlen(code_name);
+        size_t copy_len = (code_len < MTLS_ERR_MESSAGE_SIZE - 1) ? code_len : MTLS_ERR_MESSAGE_SIZE - 1;
+        memcpy(err->message, code_name, copy_len);
+        err->message[copy_len] = '\0';  /* Ensure null termination */
     }
 }
 
