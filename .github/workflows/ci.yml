@@ -53,6 +53,15 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
+        run: |
+          choco install openssl -y
+          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL\include" >> $GITHUB_ENV
+          echo "OPENSSL_CRYPTO_LIBRARY=C:\Program Files\OpenSSL\lib\libcrypto.lib" >> $GITHUB_ENV
+          echo "OPENSSL_SSL_LIBRARY=C:\Program Files\OpenSSL\lib\libssl.lib" >> $GITHUB_ENV
+
+      - name: Setup MSBuild (Windows)
+        if: matrix.os == 'windows-latest'
         uses: microsoft/setup-msbuild@v2
 
       - name: Configure CMake
