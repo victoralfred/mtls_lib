@@ -28,12 +28,21 @@ extern "C" {
 
 /*
  * API visibility macros
+ *
+ * For Windows: Only use dllexport/dllimport for shared libraries (DLLs)
+ * For static libraries, no decoration is needed
  */
 #if defined(_WIN32) || defined(__CYGWIN__)
-    #ifdef MTLS_BUILDING_LIB
-        #define MTLS_API __declspec(dllexport)
+    #if defined(MTLS_SHARED_LIB)
+        /* Building or using a DLL */
+        #ifdef MTLS_BUILDING_LIB
+            #define MTLS_API __declspec(dllexport)
+        #else
+            #define MTLS_API __declspec(dllimport)
+        #endif
     #else
-        #define MTLS_API __declspec(dllimport)
+        /* Static library - no special decoration needed */
+        #define MTLS_API
     #endif
 #elif defined(__GNUC__) && __GNUC__ >= 4
     #define MTLS_API __attribute__((visibility("default")))
