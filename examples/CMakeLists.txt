@@ -10,10 +10,10 @@ function(mtls_add_example name)
     )
 endfunction()
 
-# Add examples here (to be implemented)
-# mtls_add_example(simple_client)
-# mtls_add_example(simple_server)
-# mtls_add_example(echo_server)
-# mtls_add_example(identity_verification)
+# Add examples
+mtls_add_example(simple_client)
+mtls_add_example(simple_server)
+mtls_add_example(advanced_client)
+mtls_add_example(echo_server)
 
-message(STATUS "Examples will be added in future phases")
+message(STATUS "Building 4 example programs")
