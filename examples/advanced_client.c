@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h>
 
 #define BUFFER_SIZE 4096
 #define CERT_EXPIRY_WARNING_DAYS 30
@@ -96,7 +97,7 @@ static void print_peer_info(mtls_conn* conn) {
         int64_t days = ttl / 86400;
 
         printf("│ Certificate Status: VALID              │\n");
-        printf("│ Expires in: %ld days (%ld hours)     │\n", days, ttl / 3600);
+        printf("│ Expires in: %" PRId64 " days (%" PRId64 " hours)     │\n", days, ttl / 3600);
 
         if (days < CERT_EXPIRY_WARNING_DAYS) {
             printf("│ ⚠ WARNING: Certificate expiring soon! │\n");

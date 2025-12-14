@@ -19,6 +19,7 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <inttypes.h>
 
 #define BUFFER_SIZE 4096
 
@@ -88,7 +89,7 @@ static int authorize_client(mtls_conn* conn, const char** allowed_sans,
     if (mtls_is_peer_cert_valid(&identity)) {
         int64_t ttl_days = mtls_get_cert_ttl_seconds(&identity) / 86400;
         if (ttl_days < 30) {
-            printf("  ⚠ Client cert expires in %ld days\n", ttl_days);
+            printf("  ⚠ Client cert expires in %" PRId64 " days\n", ttl_days);
         }
     } else {
         printf("  ⚠ Client certificate is EXPIRED\n");
