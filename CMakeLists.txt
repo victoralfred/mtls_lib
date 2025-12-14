@@ -75,10 +75,17 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 
 elseif(MSVC)
+    # Enable C11 standard for atomic support
+    # MSVC requires /std:c11 flag to enable C11 atomics
     add_compile_options(
+        /std:c11
         /W4
         /WX
         /GS
+    )
+    
+    # Linker flags for security
+    add_link_options(
         /DYNAMICBASE
         /NXCOMPAT
     )
