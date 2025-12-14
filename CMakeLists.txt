@@ -76,9 +76,10 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 
 elseif(MSVC)
     # Enable C11 standard for atomic support
-    # MSVC requires /std:c11 flag to enable C11 atomics
+    # MSVC requires /experimental:c11atomics and /std:c11 flags for C11 atomics
     add_compile_options(
         /std:c11
+        /experimental:c11atomics
         /W4
         /WX
         /GS
