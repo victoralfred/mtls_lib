@@ -248,7 +248,7 @@ jobs:
           cat /tmp/slack_message.json
 
       - name: Send Slack notification
-        if: secrets.SLACK_WEBHOOK_URL != ''
+        continue-on-error: true
         uses: slackapi/slack-github-action@v1
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
