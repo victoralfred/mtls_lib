@@ -1,0 +1,361 @@
+# ============================================================================
+# Build Directories
+# ============================================================================
+build/
+build-*/
+cmake-build-*/
+out/
+bin/
+lib/
+_build/
+.build/
+
+# ============================================================================
+# CMake
+# ============================================================================
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+compile_commands.json
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# ============================================================================
+# Autotools (if ever needed)
+# ============================================================================
+Makefile.in
+/Makefile
+/aclocal.m4
+/autom4te.cache/
+/compile
+/config.guess
+/config.h
+/config.h.in
+/config.log
+/config.status
+/config.sub
+/configure
+/depcomp
+/install-sh
+/missing
+/stamp-h1
+.deps/
+.libs/
+*.la
+*.lo
+
+# ============================================================================
+# C/C++ Build Artifacts
+# ============================================================================
+# Object files
+*.o
+*.obj
+*.ko
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.a
+*.lib
+*.la
+*.lo
+
+# Shared objects (Linux/macOS)
+*.so
+*.so.*
+*.dylib
+
+# Windows DLLs
+*.dll
+*.exe
+*.out
+*.app
+
+# ============================================================================
+# Debug and Profiling
+# ============================================================================
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Profiling
+*.gcno
+*.gcda
+*.gcov
+gmon.out
+callgrind.out.*
+perf.data
+perf.data.old
+
+# Coverage
+coverage/
+*.coverage
+.coverage
+htmlcov/
+lcov.info
+*.profdata
+*.profraw
+
+# Valgrind
+valgrind-*.log
+*.memcheck
+*.helgrind
+*.drd
+*.cachegrind
+
+# ============================================================================
+# Static Analysis
+# ============================================================================
+cppcheck-*.xml
+scan-build-*/
+*.sarif
+.clangd/
+.cache/
+
+# AddressSanitizer/MemorySanitizer
+*.asan
+*.msan
+*.tsan
+*.ubsan
+sanitizer-*.log
+
+# ============================================================================
+# IDEs and Editors
+# ============================================================================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs (CLion, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+cmake-build-*/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.vcxproj.filters
+*.vcxproj.user
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+ipch/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+Session.vim
+
+# Emacs
+\#*\#
+.\#*
+*.elc
+auto-save-list
+tramp
+
+# Tags
+TAGS
+tags
+.tags
+.TAGS
+
+# ============================================================================
+# OS-Specific
+# ============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# ============================================================================
+# Testing
+# ============================================================================
+Testing/
+test_results/
+test-results/
+*.test
+*.trs
+test-driver
+*.log
+*.out
+
+# Google Test
+gtest/
+gmock/
+
+# Unity Test Framework
+unity/
+
+# ============================================================================
+# Documentation
+# ============================================================================
+# Keep markdown docs but ignore generated content
+!docs/*.md
+docs/_build/
+docs/html/
+docs/latex/
+docs/man/
+docs/xml/
+docs/rtf/
+*.doxygen
+Doxyfile.bak
+
+# Sphinx
+docs/_static/
+docs/_templates/
+
+# ============================================================================
+# Package Managers and Dependencies
+# ============================================================================
+# Conan
+conan.lock
+conanbuildinfo.*
+conaninfo.txt
+graph_info.json
+
+# vcpkg
+vcpkg_installed/
+.vcpkg/
+
+# Third-party (optional - uncomment if not using submodules)
+# third_party/boringssl/
+# third_party/*/
+
+# ============================================================================
+# Build Artifacts and Packages
+# ============================================================================
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tgz
+*.zip
+*.7z
+*.rar
+*.deb
+*.rpm
+*.pkg
+*.dmg
+*.AppImage
+
+# ============================================================================
+# Security - Certificates and Keys
+# ============================================================================
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Exclude test certificates (if needed, uncomment)
+# !tests/fixtures/**/*.pem
+# !tests/fixtures/**/*.key
+
+# ============================================================================
+# Temporary Files
+# ============================================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.cache
+.*.swp
+core
+core.*
+vgcore.*
+
+# ============================================================================
+# Language-Specific (if used for tooling)
+# ============================================================================
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Node.js (if used for tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ============================================================================
+# CI/CD
+# ============================================================================
+.gitlab-ci-local/
+.github/workflows/.artifacts/
+
+# ============================================================================
+# Misc
+# ============================================================================
+*.orig
+*.rej
+.gdb_history
+dev_plan_pm
