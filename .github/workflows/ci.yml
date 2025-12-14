@@ -1,0 +1,292 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, master ]
+  pull_request:
+    branches: [ main, develop, master ]
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        compiler: [default]
+        include:
+          - os: ubuntu-latest
+            compiler: default
+            cc: gcc
+          - os: macos-latest
+            compiler: default
+            cc: clang
+          - os: windows-latest
+            compiler: default
+            cc: cl
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake openssl@3 pkg-config
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          mkdir -p build
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cmake .. -G "Visual Studio 17 2022" -A x64 \
+              -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DMTLS_BUILD_TESTS=ON \
+              -DMTLS_BUILD_EXAMPLES=ON
+          else
+            cmake .. \
+              -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DMTLS_BUILD_TESTS=ON \
+              -DMTLS_BUILD_EXAMPLES=ON
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel $(sysctl -n hw.ncpu)
+          else
+            cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel $(nproc)
+          fi
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            ctest --output-on-failure --verbose -C ${{ env.CMAKE_BUILD_TYPE }}
+          else
+            ctest --output-on-failure --verbose
+          fi
+
+      - name: Collect build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.os }}
+          path: |
+            build/libmtls.*
+            build/*.a
+            build/*.so
+            build/*.dylib
+            build/*.dll
+            build/*.lib
+          retention-days: 7
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Build Summary for ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **OS**: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: ${{ matrix.cc }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: ${{ env.CMAKE_BUILD_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          if [ -d build ]; then
+            echo "- **Artifacts**: Built successfully" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify-slack:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine build status
+        id: build-status
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "color=good" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get commit info
+        id: commit-info
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "message=$(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_OUTPUT
+          echo "author=$(git log -1 --pretty=%an)" >> $GITHUB_OUTPUT
+          echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Create Slack message
+        id: slack-message
+        run: |
+          cat > /tmp/slack_message.json << EOF
+          {
+            "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Repository:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}|${GITHUB_REPOSITORY}>"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Branch:*\n${{ steps.commit-info.outputs.branch }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Commit:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}|${steps.commit-info.outputs.sha}}>"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Author:*\n${{ steps.commit-info.outputs.author }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Workflow:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|View Workflow>"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Status:*\n${{ needs.build.result }}"
+                  }
+                ]
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Commit Message:*\n\`\`\`${{ steps.commit-info.outputs.message }}\`\`\`"
+                }
+              }
+            ],
+            "attachments": [
+              {
+                "color": "${{ steps.build-status.outputs.color }}",
+                "fields": [
+                  {
+                    "title": "Build Results",
+                    "value": "All platforms: ${{ needs.build.result }}",
+                    "short": true
+                  }
+                ],
+                "footer": "GitHub Actions",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          cat /tmp/slack_message.json
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}|${GITHUB_REPOSITORY}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ steps.commit-info.outputs.branch }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}|${steps.commit-info.outputs.sha}}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Author:*\n${{ steps.commit-info.outputs.author }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|View Workflow>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\n${{ needs.build.result }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Commit Message:*\n\`\`\`${{ steps.commit-info.outputs.message }}\`\`\`"
+                  }
+                }
+              ],
+              "attachments": [
+                {
+                  "color": "${{ steps.build-status.outputs.color }}",
+                  "fields": [
+                    {
+                      "title": "Build Results",
+                      "value": "All platforms: ${{ needs.build.result }}",
+                      "short": true
+                    }
+                  ],
+                  "footer": "GitHub Actions",
+                  "ts": ${{ github.run_number }}
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

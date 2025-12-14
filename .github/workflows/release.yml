@@ -1,0 +1,325 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: false
+        default: false
+        type: boolean
+      create_tag:
+        description: 'Create a new tag?'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: libmtls-linux-x86_64
+            lib_ext: .so
+            archive_ext: .tar.gz
+          - os: macos-latest
+            artifact_name: libmtls-macos-x86_64
+            lib_ext: .dylib
+            archive_ext: .tar.gz
+          - os: windows-latest
+            artifact_name: libmtls-windows-x86_64
+            lib_ext: .dll
+            archive_ext: .zip
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create tag (if needed)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config \
+            ninja-build
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake openssl@3 pkg-config ninja
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          mkdir -p build
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cmake .. -G "Visual Studio 17 2022" -A x64 \
+              -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DMTLS_BUILD_TESTS=ON \
+              -DMTLS_BUILD_EXAMPLES=ON
+          else
+            cmake .. -G Ninja \
+              -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DMTLS_BUILD_TESTS=ON \
+              -DMTLS_BUILD_EXAMPLES=ON \
+              -DCMAKE_INSTALL_PREFIX=install
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            cmake --build . --parallel $(sysctl -n hw.ncpu)
+          else
+            cmake --build . --parallel $(nproc)
+          fi
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            ctest --output-on-failure --verbose -C ${{ env.CMAKE_BUILD_TYPE }}
+          else
+            ctest --output-on-failure --verbose
+          fi
+
+      - name: Install
+        shell: bash
+        run: |
+          cd build
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cmake --install . --config ${{ env.CMAKE_BUILD_TYPE }} --prefix install
+          else
+            cmake --install . --prefix install
+          fi
+
+      - name: Create archive (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          cd build/install
+          tar -czf ../${{ matrix.artifact_name }}${{ matrix.archive_ext }} \
+            lib/ include/ cmake/ || true
+          cd ..
+          ls -lh *.tar.gz || true
+
+      - name: Create archive (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cd build/install
+          zip -r ../${{ matrix.artifact_name }}${{ matrix.archive_ext }} \
+            lib/ include/ cmake/ || true
+          cd ..
+          ls -lh *.zip || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ steps.version.outputs.version }}
+          path: |
+            build/${{ matrix.artifact_name }}.*
+            build/install/
+          retention-days: 90
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-release]
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          cat > /tmp/release_notes.md << EOF
+          # Release v${{ steps.version.outputs.version }}
+          
+          ## Changes
+          
+          $(git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")..HEAD | head -20)
+          
+          ## Installation
+          
+          ### Linux
+          
+          \`\`\`bash
+          tar -xzf libmtls-linux-x86_64-${{ steps.version.outputs.version }}.tar.gz
+          sudo cp -r libmtls-linux-x86_64-${{ steps.version.outputs.version }}/* /usr/local/
+          \`\`\`
+          
+          ### macOS
+          
+          \`\`\`bash
+          tar -xzf libmtls-macos-x86_64-${{ steps.version.outputs.version }}.tar.gz
+          sudo cp -r libmtls-macos-x86_64-${{ steps.version.outputs.version }}/* /usr/local/
+          \`\`\`
+          
+          ### Windows
+          
+          Extract \`libmtls-windows-x86_64-${{ steps.version.outputs.version }}.zip\` and add to your PATH.
+          
+          ## Artifacts
+          
+          - Linux x86_64: \`libmtls-linux-x86_64-${{ steps.version.outputs.version }}.tar.gz\`
+          - macOS x86_64: \`libmtls-macos-x86_64-${{ steps.version.outputs.version }}.tar.gz\`
+          - Windows x86_64: \`libmtls-windows-x86_64-${{ steps.version.outputs.version }}.zip\`
+          
+          ## Checksums
+          
+          \`\`\`
+          $(cd artifacts && find . -name "*.tar.gz" -o -name "*.zip" | xargs -I {} sh -c 'echo "{}: $(sha256sum {} | cut -d" " -f1)"')
+          \`\`\`
+          EOF
+          cat /tmp/release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: /tmp/release_notes.md
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          files: |
+            artifacts/**/*
+          draft: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: always()
+    environment: production
+    
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "🎉 New Release: v${{ steps.version.outputs.version }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🎉 New Release: v${{ steps.version.outputs.version }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}|${GITHUB_REPOSITORY}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\nv${{ steps.version.outputs.version }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Release:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${{ steps.version.outputs.version }}|View Release>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\n${{ needs.create-release.result }}"
+                    }
+                  ]
+                }
+              ],
+              "attachments": [
+                {
+                  "color": "good",
+                  "footer": "GitHub Actions",
+                  "ts": ${{ github.run_number }}
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
