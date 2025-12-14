@@ -57,6 +57,16 @@ jobs:
           choco install openssl -y
           # Wait for installation to complete
           Start-Sleep -Seconds 5
+          # Debug: Check what was installed
+          Write-Host "Checking OpenSSL installation..."
+          if (Test-Path "C:\Program Files\OpenSSL-Win64") {
+            Write-Host "Found: C:\Program Files\OpenSSL-Win64"
+            Get-ChildItem "C:\Program Files\OpenSSL-Win64" -Recurse -Include *.lib | Select-Object FullName
+          }
+          if (Test-Path "C:\Program Files\OpenSSL") {
+            Write-Host "Found: C:\Program Files\OpenSSL"
+            Get-ChildItem "C:\Program Files\OpenSSL" -Recurse -Include *.lib | Select-Object FullName
+          }
           # Set OpenSSL paths for CMake
           $opensslPath = "C:\Program Files\OpenSSL-Win64"
           echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
