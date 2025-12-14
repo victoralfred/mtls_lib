@@ -224,6 +224,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install OpenSSL
+        run: |
+          choco install openssl -y
+        shell: pwsh
+
       - name: Install dependencies (MSVC)
         if: matrix.generator == 'Visual Studio 17 2022'
         uses: microsoft/setup-msbuild@v2
@@ -231,37 +236,50 @@ jobs:
       - name: Install dependencies (MinGW)
         if: matrix.generator == 'MinGW Makefiles'
         run: |
-          choco install mingw -y || true
-          choco install cmake -y || true
+          choco install mingw -y
+          choco install cmake -y
+        shell: pwsh
 
-      - name: Configure CMake
+      - name: Configure CMake (MSVC)
+        if: matrix.generator == 'Visual Studio 17 2022'
         run: |
-          mkdir build
-          cd build
-          if "${{ matrix.generator }}" == "Visual Studio 17 2022"; then
-            cmake .. -G "${{ matrix.generator }}" -A x64 \
-              -DMTLS_BUILD_TESTS=ON \
-              -DMTLS_BUILD_EXAMPLES=ON
-          else
-            cmake .. -G "${{ matrix.generator }}" \
-              -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-              -DMTLS_BUILD_TESTS=ON \
-              -DMTLS_BUILD_EXAMPLES=ON
-          fi
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Set-Location build
+          cmake .. -G "${{ matrix.generator }}" -A x64 `
+            -DMTLS_BUILD_TESTS=ON `
+            -DMTLS_BUILD_EXAMPLES=ON
+        shell: pwsh
 
-      - name: Build
+      - name: Configure CMake (MinGW)
+        if: matrix.generator == 'MinGW Makefiles'
         run: |
-          cd build
-          if "${{ matrix.generator }}" == "Visual Studio 17 2022"; then
-            cmake --build . --config ${{ matrix.build_type }} --parallel
-          else
-            cmake --build . --config ${{ matrix.build_type }} --parallel
-          fi
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Set-Location build
+          cmake .. -G "${{ matrix.generator }}" `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+            -DMTLS_BUILD_TESTS=ON `
+            -DMTLS_BUILD_EXAMPLES=ON
+        shell: pwsh
+
+      - name: Build (MSVC)
+        if: matrix.generator == 'Visual Studio 17 2022'
+        run: |
+          Set-Location build
+          cmake --build . --config ${{ matrix.build_type }} --parallel
+        shell: pwsh
+
+      - name: Build (MinGW)
+        if: matrix.generator == 'MinGW Makefiles'
+        run: |
+          Set-Location build
+          cmake --build . --config ${{ matrix.build_type }} --parallel
+        shell: pwsh
 
       - name: Run tests
         run: |
-          cd build
+          Set-Location build
           ctest --output-on-failure --verbose -C ${{ matrix.build_type }}
+        shell: pwsh
 
   test-static-analysis:
     name: Static Analysis
