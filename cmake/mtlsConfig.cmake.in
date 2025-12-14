@@ -1,0 +1,8 @@
+# mtlsConfig.cmake
+# Config file for the MTLS package
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/mtlsTargets.cmake")
+
+check_required_components(mtls)
