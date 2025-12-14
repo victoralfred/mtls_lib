@@ -159,18 +159,12 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     if (listener->ctx->config.allowed_sans_count > 0) {
         mtls_peer_identity identity;
         if (mtls_get_peer_identity(conn, &identity, err) == 0) {
-            bool allowed = false;
-            for (size_t i = 0; i < identity.san_count; i++) {
-                for (size_t j = 0; j < listener->ctx->config.allowed_sans_count; j++) {
-                    if (strcmp(identity.sans[i], listener->ctx->config.allowed_sans[j]) == 0) {
-                        allowed = true;
-                        break;
-                    }
-                }
-                if (allowed) break;
-            }
+            /* Use helper function with wildcard support */
+            bool allowed = mtls_validate_peer_sans(&identity,
+                                                    (const char**)listener->ctx->config.allowed_sans,
+                                                    listener->ctx->config.allowed_sans_count);
             mtls_free_peer_identity(&identity);
-            
+
             if (!allowed) {
                 MTLS_ERR_SET(err, MTLS_ERR_IDENTITY_MISMATCH,
                              "Peer identity not in allowed SANs list");

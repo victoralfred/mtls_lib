@@ -216,6 +216,60 @@ MTLS_API int mtls_get_peer_identity(mtls_conn* conn,
 MTLS_API void mtls_free_peer_identity(mtls_peer_identity* identity);
 
 /**
+ * Check if peer certificate is currently valid
+ *
+ * Verifies that the current time is within the certificate's validity period.
+ *
+ * @param identity Peer identity
+ * @return true if certificate is valid, false if expired or not yet valid
+ */
+MTLS_API bool mtls_is_peer_cert_valid(const mtls_peer_identity* identity);
+
+/**
+ * Get time until certificate expiration
+ *
+ * @param identity Peer identity
+ * @return Seconds until expiration, or -1 if already expired
+ */
+MTLS_API int64_t mtls_get_cert_ttl_seconds(const mtls_peer_identity* identity);
+
+/**
+ * Check if identity has a SPIFFE ID
+ *
+ * @param identity Peer identity
+ * @return true if SPIFFE ID is present, false otherwise
+ */
+MTLS_API bool mtls_has_spiffe_id(const mtls_peer_identity* identity);
+
+/**
+ * Extract organization from peer certificate
+ *
+ * Extracts the Organization (O) field from the peer certificate subject.
+ *
+ * @param conn Connection
+ * @param org_buf Buffer to store organization string
+ * @param org_buf_len Length of organization buffer
+ * @return 0 on success, -1 on failure
+ */
+MTLS_API int mtls_get_peer_organization(mtls_conn* conn,
+                                         char* org_buf,
+                                         size_t org_buf_len);
+
+/**
+ * Extract organizational unit from peer certificate
+ *
+ * Extracts the Organizational Unit (OU) field from the peer certificate subject.
+ *
+ * @param conn Connection
+ * @param ou_buf Buffer to store organizational unit string
+ * @param ou_buf_len Length of organizational unit buffer
+ * @return 0 on success, -1 on failure
+ */
+MTLS_API int mtls_get_peer_org_unit(mtls_conn* conn,
+                                     char* ou_buf,
+                                     size_t ou_buf_len);
+
+/**
  * Get remote address
  *
  * @param conn Connection

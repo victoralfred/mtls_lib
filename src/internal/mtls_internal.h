@@ -65,6 +65,16 @@ void mtls_tls_ctx_free(void* tls_ctx);
 int mtls_tls_ctx_reload_certs(void* tls_ctx, const mtls_config* config, mtls_err* err);
 SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx);
 
+/* Forward declarations for identity validation helpers (implemented in mtls_identity.c) */
+bool mtls_validate_peer_sans(const mtls_peer_identity* identity,
+                              const char** allowed_sans,
+                              size_t allowed_sans_count);
+bool mtls_is_peer_cert_valid(const mtls_peer_identity* identity);
+int64_t mtls_get_cert_ttl_seconds(const mtls_peer_identity* identity);
+bool mtls_has_spiffe_id(const mtls_peer_identity* identity);
+int mtls_get_peer_organization(mtls_conn* conn, char* org_buf, size_t org_buf_len);
+int mtls_get_peer_org_unit(mtls_conn* conn, char* ou_buf, size_t ou_buf_len);
+
 #ifdef __cplusplus
 }
 #endif
