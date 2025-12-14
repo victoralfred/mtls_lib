@@ -133,6 +133,10 @@ endif()
 # Create the library
 add_library(mtls ${MTLS_SOURCES})
 
+# Define MTLS_BUILDING_LIB when compiling the library
+# This controls MTLS_API to use dllexport on Windows instead of dllimport
+target_compile_definitions(mtls PRIVATE MTLS_BUILDING_LIB)
+
 # Include directories
 target_include_directories(mtls
     PUBLIC
