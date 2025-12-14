@@ -227,9 +227,14 @@ jobs:
       - name: Install OpenSSL
         run: |
           choco install openssl -y
+          # Wait for installation to complete
+          Start-Sleep -Seconds 5
           # Set OpenSSL environment variables for CMake
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $env:GITHUB_ENV
+          $opensslPath = "C:\Program Files\OpenSSL-Win64"
+          echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$opensslPath\include" >> $env:GITHUB_ENV
+          echo "OPENSSL_CRYPTO_LIBRARY=$opensslPath\lib\libcrypto.lib" >> $env:GITHUB_ENV
+          echo "OPENSSL_SSL_LIBRARY=$opensslPath\lib\libssl.lib" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Install dependencies (MSVC)
@@ -250,7 +255,11 @@ jobs:
           Set-Location build
           cmake .. -G "${{ matrix.generator }}" -A x64 `
             -DMTLS_BUILD_TESTS=ON `
-            -DMTLS_BUILD_EXAMPLES=ON
+            -DMTLS_BUILD_EXAMPLES=ON `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR" `
+            -DOPENSSL_CRYPTO_LIBRARY="$env:OPENSSL_CRYPTO_LIBRARY" `
+            -DOPENSSL_SSL_LIBRARY="$env:OPENSSL_SSL_LIBRARY"
         shell: pwsh
 
       - name: Configure CMake (MinGW)

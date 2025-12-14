@@ -77,7 +77,11 @@ jobs:
           cmake .. -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} `
             -DMTLS_BUILD_TESTS=ON `
-            -DMTLS_BUILD_EXAMPLES=ON
+            -DMTLS_BUILD_EXAMPLES=ON `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR" `
+            -DOPENSSL_CRYPTO_LIBRARY="$env:OPENSSL_CRYPTO_LIBRARY" `
+            -DOPENSSL_SSL_LIBRARY="$env:OPENSSL_SSL_LIBRARY"
         shell: pwsh
 
       - name: Configure CMake (Unix)
