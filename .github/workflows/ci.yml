@@ -55,8 +55,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           choco install openssl -y
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $env:GITHUB_ENV
+          # Wait for installation to complete
+          Start-Sleep -Seconds 5
+          # Set OpenSSL paths for CMake
+          $opensslPath = "C:\Program Files\OpenSSL-Win64"
+          echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$opensslPath\include" >> $env:GITHUB_ENV
+          echo "OPENSSL_CRYPTO_LIBRARY=$opensslPath\lib\libcrypto.lib" >> $env:GITHUB_ENV
+          echo "OPENSSL_SSL_LIBRARY=$opensslPath\lib\libssl.lib" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Setup MSBuild (Windows)
