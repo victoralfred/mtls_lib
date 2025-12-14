@@ -358,6 +358,70 @@ ctest --output-on-failure
 ctest -V
 ```
 
+## Example Programs
+
+The library includes four complete example programs demonstrating various usage patterns:
+
+### Simple Client (`simple_client.c`)
+Basic mTLS client demonstrating:
+- Context creation and configuration
+- Connecting to an mTLS server
+- Peer identity verification
+- Sending and receiving data
+- Proper cleanup
+
+```bash
+cd build/examples
+./simple_client localhost:8443 certs/ca.pem certs/client.pem certs/client.key
+```
+
+### Simple Server (`simple_server.c`)
+Basic mTLS server demonstrating:
+- Server context creation with client certificate requirement
+- Listener creation and client acceptance
+- Peer identity extraction
+- Echo functionality
+- Graceful shutdown
+
+```bash
+cd build/examples
+./simple_server 0.0.0.0:8443 certs/ca.pem certs/server.pem certs/server.key
+```
+
+### Advanced Client (`advanced_client.c`)
+Production-ready client example showing:
+- SAN validation against allowed list
+- Detailed peer identity inspection
+- Certificate expiration monitoring
+- Comprehensive error handling with categorization
+- Connection state checking
+- Pretty-printed output
+
+```bash
+cd build/examples
+./advanced_client localhost:8443 certs/ca.pem certs/client.pem certs/client.key
+```
+
+### Echo Server (`echo_server.c`)
+Production-like server with advanced features:
+- SAN-based client authorization
+- Configurable allowed client list
+- Connection statistics tracking
+- Per-connection logging
+- Graceful shutdown handling
+- Certificate expiration warnings
+
+```bash
+cd build/examples
+./echo_server 0.0.0.0:8443 certs/ca.pem certs/server.pem certs/server.key
+```
+
+All examples include proper error handling and demonstrate best practices for:
+- Resource cleanup
+- Error reporting
+- Security validation
+- Operational monitoring
+
 ## License
 
 MIT / Apache 2.0 (dual licensed)
