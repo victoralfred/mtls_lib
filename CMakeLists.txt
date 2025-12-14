@@ -81,10 +81,12 @@ elseif(MSVC)
         /std:c11
         /experimental:c11atomics
         /W4
-        /WX
         /GS
     )
-    
+
+    # Note: /WX (treat warnings as errors) is applied per-target, not globally
+    # This allows tests to have relaxed warnings while keeping strict checks for library code
+
     # Linker flags for security
     add_link_options(
         /DYNAMICBASE
@@ -156,6 +158,14 @@ endif()
 
 # Compiler features
 target_compile_features(mtls PUBLIC c_std_11)
+
+# Treat warnings as errors for library code (but not tests/examples)
+if(MSVC)
+    target_compile_options(mtls PRIVATE /WX)
+elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    # Already have -Werror=implicit-function-declaration and -Werror=return-type
+    # which are the most critical. Don't need full -Werror for library.
+endif()
 
 # Symbol visibility
 set_target_properties(mtls PROPERTIES
