@@ -346,14 +346,16 @@ if (mtls_connect(ctx, addr, &err) == NULL) {
 ## Testing
 
 ```bash
-# Run tests
+# Run all tests
 cd build
 ctest --output-on-failure
 
-# Run with sanitizers
-cmake -DMTLS_ENABLE_ASAN=ON -DMTLS_ENABLE_UBSAN=ON ..
-make
-ctest
+# Run specific test
+./tests/test_identity
+./tests/test_san_validation
+
+# Run with verbose output
+ctest -V
 ```
 
 ## License

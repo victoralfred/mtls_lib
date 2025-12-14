@@ -17,6 +17,7 @@ function(mtls_add_test name)
     
     target_include_directories(${name} PRIVATE
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
     )
     
     if(BORINGSSL_INCLUDE_DIR)
@@ -29,9 +30,12 @@ endfunction()
 # Security fixes tests
 mtls_add_test(test_security_fixes)
 
+# Identity verification tests
+mtls_add_test(test_identity)
+mtls_add_test(test_san_validation)
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)
 # mtls_add_test(test_context)
 # mtls_add_test(test_connection)
-# mtls_add_test(test_identity)
