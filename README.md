@@ -362,6 +362,34 @@ ctest -V
 
 MIT / Apache 2.0 (dual licensed)
 
+## Development
+
+### Quick Start
+
+```bash
+# Install git hooks and validation tools
+make install-hooks
+
+# Format code
+make format
+
+# Run static analysis
+make check
+
+# Build and test
+make build
+make test
+```
+
+The project includes industrial-standard pre-commit hooks that validate:
+- Code formatting (clang-format)
+- Static analysis (clang-tidy, cppcheck)
+- Build verification
+- Test execution
+- Security checks
+
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for complete development guide.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
@@ -369,5 +397,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 ## Documentation
 
 - [BUILD.md](docs/BUILD.md) - Build status and compilation instructions
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Development workflow and tooling
 - [IDENTITY_VERIFICATION.md](docs/IDENTITY_VERIFICATION.md) - Complete identity verification guide
 - [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) - Security fixes and vulnerability remediation
