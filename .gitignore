@@ -228,7 +228,7 @@ test-results/
 test-driver
 *.log
 *.out
-
+build_test/*
 # Google Test
 gtest/
 gmock/
