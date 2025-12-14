@@ -110,6 +110,7 @@ jobs:
 
       - name: Build summary
         if: always()
+        shell: bash
         run: |
           echo "## Build Summary for ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
           echo "- **OS**: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
