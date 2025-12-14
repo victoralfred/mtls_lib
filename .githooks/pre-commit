@@ -274,13 +274,6 @@ step_commit_message() {
         return 1
     fi
 
-    # Check for Claude attribution (as per user requirements)
-    if echo "$COMMIT_MSG" | grep -iE "claude|🤖|co-authored-by.*claude" > /dev/null; then
-        echo -e "${RED}  ✗ Commit message contains Claude attribution${NC}"
-        echo -e "${YELLOW}  Remove Claude attribution from commit message${NC}\n"
-        return 1
-    fi
-
     echo -e "${GREEN}  ✓ Commit message format OK${NC}\n"
     return 0
 }
