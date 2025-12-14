@@ -7,6 +7,7 @@
 
 #include "platform.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
