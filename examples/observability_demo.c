@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
@@ -84,18 +85,18 @@ static void metrics_print(metrics* m, const char* label) {
     printf("│  %s Metrics%-*s│\n", label, (int)(32 - strlen(label)), "");
     printf("├─────────────────────────────────────────┤" COLOR_RESET "\n");
 
-    printf(COLOR_GREEN "│  Total Connections:      %-14lu │\n" COLOR_RESET, total_conn);
-    printf(COLOR_GREEN "│  Successful:             %-14lu │\n" COLOR_RESET, success_conn);
-    printf(COLOR_RED   "│  Failed:                 %-14lu │\n" COLOR_RESET, failed_conn);
+    printf(COLOR_GREEN "│  Total Connections:      %-14" PRIu64 " │\n" COLOR_RESET, total_conn);
+    printf(COLOR_GREEN "│  Successful:             %-14" PRIu64 " │\n" COLOR_RESET, success_conn);
+    printf(COLOR_RED   "│  Failed:                 %-14" PRIu64 " │\n" COLOR_RESET, failed_conn);
     printf(COLOR_YELLOW "│  Active:                 %-14u │\n" COLOR_RESET, active_conn);
-    printf(COLOR_BLUE  "│  Total Bytes Read:       %-14lu │\n" COLOR_RESET, bytes_read);
-    printf(COLOR_BLUE  "│  Total Bytes Written:    %-14lu │\n" COLOR_RESET, bytes_written);
+    printf(COLOR_BLUE  "│  Total Bytes Read:       %-14" PRIu64 " │\n" COLOR_RESET, bytes_read);
+    printf(COLOR_BLUE  "│  Total Bytes Written:    %-14" PRIu64 " │\n" COLOR_RESET, bytes_written);
 
     if (success_conn > 0) {
         uint64_t avg_handshake = handshake_time / success_conn;
         uint64_t avg_connection = connection_time / success_conn;
-        printf(COLOR_MAGENTA "│  Avg Handshake Time:     %-10lu us │\n" COLOR_RESET, avg_handshake);
-        printf(COLOR_MAGENTA "│  Avg Connection Time:    %-10lu us │\n" COLOR_RESET, avg_connection);
+        printf(COLOR_MAGENTA "│  Avg Handshake Time:     %-10" PRIu64 " us │\n" COLOR_RESET, avg_handshake);
+        printf(COLOR_MAGENTA "│  Avg Connection Time:    %-10" PRIu64 " us │\n" COLOR_RESET, avg_connection);
     }
 
     if (kill_switch > 0) {
