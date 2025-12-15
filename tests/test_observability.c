@@ -125,6 +125,7 @@ typedef struct {
     event_tracker* tracker;
 } server_args;
 
+__attribute__((unused))
 static void* server_thread(void* arg) {
     server_args* args = (server_args*)arg;
     mtls_err err;
@@ -181,10 +182,12 @@ static void test_observer_registration(void) {
 
     int ret = mtls_set_observers(ctx, &observers);
     assert(ret == 0);
+    (void)ret;  /* Suppress unused variable warning after assert */
 
     /* Unregister observer (pass NULL) */
     ret = mtls_set_observers(ctx, NULL);
     assert(ret == 0);
+    (void)ret;  /* Suppress unused variable warning after assert */
 
     event_tracker_free(&tracker);
     mtls_ctx_free(ctx);
@@ -216,15 +219,9 @@ static void test_client_connection_events(void) {
     };
     mtls_set_observers(server_ctx, &server_observers);
 
-    server_args args = {
-        .ctx = server_ctx,
-        .bind_addr = "127.0.0.1:0",  /* Random port */
-        .num_clients = 1,
-        .tracker = &server_tracker
-    };
-
     /* For simplicity, we'll just test with a failing connection */
     /* (Full client-server test requires dynamic port handling) */
+    (void)server_tracker;  /* Suppress unused variable warning */
 
     /* Create client context */
     mtls_config client_config;
@@ -249,6 +246,7 @@ static void test_client_connection_events(void) {
     /* Attempt connection to non-existent server (should fail) */
     mtls_conn* conn = mtls_connect(client_ctx, "127.0.0.1:1", &err);
     assert(conn == NULL);  /* Connection should fail */
+    (void)conn;  /* Suppress unused variable warning after assert */
 
     print_events(&client_tracker);
 
@@ -305,6 +303,7 @@ static void test_kill_switch_events(void) {
     mtls_conn* conn = mtls_connect(ctx, "127.0.0.1:443", &err);
     assert(conn == NULL);
     assert(err.code == MTLS_ERR_KILL_SWITCH_ENABLED);
+    (void)conn;  /* Suppress unused variable warning after assert */
 
     print_events(&tracker);
 
@@ -312,6 +311,7 @@ static void test_kill_switch_events(void) {
     int start_idx = find_event(&tracker, MTLS_EVENT_CONNECT_START, 0);
     assert(start_idx >= 0);
     printf("[PASS] CONNECT_START event found\n");
+    (void)start_idx;  /* Suppress unused variable warning after assert */
 
     int kill_switch_idx = find_event(&tracker, MTLS_EVENT_KILL_SWITCH_TRIGGERED, 0);
     assert(kill_switch_idx >= 0);
@@ -320,9 +320,11 @@ static void test_kill_switch_events(void) {
     int failure_idx = find_event(&tracker, MTLS_EVENT_CONNECT_FAILURE, 0);
     assert(failure_idx >= 0);
     printf("[PASS] CONNECT_FAILURE event found\n");
+    (void)failure_idx;  /* Suppress unused variable warning after assert */
 
     /* Verify error code is set */
     assert(tracker.events[kill_switch_idx].error_code == MTLS_ERR_KILL_SWITCH_ENABLED);
+    (void)kill_switch_idx;  /* Suppress unused variable warning after assert */
     printf("[PASS] Error code correctly set in KILL_SWITCH_TRIGGERED event\n");
 
     event_tracker_free(&tracker);
@@ -365,12 +367,10 @@ static void test_event_timing(void) {
     };
     mtls_set_observers(ctx, &observers);
 
-    /* Record time before connection attempt */
-    uint64_t before = 0;  /* Would use platform_get_time_us() if exposed */
-
     /* Attempt connection that will fail */
     mtls_conn* conn = mtls_connect(ctx, "127.0.0.1:1", &err);
     assert(conn == NULL);
+    (void)conn;  /* Suppress unused variable warning after assert */
 
     /* Verify all events have timestamps */
     for (size_t i = 0; i < tracker.event_count; i++) {
@@ -420,6 +420,8 @@ static void test_multiple_connections(void) {
     for (int i = 0; i < 3; i++) {
         mtls_conn* conn = mtls_connect(ctx, "127.0.0.1:1", &err);
         assert(conn == NULL);
+        (void)conn;  /* Suppress unused variable warning after assert */
+        (void)i;     /* Suppress unused variable warning */
     }
 
     print_events(&tracker);

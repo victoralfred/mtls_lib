@@ -38,14 +38,14 @@ mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_err* err) 
     }
 
     /* Create socket */
-    int af = listener->bind_addr.addr.sa.sa_family;
+    int addr_family = listener->bind_addr.addr.sa.sa_family;
     /* Validate address family */
-    if (af != AF_INET && af != AF_INET6) {
+    if (addr_family != AF_INET && addr_family != AF_INET6) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Unsupported address family");
         free(listener);
         return NULL;
     }
-    listener->sock = platform_socket_create(af, SOCK_STREAM, 0, err);
+    listener->sock = platform_socket_create(addr_family, SOCK_STREAM, 0, err);
     if (listener->sock == MTLS_INVALID_SOCKET) {
         free(listener);
         return NULL;
@@ -113,6 +113,12 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     mtls_conn* conn = calloc(1, sizeof(*conn));
     if (!conn) {
         MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate connection");
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_OUT_OF_MEMORY;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
         return NULL;
     }
 
@@ -124,6 +130,12 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     /* Accept connection */
     conn->sock = platform_socket_accept(listener->sock, &conn->remote_addr, err);
     if (conn->sock == MTLS_INVALID_SOCKET) {
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = err ? (int)err->code : (int)MTLS_ERR_ACCEPT_FAILED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
         free(conn);
         return NULL;
     }
@@ -139,6 +151,12 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     conn->ssl = SSL_new(ssl_ctx);
     if (!conn->ssl) {
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to create SSL object");
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_TLS_INIT_FAILED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
         platform_socket_close(conn->sock);
         free(conn);
         return NULL;
@@ -147,6 +165,12 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     /* Attach socket to SSL */
     if (!SSL_set_fd(conn->ssl, (int)conn->sock)) {
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to attach socket to SSL");
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_TLS_INIT_FAILED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
         SSL_free(conn->ssl);
         platform_socket_close(conn->sock);
         free(conn);
@@ -165,7 +189,9 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     if (SSL_accept(conn->ssl) <= 0) {
         unsigned long ssl_err = ERR_get_error();
         MTLS_ERR_SET(err, MTLS_ERR_TLS_HANDSHAKE_FAILED, "TLS handshake failed");
-        if (err) err->ssl_err = ssl_err;
+        if (err) {
+            err->ssl_err = ssl_err;
+        }
 
         /* Emit HANDSHAKE_FAILURE event */
         event.type = MTLS_EVENT_HANDSHAKE_FAILURE;
@@ -199,7 +225,9 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
         MTLS_ERR_SET(err, MTLS_ERR_CERT_UNTRUSTED,
                      "Certificate verification failed: %s (code: %ld)",
                      verify_msg ? verify_msg : "Unknown error", verify_result);
-        if (err) err->ssl_err = verify_result;
+        if (err) {
+            err->ssl_err = verify_result;
+        }
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
@@ -229,7 +257,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
         if (mtls_get_peer_identity(conn, &identity, err) == 0) {
             /* Use helper function with wildcard support */
             bool allowed = mtls_validate_peer_sans(&identity,
-                                                    (const char**)listener->ctx->config.allowed_sans,
+                                                    listener->ctx->config.allowed_sans,
                                                     listener->ctx->config.allowed_sans_count);
             mtls_free_peer_identity(&identity);
 
@@ -281,7 +309,9 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
 }
 
 void mtls_listener_close(mtls_listener* listener) {
-    if (!listener) return;
+    if (!listener) {
+        return;
+    }
 
     if (listener->sock != MTLS_INVALID_SOCKET) {
         platform_socket_close(listener->sock);
