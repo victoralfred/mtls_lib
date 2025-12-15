@@ -91,8 +91,8 @@ static bool test_hostname_extraction_overflow(void) {
     long_hostname[258] = '8';
     long_hostname[259] = '0';
     long_hostname[260] = '\0';
-    
-    mtls_conn* conn = mtls_connect(ctx, long_hostname, &err);
+
+    const mtls_conn* conn = mtls_connect(ctx, long_hostname, &err);
     /* Should fail with invalid address error, not crash */
     TEST_ASSERT(conn == NULL, "Should reject hostname that's too long");
     TEST_ASSERT(err.code == MTLS_ERR_INVALID_ADDRESS || 
@@ -132,8 +132,8 @@ static bool test_address_string_validation(void) {
     long_addr[516] = '8';
     long_addr[517] = '0';
     long_addr[518] = '\0';
-    
-    mtls_conn* conn = mtls_connect(ctx, long_addr, &err);
+
+    const mtls_conn* conn = mtls_connect(ctx, long_addr, &err);
     TEST_ASSERT(conn == NULL, "Should reject address string that's too long");
     TEST_ASSERT(err.code == MTLS_ERR_INVALID_ADDRESS,
                 "Should return invalid address error");
@@ -158,10 +158,10 @@ static bool test_port_number_validation(void) {
     
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     if (!ctx) { return true; } /* Context creation may fail with invalid PEM, but validation logic is tested */
-    
+
     /* Test with invalid port numbers */
-    mtls_conn* conn;
-    
+    const mtls_conn* conn;
+
     /* Port 0 is invalid */
     conn = mtls_connect(ctx, "example.com:0", &err);
     TEST_ASSERT(conn == NULL, "Should reject port 0");
@@ -194,8 +194,8 @@ static bool test_file_path_validation(void) {
     
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    const mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject file path that's too long");
     TEST_ASSERT(err.code == MTLS_ERR_INVALID_CONFIG,
                 "Should return invalid config error");
@@ -219,8 +219,8 @@ static bool test_pem_data_validation(void) {
     
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    const mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject PEM data that's too large");
     TEST_ASSERT(err.code == MTLS_ERR_INVALID_CONFIG,
                 "Should return invalid config error");
@@ -253,8 +253,8 @@ static bool test_allowed_sans_validation(void) {
     
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    const mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject NULL SAN in allowed list");
     TEST_ASSERT(err.code == MTLS_ERR_INVALID_CONFIG,
                 "Should return invalid config error");
@@ -498,8 +498,8 @@ static bool test_integer_overflow_protection(void) {
     
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    const mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject PEM length that would overflow INT_MAX");
     TEST_ASSERT(err.code == MTLS_ERR_INVALID_CONFIG,
                 "Should return invalid config error");
@@ -577,7 +577,7 @@ static bool test_edge_case_empty_strings(void) {
     /* Test with empty address string */
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     if (ctx) {
-        mtls_conn* conn = mtls_connect(ctx, "", &err);
+        const mtls_conn* conn = mtls_connect(ctx, "", &err);
         TEST_ASSERT(conn == NULL, "Should reject empty address string");
         mtls_ctx_free(ctx);
     }
@@ -596,9 +596,9 @@ static bool test_edge_case_empty_strings(void) {
 static bool test_edge_case_null_pointers(void) {
     mtls_err err;
     mtls_err_init(&err);
-    
+
     /* Test all functions with NULL pointers */
-    mtls_ctx* ctx = mtls_ctx_create(NULL, &err);
+    const mtls_ctx* ctx = mtls_ctx_create(NULL, &err);
     TEST_ASSERT(ctx == NULL, "Should reject NULL config");
     
     const mtls_conn* conn = mtls_connect(NULL, "example.com:443", &err);
@@ -905,8 +905,8 @@ static bool test_edge_case_zero_length_inputs(void) {
     
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    const mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject zero-length PEM");
 
     return true;
