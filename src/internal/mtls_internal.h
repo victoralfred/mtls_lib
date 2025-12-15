@@ -68,6 +68,16 @@ SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx);
 /* Note: mtls_validate_peer_sans is now in public API (mtls.h) */
 /* Note: Other identity functions are declared in public API (mtls.h) */
 
+/*
+ * Helper function to emit observability events
+ * Thread-safe: invoked without holding context locks
+ */
+static inline void mtls_emit_event(mtls_ctx* ctx, const mtls_event* event) {
+    if (ctx && ctx->observers.on_event) {
+        ctx->observers.on_event(event, ctx->observers.userdata);
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif

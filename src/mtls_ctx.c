@@ -199,6 +199,23 @@ mtls_ctx* mtls_ctx_create(const mtls_config* config, mtls_err* err) {
     return ctx;
 }
 
+int mtls_set_observers(mtls_ctx* ctx, const mtls_observers* observers) {
+    if (!ctx) {
+        return -1;
+    }
+
+    if (observers) {
+        /* Copy observer configuration */
+        ctx->observers.on_event = observers->on_event;
+        ctx->observers.userdata = observers->userdata;
+    } else {
+        /* Disable observers */
+        memset(&ctx->observers, 0, sizeof(ctx->observers));
+    }
+
+    return 0;
+}
+
 void mtls_ctx_free(mtls_ctx* ctx) {
     if (!ctx) return;
 

@@ -12,6 +12,8 @@
 #include <openssl/err.h>
 
 mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
+    uint64_t start_time = platform_get_time_us();
+
     if (!ctx) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Context is NULL");
         return NULL;
@@ -22,9 +24,33 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
         return NULL;
     }
 
+    /* Emit CONNECT_START event */
+    mtls_event event = {
+        .type = MTLS_EVENT_CONNECT_START,
+        .remote_addr = addr,
+        .conn = NULL,
+        .error_code = 0,
+        .timestamp_us = start_time,
+        .duration_us = 0,
+        .bytes = 0
+    };
+    mtls_emit_event(ctx, &event);
+
     /* Check kill-switch */
     if (mtls_ctx_is_kill_switch_enabled(ctx)) {
         MTLS_ERR_SET(err, MTLS_ERR_KILL_SWITCH_ENABLED, "Kill-switch is enabled");
+
+        /* Emit KILL_SWITCH_TRIGGERED event */
+        event.type = MTLS_EVENT_KILL_SWITCH_TRIGGERED;
+        event.error_code = MTLS_ERR_KILL_SWITCH_ENABLED;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(ctx, &event);
+
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.duration_us = platform_get_time_us() - start_time;
+        mtls_emit_event(ctx, &event);
+
         return NULL;
     }
 
@@ -208,6 +234,15 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     }
 
     atomic_store(&conn->state, MTLS_CONN_STATE_ESTABLISHED);
+
+    /* Emit CONNECT_SUCCESS event */
+    event.type = MTLS_EVENT_CONNECT_SUCCESS;
+    event.conn = conn;
+    event.error_code = 0;
+    event.timestamp_us = platform_get_time_us();
+    event.duration_us = event.timestamp_us - start_time;
+    mtls_emit_event(ctx, &event);
+
     return conn;
 }
 

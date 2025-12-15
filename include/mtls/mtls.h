@@ -319,6 +319,36 @@ MTLS_API int mtls_get_local_addr(const mtls_conn* conn,
  * =============================================================================
  */
 
+/* ============================================================================
+ * Observability API
+ * ============================================================================
+ */
+
+/**
+ * Set event observers for the context
+ *
+ * Registers callback functions that will be invoked for various events:
+ * - Connection lifecycle (connect, handshake, close)
+ * - I/O operations (read, write)
+ * - Policy decisions (kill-switch, identity validation)
+ * - Errors and failures
+ *
+ * Thread safety: The callback will be invoked synchronously from the thread
+ * that triggers the event. The callback must be thread-safe if the context
+ * is used from multiple threads. The context lock is NOT held during callback
+ * invocation, so the callback can safely call mTLS API functions.
+ *
+ * @param ctx Context
+ * @param observers Observer configuration (copied internally), or NULL to disable
+ * @return 0 on success, -1 on failure
+ */
+MTLS_API int mtls_set_observers(mtls_ctx* ctx, const mtls_observers* observers);
+
+/* ============================================================================
+ * Utility Functions
+ * ============================================================================
+ */
+
 /**
  * Get library version string
  *
