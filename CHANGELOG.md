@@ -29,7 +29,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now explicitly rejects oversized identities with `MTLS_ERR_IDENTITY_TOO_LONG` error
   - [Commit: bd45ff3]
 
+### Fixed
+
+#### Windows/MSVC Compatibility (2024-12-15)
+
+- **FIXED:** MSVC build error from unknown GCC pragmas
+  - Made `#pragma GCC diagnostic` conditionally compiled for GCC/Clang only
+  - MSVC was treating unknown pragma warnings (C4068) as errors (C2220)
+  - Fixed in `mtls_err_set()` and `mtls_err_set_internal()` functions
+  - All platforms (Linux/GCC, macOS/Clang, Windows/MSVC) now build cleanly
+  - [Commit: b41e467]
+
+- **FIXED:** Windows missing POSIX headers in example programs
+  - Added platform-specific includes and function wrappers
+  - Replaced `unistd.h` with Windows.h on Windows
+  - Created portable `sleep_ms()` and `get_process_id()` macros
+  - Made signal handlers conditional (POSIX only)
+  - [Commit: b6e7138]
+
+- **FIXED:** Format truncation warnings in demo programs
+  - Pre-calculated safe buffer sizes before snprintf
+  - Truncated oversized inputs to prevent buffer overflow
+  - Fixed in `cert_reload_demo.c` and `kill_switch_demo.c`
+  - [Commits: 34109b7, b6e7138]
+
+- **FIXED:** Windows localtime deprecation warnings
+  - Used `localtime_s()` on Windows instead of deprecated `localtime()`
+  - Maintained POSIX `localtime()` for Linux/macOS
+  - Fixed in `advanced_client.c`
+  - [Commit: e3976f7]
+
 ### Added
+
+#### New Example Programs (2024-12-15)
+
+- **NEW:** Kill switch demonstration program (`kill_switch_demo.c`)
+  - Shows emergency kill switch functionality with signal-based control
+  - Demonstrates blocking new connections without stopping the process
+  - SIGUSR1/SIGUSR2 signal handling for POSIX systems
+  - 280 lines with comprehensive error handling
+  - [Commit: 31bc28b]
+
+- **NEW:** Certificate reload demonstration program (`cert_reload_demo.c`)
+  - Shows hot certificate reloading without downtime
+  - Demonstrates zero-downtime certificate rotation
+  - SIGUSR1 signal handling for reload trigger (POSIX)
+  - 320 lines with certificate validity monitoring
+  - [Commit: 31bc28b]
+
+#### Enhanced Example Programs (2024-12-15)
+
+- **ENHANCED:** All existing examples now demonstrate unused API methods
+  - `simple_client.c` and `simple_server.c` - Added `mtls_version()` and `mtls_config_validate()`
+  - `advanced_client.c` - Added `mtls_err_code_name()`, `mtls_err_category_name()`, `mtls_validate_peer_sans()`
+  - `echo_server.c` - Added config validation and built-in SAN validation
+  - All 6 example programs now provide complete API coverage
+  - [Commits: 31bc28b, e3976f7]
 
 #### New Security Features (2024-12-15)
 
@@ -96,12 +151,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 
-- **5 test suites** now passing (100% pass rate):
+- **6 test suites** now passing (100% pass rate):
   - `test_security_fixes` - Security vulnerability validation
   - `test_identity` - Identity extraction and validation
   - `test_san_validation` - 21 SAN matching tests
   - `test_phase4_features` - 23 constant-time comparison tests
+  - `test_memory_safety` - Memory leak and bounds checking
   - `fuzz_oversized_sans` - 10 fuzz test suites (1,500+ iterations)
+
+- **6 example programs** demonstrating complete API coverage:
+  - `simple_client` and `simple_server` - Basic mTLS client/server
+  - `advanced_client` - Identity validation with SAN/SPIFFE
+  - `echo_server` - Multi-client server with SAN validation
+  - `kill_switch_demo` - Emergency connection blocking
+  - `cert_reload_demo` - Zero-downtime certificate rotation
 
 ## [0.1.0] - 2024-12
 
@@ -162,7 +225,8 @@ This version represents the initial security-hardened release with all critical 
 - 9 Critical severity fixes
 - 3 High severity fixes
 - 4 Medium severity fixes
-- **16 total security fixes**
+- 4 Compatibility/Build fixes
+- **20 total security and compatibility fixes**
 
 The library is now:
 - ✅ Memory safe (AddressSanitizer clean)
