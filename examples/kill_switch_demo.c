@@ -138,17 +138,23 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         char response[BUFFER_SIZE];
         bool kill_switch = mtls_ctx_is_kill_switch_enabled(global_ctx);
         const char* status = kill_switch ? "ENABLED" : "DISABLED";
-        size_t prefix_len = strlen("Echo: \nKill switch: \n") + strlen(status);
-        size_t max_echo = sizeof(response) - prefix_len - 1;
 
-        /* Temporarily truncate buffer if needed for safe snprintf */
-        if (strlen(buffer) > max_echo) {
-            buffer[max_echo] = '\0';
+        /* Calculate safe echo length: "Echo: " + "\nKill switch: " + status + "\n" + null */
+        const size_t prefix_suffix_len = 6 + 14 + strlen(status) + 1 + 1;  /* 6="Echo: ", 14="\nKill switch: ", 1="\n", 1=null */
+        const size_t max_echo_len = sizeof(response) - prefix_suffix_len;
+
+        /* Create truncated echo buffer */
+        char echo_buf[max_echo_len + 1];
+        size_t copy_len = strlen(buffer);
+        if (copy_len > max_echo_len) {
+            copy_len = max_echo_len;
         }
+        memcpy(echo_buf, buffer, copy_len);
+        echo_buf[copy_len] = '\0';
 
         snprintf(response, sizeof(response),
                  "Echo: %s\nKill switch: %s\n",
-                 buffer,
+                 echo_buf,
                  status);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);

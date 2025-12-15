@@ -172,18 +172,23 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         char response[BUFFER_SIZE];
         const char* time_str = ctime(&now);
 
-        /* Calculate max safe buffer size (prefix + time_str + null) */
-        size_t prefix_len = strlen("Echo from cert_reload_demo: \nServer time: ") + strlen(time_str);
-        size_t max_echo = sizeof(response) - prefix_len - 1;
+        /* Calculate safe echo length: "Echo from cert_reload_demo: " + "\nServer time: " + time_str + null */
+        /* ctime() always returns 26 characters including newline */
+        const size_t prefix_suffix_len = 29 + 14 + 26 + 1;  /* 29="Echo from cert_reload_demo: ", 14="\nServer time: ", 26=time_str, 1=null */
+        const size_t max_echo_len = sizeof(response) - prefix_suffix_len;
 
-        /* Truncate buffer if needed */
-        if (strlen(buffer) > max_echo) {
-            buffer[max_echo] = '\0';
+        /* Create truncated echo buffer */
+        char echo_buf[max_echo_len + 1];
+        size_t copy_len = strlen(buffer);
+        if (copy_len > max_echo_len) {
+            copy_len = max_echo_len;
         }
+        memcpy(echo_buf, buffer, copy_len);
+        echo_buf[copy_len] = '\0';
 
         snprintf(response, sizeof(response),
                  "Echo from cert_reload_demo: %s\nServer time: %s",
-                 buffer, time_str);
+                 echo_buf, time_str);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);
         if (sent > 0) {
