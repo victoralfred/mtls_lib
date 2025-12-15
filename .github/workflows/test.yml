@@ -261,9 +261,9 @@ jobs:
             Get-ChildItem "$opensslRoot\lib" -Include *.lib,*.a -Recurse | Select-Object FullName
           }
 
-          # Find the actual library files
-          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib","crypto*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib","ssl*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Find the actual library files (both .lib for MSVC and .a for MinGW)
+          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib","crypto*.lib","libcrypto*.a","libcrypto*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib","ssl*.lib","libssl*.a","libssl*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
 
           if ($cryptoLib) {
             Write-Host "Found crypto library: $($cryptoLib.FullName)"
