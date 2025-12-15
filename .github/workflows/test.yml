@@ -261,14 +261,22 @@ jobs:
             Get-ChildItem "$opensslRoot\lib" -Include *.lib,*.a -Recurse | Select-Object FullName
           }
 
-          # Find the actual library files (both .lib for MSVC and .a for MinGW)
+          # Find the actual library files
           Write-Host "`nSearching for library files..."
-          $allLibs = Get-ChildItem "$opensslRoot" -Recurse -Include "*.lib","*.a","*.dll.a" -ErrorAction SilentlyContinue
-          Write-Host "All library files found:"
-          $allLibs | ForEach-Object { Write-Host "  $($_.FullName)" }
 
-          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib","crypto*.lib","libcrypto*.a","libcrypto*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib","ssl*.lib","libssl*.a","libssl*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Prefer DLL import libraries over static libraries for MSVC
+          # Look for libcrypto.lib (DLL import lib) first, then libcrypto_static.lib
+          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto.lib" -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "libcrypto.lib" } | Select-Object -First 1
+          if (-not $cryptoLib) {
+            # Fall back to static library
+            $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+
+          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl.lib" -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "libssl.lib" } | Select-Object -First 1
+          if (-not $sslLib) {
+            # Fall back to static library
+            $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
 
           if ($cryptoLib) {
             Write-Host "`nFound crypto library: $($cryptoLib.FullName)"
@@ -305,6 +313,17 @@ jobs:
         run: |
           choco install mingw -y
           choco install cmake -y
+          # Install MSYS2 for MinGW-compatible OpenSSL
+          choco install msys2 -y
+          # Update MSYS2 and install OpenSSL
+          C:\tools\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-x86_64-openssl"
+          # Set OpenSSL paths for MinGW
+          $mingwRoot = "C:\tools\msys64\mingw64"
+          echo "MINGW_OPENSSL_ROOT=$mingwRoot" >> $env:GITHUB_ENV
+          echo "MINGW_OPENSSL_INCLUDE=$mingwRoot\include" >> $env:GITHUB_ENV
+          echo "MINGW_OPENSSL_CRYPTO=$mingwRoot\lib\libcrypto.dll.a" >> $env:GITHUB_ENV
+          echo "MINGW_OPENSSL_SSL=$mingwRoot\lib\libssl.dll.a" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Configure CMake (MSVC)
@@ -332,11 +351,11 @@ jobs:
         if: matrix.generator == 'MinGW Makefiles'
         run: |
           # Debug: Verify environment variables are available
-          Write-Host "Environment variables in Configure CMake step:"
-          Write-Host "OPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR"
-          Write-Host "OPENSSL_INCLUDE_DIR=$env:OPENSSL_INCLUDE_DIR"
-          Write-Host "OPENSSL_CRYPTO_LIBRARY=$env:OPENSSL_CRYPTO_LIBRARY"
-          Write-Host "OPENSSL_SSL_LIBRARY=$env:OPENSSL_SSL_LIBRARY"
+          Write-Host "Environment variables in Configure CMake step (MinGW):"
+          Write-Host "MINGW_OPENSSL_ROOT=$env:MINGW_OPENSSL_ROOT"
+          Write-Host "MINGW_OPENSSL_INCLUDE=$env:MINGW_OPENSSL_INCLUDE"
+          Write-Host "MINGW_OPENSSL_CRYPTO=$env:MINGW_OPENSSL_CRYPTO"
+          Write-Host "MINGW_OPENSSL_SSL=$env:MINGW_OPENSSL_SSL"
 
           New-Item -ItemType Directory -Force -Path build | Out-Null
           Set-Location build
@@ -344,10 +363,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
             -DMTLS_BUILD_TESTS=ON `
             -DMTLS_BUILD_EXAMPLES=ON `
-            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
-            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR" `
-            -DOPENSSL_CRYPTO_LIBRARY="$env:OPENSSL_CRYPTO_LIBRARY" `
-            -DOPENSSL_SSL_LIBRARY="$env:OPENSSL_SSL_LIBRARY"
+            -DOPENSSL_ROOT_DIR="$env:MINGW_OPENSSL_ROOT" `
+            -DOPENSSL_INCLUDE_DIR="$env:MINGW_OPENSSL_INCLUDE" `
+            -DOPENSSL_CRYPTO_LIBRARY="$env:MINGW_OPENSSL_CRYPTO" `
+            -DOPENSSL_SSL_LIBRARY="$env:MINGW_OPENSSL_SSL"
         shell: pwsh
 
       - name: Build (MSVC)
