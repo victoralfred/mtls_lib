@@ -371,7 +371,7 @@ ctest -V
 
 ## Example Programs
 
-The library includes four complete example programs demonstrating various usage patterns:
+The library includes six complete example programs demonstrating various usage patterns:
 
 ### Simple Client (`simple_client.c`)
 Basic mTLS client demonstrating:
@@ -425,6 +425,39 @@ Production-like server with advanced features:
 ```bash
 cd build/examples
 ./echo_server 0.0.0.0:8443 certs/ca.pem certs/server.pem certs/server.key
+```
+
+### Kill Switch Demo (`kill_switch_demo.c`)
+Emergency kill switch demonstration showing:
+- Dynamic kill switch enable/disable via signals
+- Connection rejection during kill switch activation
+- Zero-downtime emergency shutdown capability
+- Signal-based control (SIGUSR1/SIGUSR2)
+- Real-time status monitoring
+
+```bash
+cd build/examples
+./kill_switch_demo 0.0.0.0:8443 certs/ca.pem certs/server.pem certs/server.key
+
+# In another terminal:
+kill -USR1 <pid>  # Enable kill switch (block new connections)
+kill -USR2 <pid>  # Disable kill switch (allow new connections)
+```
+
+### Certificate Reload Demo (`cert_reload_demo.c`)
+Hot certificate reloading demonstration showing:
+- Certificate reload without service restart
+- Zero-downtime certificate rotation
+- Signal-triggered reload (SIGUSR1)
+- Certificate expiration monitoring
+- Existing connection preservation during reload
+
+```bash
+cd build/examples
+./cert_reload_demo 0.0.0.0:8443 certs/ca.pem certs/server.pem certs/server.key
+
+# Update certificates on disk, then:
+kill -USR1 <pid>  # Reload certificates without downtime
 ```
 
 All examples include proper error handling and demonstrate best practices for:

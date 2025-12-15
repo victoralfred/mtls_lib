@@ -106,6 +106,7 @@ int main(int argc, char* argv[]) {
 
     printf("===========================================\n");
     printf("  mTLS Simple Server\n");
+    printf("  Library version: %s\n", mtls_version());
     printf("===========================================\n\n");
 
     /* Set up signal handler */
@@ -125,6 +126,12 @@ int main(int argc, char* argv[]) {
     config.key_path = server_key;
     config.min_tls_version = MTLS_TLS_1_2;
     config.require_client_cert = true;  /* Enforce mutual TLS */
+
+    /* Validate configuration before creating context */
+    if (mtls_config_validate(&config, &err) != 0) {
+        fprintf(stderr, "✗ Configuration validation failed: %s\n", err.message);
+        return 1;
+    }
 
     printf("[1/2] Creating mTLS context...\n");
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);

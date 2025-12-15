@@ -64,20 +64,20 @@ static int authorize_client(mtls_conn* conn, const char** allowed_sans,
 
     printf("  Client CN: %s\n", identity.common_name);
 
-    /* Check SANs against allowed list */
-    int authorized = 0;
-    for (size_t i = 0; i < identity.san_count; i++) {
-        for (size_t j = 0; j < allowed_count; j++) {
-            if (strcmp(identity.sans[i], allowed_sans[j]) == 0) {
-                printf("  ✓ Authorized: %s\n", identity.sans[i]);
-                authorized = 1;
-                break;
+    /* Use built-in SAN validation function */
+    int authorized = mtls_validate_peer_sans(&identity, allowed_sans, allowed_count);
+
+    if (authorized) {
+        /* Find which SAN matched (for logging) */
+        for (size_t i = 0; i < identity.san_count; i++) {
+            for (size_t j = 0; j < allowed_count; j++) {
+                if (strcmp(identity.sans[i], allowed_sans[j]) == 0) {
+                    printf("  ✓ Authorized: %s\n", identity.sans[i]);
+                    break;
+                }
             }
         }
-        if (authorized) break;
-    }
-
-    if (!authorized) {
+    } else {
         printf("  ✗ Client NOT authorized\n");
         printf("  Client SANs:\n");
         for (size_t i = 0; i < identity.san_count; i++) {
@@ -166,6 +166,7 @@ int main(int argc, char* argv[]) {
 
     printf("╔═══════════════════════════════════════╗\n");
     printf("║    mTLS Echo Server                   ║\n");
+    printf("║    Library: %-25s ║\n", mtls_version());
     printf("╚═══════════════════════════════════════╝\n\n");
 
     /* Setup signal handlers */
@@ -199,6 +200,12 @@ int main(int argc, char* argv[]) {
     config.key_path = server_key;
     config.min_tls_version = MTLS_TLS_1_2;
     config.require_client_cert = true;
+
+    /* Validate configuration */
+    if (mtls_config_validate(&config, &err) != 0) {
+        fprintf(stderr, "✗ Configuration validation failed: %s\n", err.message);
+        return 1;
+    }
 
     /* Create context */
     printf("→ Creating server context...\n");

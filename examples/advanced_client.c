@@ -28,8 +28,13 @@ static void print_error_details(const mtls_err* err) {
     mtls_err_format(err, err_buf, sizeof(err_buf));
     fprintf(stderr, "%s\n", err_buf);
 
-    /* Print error category */
+    /* Print error code name and category */
+    const char* code_name = mtls_err_code_name(err->code);
     const char* category = mtls_err_category_name(err->code);
+
+    if (code_name) {
+        fprintf(stderr, "  Error code: %s\n", code_name);
+    }
     if (category) {
         fprintf(stderr, "  Category: %s\n", category);
     }
@@ -134,20 +139,20 @@ static int validate_server_identity(mtls_conn* conn, const char** allowed_sans,
         return -1;
     }
 
-    /* Check if any SAN matches allowed list */
-    int validated = 0;
-    for (size_t i = 0; i < identity.san_count; i++) {
-        for (size_t j = 0; j < allowed_count; j++) {
-            if (strcmp(identity.sans[i], allowed_sans[j]) == 0) {
-                printf("✓ Server identity validated: %s\n", identity.sans[i]);
-                validated = 1;
-                break;
+    /* Use built-in SAN validation function */
+    bool validated = mtls_validate_peer_sans(&identity, allowed_sans, allowed_count);
+
+    if (validated) {
+        /* Find which SAN matched (for informative output) */
+        for (size_t i = 0; i < identity.san_count; i++) {
+            for (size_t j = 0; j < allowed_count; j++) {
+                if (strcmp(identity.sans[i], allowed_sans[j]) == 0) {
+                    printf("✓ Server identity validated: %s\n", identity.sans[i]);
+                    break;
+                }
             }
         }
-        if (validated) break;
-    }
-
-    if (!validated) {
+    } else {
         fprintf(stderr, "✗ Server identity NOT in allowed list!\n");
         fprintf(stderr, "  Server SANs:\n");
         for (size_t i = 0; i < identity.san_count; i++) {
@@ -177,6 +182,7 @@ int main(int argc, char* argv[]) {
 
     printf("╔═══════════════════════════════════════╗\n");
     printf("║    Advanced mTLS Client Example      ║\n");
+    printf("║    Library: %-25s ║\n", mtls_version());
     printf("╚═══════════════════════════════════════╝\n\n");
 
     mtls_err err;
@@ -203,6 +209,13 @@ int main(int argc, char* argv[]) {
     config.connect_timeout_ms = 5000;
     config.read_timeout_ms = 10000;
     config.write_timeout_ms = 10000;
+
+    /* Validate configuration */
+    if (mtls_config_validate(&config, &err) != 0) {
+        fprintf(stderr, "✗ Configuration validation failed:\n");
+        print_error_details(&err);
+        return 1;
+    }
 
     /* Create context */
     printf("→ Creating mTLS context...\n");

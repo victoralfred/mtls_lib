@@ -41,6 +41,7 @@ int main(int argc, char* argv[]) {
 
     printf("===========================================\n");
     printf("  mTLS Simple Client\n");
+    printf("  Library version: %s\n", mtls_version());
     printf("===========================================\n\n");
 
     /* Initialize error structure */
@@ -58,6 +59,12 @@ int main(int argc, char* argv[]) {
     config.verify_hostname = true;
     config.connect_timeout_ms = 10000;  /* 10 seconds */
 
+    /* Validate configuration before creating context */
+    if (mtls_config_validate(&config, &err) != 0) {
+        fprintf(stderr, "✗ Configuration validation failed: %s\n", err.message);
+        return 1;
+    }
+
     printf("[1/4] Creating mTLS context...\n");
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     if (!ctx) {
@@ -71,8 +78,9 @@ int main(int argc, char* argv[]) {
     mtls_conn* conn = mtls_connect(ctx, server_addr, &err);
     if (!conn) {
         fprintf(stderr, "✗ Connection failed: %s\n", err.message);
+        fprintf(stderr, "  Error code: %s\n", mtls_err_code_name(err.code));
         if (err.ssl_err) {
-            fprintf(stderr, "  SSL error code: 0x%lx\n", err.ssl_err);
+            fprintf(stderr, "  SSL error: 0x%lx\n", err.ssl_err);
         }
         mtls_ctx_free(ctx);
         return 1;
