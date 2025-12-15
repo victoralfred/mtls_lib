@@ -175,11 +175,15 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
 
                     /* Check for SPIFFE ID */
                     if (gen->type == GEN_URI && strncmp(san_str, "spiffe://", 9) == 0) {
-                        size_t spiffe_len = strlen(san_str);
+                        /* Use san_len (actual allocated size) instead of strlen to avoid warnings */
+                        size_t spiffe_len = (size_t)san_len;
                         if (spiffe_len < MTLS_MAX_SPIFFE_ID_LEN) {
                             memcpy(identity->spiffe_id, san_str, spiffe_len + 1);
                         } else {
-                            memcpy(identity->spiffe_id, san_str, MTLS_MAX_SPIFFE_ID_LEN - 1);
+                            /* Copy maximum allowed, ensuring we don't read beyond allocation */
+                            size_t copy_len = (spiffe_len < MTLS_MAX_SPIFFE_ID_LEN - 1) ?
+                                              spiffe_len : MTLS_MAX_SPIFFE_ID_LEN - 1;
+                            memcpy(identity->spiffe_id, san_str, copy_len);
                             identity->spiffe_id[MTLS_MAX_SPIFFE_ID_LEN - 1] = '\0';
                         }
                     }

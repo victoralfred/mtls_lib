@@ -65,10 +65,19 @@ static int tests_failed = 0;
 #define ASSERT_STR_EQ(actual, expected, msg) \
     do { \
         if (strcmp((actual), (expected)) != 0) { \
-            char buf[256]; \
-            snprintf(buf, sizeof(buf), "%s (expected '%s', got '%s')", \
-                     msg, (expected), (actual)); \
-            TEST_FAIL(buf); \
+            size_t msg_len = strlen(msg); \
+            size_t exp_len = strlen(expected); \
+            size_t act_len = strlen(actual); \
+            size_t buf_size = msg_len + exp_len + act_len + 50; /* extra for format chars */ \
+            char* buf = malloc(buf_size); \
+            if (buf) { \
+                snprintf(buf, buf_size, "%s (expected '%s', got '%s')", \
+                         msg, (expected), (actual)); \
+                TEST_FAIL(buf); \
+                free(buf); \
+            } else { \
+                TEST_FAIL(msg); \
+            } \
             return; \
         } \
     } while(0)

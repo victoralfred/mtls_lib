@@ -40,9 +40,41 @@ static void set_ssl_error(mtls_err* err, mtls_error_code code, const char* msg) 
         if (ssl_err != 0) {
             char err_buf[256];
             ERR_error_string_n(ssl_err, err_buf, sizeof(err_buf));
-            snprintf(err->message, MTLS_ERR_MESSAGE_SIZE, "%s: %s", msg, err_buf);
+
+            /* Build error message in parts to avoid truncation warnings */
+            size_t msg_len = strlen(msg);
+            size_t err_len = strlen(err_buf);
+            size_t separator_len = 2;  /* ": " */
+            size_t total_needed = msg_len + separator_len + err_len + 1;  /* +1 for null terminator */
+
+            if (total_needed <= MTLS_ERR_MESSAGE_SIZE) {
+                /* Everything fits */
+                size_t pos = 0;
+                memcpy(err->message + pos, msg, msg_len);
+                pos += msg_len;
+                memcpy(err->message + pos, ": ", separator_len);
+                pos += separator_len;
+                memcpy(err->message + pos, err_buf, err_len + 1);  /* Include null terminator */
+            } else {
+                /* Truncate message prefix to fit */
+                size_t available_for_msg = MTLS_ERR_MESSAGE_SIZE - separator_len - err_len - 1;
+                size_t msg_copy_len = (msg_len < available_for_msg) ? msg_len : available_for_msg;
+                size_t pos = 0;
+                memcpy(err->message + pos, msg, msg_copy_len);
+                pos += msg_copy_len;
+                memcpy(err->message + pos, ": ", separator_len);
+                pos += separator_len;
+                memcpy(err->message + pos, err_buf, err_len + 1);  /* Include null terminator */
+            }
         } else {
-            snprintf(err->message, MTLS_ERR_MESSAGE_SIZE, "%s", msg);
+            /* No SSL error, just copy the message */
+            size_t msg_len = strlen(msg);
+            if (msg_len >= MTLS_ERR_MESSAGE_SIZE) {
+                memcpy(err->message, msg, MTLS_ERR_MESSAGE_SIZE - 1);
+                err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';
+            } else {
+                memcpy(err->message, msg, msg_len + 1);  /* Include null terminator */
+            }
         }
     }
 }
