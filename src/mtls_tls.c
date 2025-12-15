@@ -414,7 +414,7 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
     return 0;
 }
 
-SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx_ptr) {
+SSL_CTX* mtls_tls_get_ssl_ctx(const void* tls_ctx_ptr) {
     if (!tls_ctx_ptr) {
         return NULL;
     }

@@ -190,10 +190,8 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
                         if (spiffe_len < MTLS_MAX_SPIFFE_ID_LEN) {
                             memcpy(identity->spiffe_id, san_str, spiffe_len + 1);
                         } else {
-                            /* Copy maximum allowed, ensuring we don't read beyond allocation */
-                            size_t copy_len = (spiffe_len < MTLS_MAX_SPIFFE_ID_LEN - 1) ?
-                                              spiffe_len : MTLS_MAX_SPIFFE_ID_LEN - 1;
-                            memcpy(identity->spiffe_id, san_str, copy_len);
+                            /* Copy maximum allowed, truncating to fit in buffer */
+                            memcpy(identity->spiffe_id, san_str, MTLS_MAX_SPIFFE_ID_LEN - 1);
                             identity->spiffe_id[MTLS_MAX_SPIFFE_ID_LEN - 1] = '\0';
                         }
                     }

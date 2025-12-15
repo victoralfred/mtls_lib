@@ -653,6 +653,7 @@ static bool test_edge_case_buffer_boundaries(void) {
     const mtls_conn* conn;
     conn = mtls_connect(ctx, hostname_255, &err);
     /* Should handle gracefully, may fail but shouldn't crash */
+    (void)conn;  /* Intentionally unused - testing that it doesn't crash */
 
     /* Test address string exactly at boundary (512 chars) */
     char addr_512[520];
@@ -706,11 +707,13 @@ static bool test_edge_case_port_boundaries(void) {
     /* Test port 1 (minimum valid) */
     conn = mtls_connect(ctx, "example.com:1", &err);
     /* May fail on DNS, but should accept the port */
-    
+    (void)conn;  /* Intentionally unused - testing port parsing */
+
     /* Test port 65535 (maximum valid) */
     conn = mtls_connect(ctx, "example.com:65535", &err);
     /* May fail on DNS, but should accept the port */
-    
+    (void)conn;  /* Intentionally unused - testing port parsing */
+
     /* Test port 65536 (one over max) */
     conn = mtls_connect(ctx, "example.com:65536", &err);
     TEST_ASSERT(conn == NULL, "Should reject port 65536");
@@ -747,6 +750,7 @@ static bool test_edge_case_file_path_boundaries(void) {
     const mtls_ctx* ctx;
     ctx = mtls_ctx_create(&config, &err);
     /* May fail on file access, but should accept the path length */
+    (void)ctx;  /* Intentionally unused - testing path length parsing */
 
     /* Test path one byte over boundary (4097 chars) */
     char path_4097[4098];
@@ -780,6 +784,7 @@ static bool test_edge_case_pem_boundaries(void) {
     const mtls_ctx* ctx;
     ctx = mtls_ctx_create(&config, &err);
     /* May fail on parsing, but should accept the size */
+    (void)ctx;  /* Intentionally unused - testing PEM size parsing */
 
     /* Test PEM one byte over 1MB */
     static uint8_t pem_1mb_plus[1024 * 1024 + 1];
@@ -867,10 +872,12 @@ static bool test_edge_case_ipv6_format(void) {
     /* Test IPv6 with brackets */
     conn = mtls_connect(ctx, "[::1]:8080", &err);
     /* May fail on connection, but should parse correctly */
-    
+    (void)conn;  /* Intentionally unused - testing IPv6 bracket parsing */
+
     /* Test IPv6 without brackets (invalid format) */
     conn = mtls_connect(ctx, "::1:8080", &err);
     /* Should fail on parsing */
+    (void)conn;  /* Intentionally unused - testing IPv6 format validation */
     
     /* Test IPv6 with missing closing bracket */
     conn = mtls_connect(ctx, "[::1:8080", &err);
@@ -1135,6 +1142,7 @@ static bool test_edge_case_int_max_boundary(void) {
     const mtls_ctx* ctx;
     ctx = mtls_ctx_create(&config, &err);
     /* May fail on parsing, but should handle the size */
+    (void)ctx;  /* Intentionally unused - testing INT_MAX-1 boundary */
 
     /* Test with PEM length at INT_MAX */
     config.ca_cert_pem_len = (size_t)INT_MAX;
