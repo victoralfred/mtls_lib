@@ -313,7 +313,11 @@ jobs:
           cmake .. -G "${{ matrix.generator }}" `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
             -DMTLS_BUILD_TESTS=ON `
-            -DMTLS_BUILD_EXAMPLES=ON
+            -DMTLS_BUILD_EXAMPLES=ON `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR" `
+            -DOPENSSL_CRYPTO_LIBRARY="$env:OPENSSL_CRYPTO_LIBRARY" `
+            -DOPENSSL_SSL_LIBRARY="$env:OPENSSL_SSL_LIBRARY"
         shell: pwsh
 
       - name: Build (MSVC)
