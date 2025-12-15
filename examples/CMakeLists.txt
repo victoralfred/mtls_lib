@@ -17,11 +17,12 @@ mtls_add_example(advanced_client)
 mtls_add_example(echo_server)
 mtls_add_example(kill_switch_demo)
 mtls_add_example(cert_reload_demo)
-mtls_add_example(observability_demo)
 
-# Observability demo needs pthread for metrics tracking
+# Observability demo requires pthread (Unix only)
 if(UNIX)
+    mtls_add_example(observability_demo)
     target_link_libraries(observability_demo PRIVATE pthread)
+    message(STATUS "Building 7 example programs")
+else()
+    message(STATUS "Building 6 example programs (observability_demo excluded on Windows)")
 endif()
-
-message(STATUS "Building 7 example programs")
