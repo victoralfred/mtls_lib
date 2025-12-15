@@ -61,6 +61,7 @@ static void print_kill_switch_status(mtls_ctx* ctx) {
     printf("\n");
 }
 
+#ifndef _WIN32
 static void signal_handler_enable_kill_switch(int signum) {
     (void)signum;
     if (global_ctx) {
@@ -82,6 +83,7 @@ static void signal_handler_disable_kill_switch(int signum) {
         printf("[RECOVERY] Server is now accepting new connections.\n\n");
     }
 }
+#endif
 
 static void signal_handler_shutdown(int signum) {
     (void)signum;

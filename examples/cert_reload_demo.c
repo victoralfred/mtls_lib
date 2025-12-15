@@ -56,11 +56,13 @@ static volatile int keep_running = 1;
 static volatile int reload_requested = 0;
 static mtls_ctx* global_ctx = NULL;
 
+#ifndef _WIN32
 static void signal_handler_reload(int signum) {
     (void)signum;
     printf("\n[SIGNAL] Received SIGUSR1 - Certificate reload requested\n");
     reload_requested = 1;
 }
+#endif
 
 static void signal_handler_shutdown(int signum) {
     (void)signum;

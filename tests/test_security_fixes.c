@@ -649,10 +649,11 @@ static bool test_edge_case_buffer_boundaries(void) {
     hostname_255[258] = '8';
     hostname_255[259] = '0';
     hostname_255[260] = '\0';
-    
-    mtls_conn* conn = mtls_connect(ctx, hostname_255, &err);
+
+    mtls_conn* conn;
+    conn = mtls_connect(ctx, hostname_255, &err);
     /* Should handle gracefully, may fail but shouldn't crash */
-    
+
     /* Test address string exactly at boundary (512 chars) */
     char addr_512[520];
     memset(addr_512, 'a', 512);
@@ -662,7 +663,7 @@ static bool test_edge_case_buffer_boundaries(void) {
     addr_512[515] = '8';
     addr_512[516] = '0';
     addr_512[517] = '\0';
-    
+
     conn = mtls_connect(ctx, addr_512, &err);
     TEST_ASSERT(conn == NULL, "Should reject address at boundary");
     
@@ -742,15 +743,16 @@ static bool test_edge_case_file_path_boundaries(void) {
     
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    mtls_ctx* ctx;
+    ctx = mtls_ctx_create(&config, &err);
     /* May fail on file access, but should accept the path length */
-    
+
     /* Test path one byte over boundary (4097 chars) */
     char path_4097[4098];
     memset(path_4097, 'a', 4097);
     path_4097[4097] = '\0';
-    
+
     config.ca_cert_path = path_4097;
     ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject path over 4096 bytes");
@@ -771,20 +773,21 @@ static bool test_edge_case_pem_boundaries(void) {
     
     config.ca_cert_pem = pem_1mb;
     config.ca_cert_pem_len = sizeof(pem_1mb);
-    
+
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    mtls_ctx* ctx;
+    ctx = mtls_ctx_create(&config, &err);
     /* May fail on parsing, but should accept the size */
-    
+
     /* Test PEM one byte over 1MB */
     static uint8_t pem_1mb_plus[1024 * 1024 + 1];
     memset(pem_1mb_plus, 'A', sizeof(pem_1mb_plus));
-    
+
     config.ca_cert_pem = pem_1mb_plus;
     config.ca_cert_pem_len = sizeof(pem_1mb_plus);
-    
+
     ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject PEM over 1MB");
     
@@ -1133,13 +1136,14 @@ static bool test_edge_case_int_max_boundary(void) {
     /* Test with PEM length just under INT_MAX */
     config.ca_cert_pem = small_pem;
     config.ca_cert_pem_len = (size_t)INT_MAX - 1;
-    
+
     mtls_err err;
     mtls_err_init(&err);
-    
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+
+    mtls_ctx* ctx;
+    ctx = mtls_ctx_create(&config, &err);
     /* May fail on parsing, but should handle the size */
-    
+
     /* Test with PEM length at INT_MAX */
     config.ca_cert_pem_len = (size_t)INT_MAX;
     ctx = mtls_ctx_create(&config, &err);
