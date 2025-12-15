@@ -439,25 +439,23 @@ int platform_consttime_strcmp(const char* a, const char* b) {
     const volatile unsigned char* pa = (const volatile unsigned char*)a;
     const volatile unsigned char* pb = (const volatile unsigned char*)b;
     unsigned char diff = 0;
-    size_t i = 0;
 
-    /* Compare characters until we reach the end of both strings.
-     * We've already verified lengths are within bounds, so this is safe. */
-    while (1) {
-        unsigned char ca = pa[i];
-        unsigned char cb = pb[i];
+    /* Determine the maximum length we need to compare (including null terminator).
+     * We iterate up to max_len+1 to compare the null terminators as well. */
+    size_t max_len = (len_a > len_b) ? len_a : len_b;
+
+    /* Constant-time comparison: iterate a fixed number of times based on the
+     * longer string. For shorter string, we virtually pad with zeros.
+     * This prevents timing attacks based on string length. */
+    for (size_t i = 0; i <= max_len; i++) {
+        /* Read character from string A, or 0 if past its end */
+        unsigned char ca = (i <= len_a) ? pa[i] : 0;
+
+        /* Read character from string B, or 0 if past its end */
+        unsigned char cb = (i <= len_b) ? pb[i] : 0;
 
         /* XOR the characters to accumulate differences */
         diff |= (ca ^ cb);
-
-        /* If both strings have ended, break */
-        if (ca == 0 && cb == 0) {
-            break;
-        }
-
-        /* If only one string has ended, the diff will already be non-zero,
-         * but we continue to avoid timing leaks about string length */
-        i++;
     }
 
     return diff;
