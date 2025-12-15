@@ -262,22 +262,38 @@ jobs:
           }
 
           # Find the actual library files (both .lib for MSVC and .a for MinGW)
+          Write-Host "`nSearching for library files..."
+          $allLibs = Get-ChildItem "$opensslRoot" -Recurse -Include "*.lib","*.a","*.dll.a" -ErrorAction SilentlyContinue
+          Write-Host "All library files found:"
+          $allLibs | ForEach-Object { Write-Host "  $($_.FullName)" }
+
           $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib","crypto*.lib","libcrypto*.a","libcrypto*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
           $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib","ssl*.lib","libssl*.a","libssl*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
 
           if ($cryptoLib) {
-            Write-Host "Found crypto library: $($cryptoLib.FullName)"
+            Write-Host "`nFound crypto library: $($cryptoLib.FullName)"
             echo "OPENSSL_CRYPTO_LIBRARY=$($cryptoLib.FullName)" >> $env:GITHUB_ENV
+          } else {
+            Write-Error "CRITICAL: Could not find crypto library!"
           }
 
           if ($sslLib) {
             Write-Host "Found SSL library: $($sslLib.FullName)"
             echo "OPENSSL_SSL_LIBRARY=$($sslLib.FullName)" >> $env:GITHUB_ENV
+          } else {
+            Write-Error "CRITICAL: Could not find SSL library!"
           }
 
           # Set other OpenSSL paths
           echo "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=$opensslRoot\include" >> $env:GITHUB_ENV
+
+          # Verify what was set
+          Write-Host "`nEnvironment variables that will be passed to CMake:"
+          Write-Host "OPENSSL_ROOT_DIR=$opensslRoot"
+          Write-Host "OPENSSL_INCLUDE_DIR=$opensslRoot\include"
+          if ($cryptoLib) { Write-Host "OPENSSL_CRYPTO_LIBRARY=$($cryptoLib.FullName)" }
+          if ($sslLib) { Write-Host "OPENSSL_SSL_LIBRARY=$($sslLib.FullName)" }
         shell: pwsh
 
       - name: Install dependencies (MSVC)
@@ -294,6 +310,13 @@ jobs:
       - name: Configure CMake (MSVC)
         if: matrix.generator == 'Visual Studio 17 2022'
         run: |
+          # Debug: Verify environment variables are available
+          Write-Host "Environment variables in Configure CMake step:"
+          Write-Host "OPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR"
+          Write-Host "OPENSSL_INCLUDE_DIR=$env:OPENSSL_INCLUDE_DIR"
+          Write-Host "OPENSSL_CRYPTO_LIBRARY=$env:OPENSSL_CRYPTO_LIBRARY"
+          Write-Host "OPENSSL_SSL_LIBRARY=$env:OPENSSL_SSL_LIBRARY"
+
           New-Item -ItemType Directory -Force -Path build | Out-Null
           Set-Location build
           cmake .. -G "${{ matrix.generator }}" -A x64 `
@@ -308,6 +331,13 @@ jobs:
       - name: Configure CMake (MinGW)
         if: matrix.generator == 'MinGW Makefiles'
         run: |
+          # Debug: Verify environment variables are available
+          Write-Host "Environment variables in Configure CMake step:"
+          Write-Host "OPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR"
+          Write-Host "OPENSSL_INCLUDE_DIR=$env:OPENSSL_INCLUDE_DIR"
+          Write-Host "OPENSSL_CRYPTO_LIBRARY=$env:OPENSSL_CRYPTO_LIBRARY"
+          Write-Host "OPENSSL_SSL_LIBRARY=$env:OPENSSL_SSL_LIBRARY"
+
           New-Item -ItemType Directory -Force -Path build | Out-Null
           Set-Location build
           cmake .. -G "${{ matrix.generator }}" `
