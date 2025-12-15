@@ -12,19 +12,40 @@
  *   ./kill_switch_demo 0.0.0.0:8443 ca.pem server.pem server.key
  *
  * Control:
- *   - SIGUSR1: Enable kill switch (block new connections)
- *   - SIGUSR2: Disable kill switch (allow new connections)
+ *   - SIGUSR1: Enable kill switch (block new connections) - POSIX only
+ *   - SIGUSR2: Disable kill switch (allow new connections) - POSIX only
  *   - SIGINT/SIGTERM: Graceful shutdown
+ *
+ * Note: On Windows, SIGUSR1/SIGUSR2 are not available. Use Ctrl+C to stop.
  */
 
+#ifndef _WIN32
 #define _DEFAULT_SOURCE
+#endif
 
 #include "mtls/mtls.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-#include <unistd.h>
+
+/* Platform-specific includes and definitions */
+#ifdef _WIN32
+    #include <windows.h>
+    #define sleep_ms(ms) Sleep(ms)
+    #define get_process_id() GetCurrentProcessId()
+    /* Windows doesn't have SIGUSR1/SIGUSR2 */
+    #ifndef SIGUSR1
+        #define SIGUSR1 -1
+    #endif
+    #ifndef SIGUSR2
+        #define SIGUSR2 -1
+    #endif
+#else
+    #include <unistd.h>
+    #define sleep_ms(ms) usleep((ms) * 1000)
+    #define get_process_id() getpid()
+#endif
 
 #define BUFFER_SIZE 4096
 
@@ -159,14 +180,16 @@ int main(int argc, char* argv[]) {
     /* Setup signal handlers */
     signal(SIGINT, signal_handler_shutdown);
     signal(SIGTERM, signal_handler_shutdown);
+#ifndef _WIN32
     signal(SIGUSR1, signal_handler_enable_kill_switch);
     signal(SIGUSR2, signal_handler_disable_kill_switch);
+#endif
 
     printf("═══════════════════════════════════════════════════════\n");
     printf("  mTLS Kill Switch Demo\n");
     printf("═══════════════════════════════════════════════════════\n");
     printf("  Library: %s\n", mtls_version());
-    printf("  PID: %d\n", getpid());
+    printf("  PID: %lu\n", (unsigned long)get_process_id());
     printf("  Binding: %s\n", bind_addr);
     printf("═══════════════════════════════════════════════════════\n");
 
@@ -212,10 +235,15 @@ int main(int argc, char* argv[]) {
 
     printf("✓ Listening on %s\n", bind_addr);
     printf("\n");
+#ifndef _WIN32
     printf("Control signals:\n");
-    printf("  kill -USR1 %d  # Enable kill switch\n", getpid());
-    printf("  kill -USR2 %d  # Disable kill switch\n", getpid());
-    printf("  kill -INT %d   # Shutdown\n", getpid());
+    printf("  kill -USR1 %lu  # Enable kill switch\n", (unsigned long)get_process_id());
+    printf("  kill -USR2 %lu  # Disable kill switch\n", (unsigned long)get_process_id());
+    printf("  kill -INT %lu   # Shutdown\n", (unsigned long)get_process_id());
+#else
+    printf("Note: Kill switch signals not available on Windows\n");
+    printf("Shutdown: Press Ctrl+C\n");
+#endif
     printf("\n");
     printf("Waiting for connections...\n");
 
@@ -230,10 +258,14 @@ int main(int argc, char* argv[]) {
             /* Check if failure was due to kill switch */
             if (err.code == MTLS_ERR_KILL_SWITCH_ENABLED) {
                 fprintf(stderr, "\n[BLOCKED] Connection rejected - Kill switch is ENABLED\n");
+#ifndef _WIN32
                 fprintf(stderr, "          Send SIGUSR2 to re-enable connections\n\n");
+#else
+                fprintf(stderr, "          Kill switch is active\n\n");
+#endif
 
                 /* Brief sleep to avoid tight loop */
-                usleep(100000); /* 100ms */
+                sleep_ms(100); /* 100ms */
                 continue;
             }
 

@@ -13,24 +13,42 @@
  *   ./cert_reload_demo 0.0.0.0:8443 ca.pem server.pem server.key
  *
  * Control:
- *   - SIGUSR1: Reload certificates from disk
+ *   - SIGUSR1: Reload certificates from disk (POSIX only)
  *   - SIGINT/SIGTERM: Graceful shutdown
  *
  * Certificate Rotation:
  *   1. Replace certificate files on disk (atomic rename recommended)
- *   2. Send SIGUSR1 signal: kill -USR1 <pid>
+ *   2. Send SIGUSR1 signal: kill -USR1 <pid> (POSIX only)
  *   3. Server reloads without dropping connections
+ *
+ * Note: On Windows, SIGUSR1 is not available. Use Ctrl+C to stop.
  */
 
+#ifndef _WIN32
 #define _DEFAULT_SOURCE
+#endif
 
 #include "mtls/mtls.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-#include <unistd.h>
 #include <time.h>
+
+/* Platform-specific includes and definitions */
+#ifdef _WIN32
+    #include <windows.h>
+    #define sleep_ms(ms) Sleep(ms)
+    #define get_process_id() GetCurrentProcessId()
+    /* Windows doesn't have SIGUSR1 */
+    #ifndef SIGUSR1
+        #define SIGUSR1 -1
+    #endif
+#else
+    #include <unistd.h>
+    #define sleep_ms(ms) usleep((ms) * 1000)
+    #define get_process_id() getpid()
+#endif
 
 #define BUFFER_SIZE 4096
 
@@ -196,13 +214,15 @@ int main(int argc, char* argv[]) {
     /* Setup signal handlers */
     signal(SIGINT, signal_handler_shutdown);
     signal(SIGTERM, signal_handler_shutdown);
+#ifndef _WIN32
     signal(SIGUSR1, signal_handler_reload);
+#endif
 
     printf("═══════════════════════════════════════════════════════\n");
     printf("  mTLS Certificate Reload Demo\n");
     printf("═══════════════════════════════════════════════════════\n");
     printf("  Library: %s\n", mtls_version());
-    printf("  PID: %d\n", getpid());
+    printf("  PID: %lu\n", (unsigned long)get_process_id());
     printf("  Binding: %s\n", bind_addr);
     printf("═══════════════════════════════════════════════════════\n");
     printf("\n");
@@ -246,12 +266,17 @@ int main(int argc, char* argv[]) {
 
     printf("✓ Listening on %s\n", bind_addr);
     printf("\n");
+#ifndef _WIN32
     printf("Hot reload instructions:\n");
     printf("  1. Update certificates: cp new-server.pem %s\n", server_cert);
-    printf("  2. Trigger reload: kill -USR1 %d\n", getpid());
+    printf("  2. Trigger reload: kill -USR1 %lu\n", (unsigned long)get_process_id());
     printf("  3. Verify: New connections use updated cert\n");
     printf("\n");
-    printf("Shutdown: kill -INT %d\n", getpid());
+    printf("Shutdown: kill -INT %lu\n", (unsigned long)get_process_id());
+#else
+    printf("Note: Certificate reload via signal not available on Windows\n");
+    printf("Shutdown: Press Ctrl+C\n");
+#endif
     printf("\n");
     printf("Waiting for connections...\n");
 
@@ -286,7 +311,7 @@ int main(int argc, char* argv[]) {
             if (err.code != MTLS_ERR_UNKNOWN) {
                 fprintf(stderr, "✗ Accept failed: %s\n", err.message);
             }
-            usleep(100000); /* 100ms to avoid tight loop */
+            sleep_ms(100); /* 100ms to avoid tight loop */
             continue;
         }
 
