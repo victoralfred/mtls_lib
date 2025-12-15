@@ -30,10 +30,15 @@ void mtls_err_set(mtls_err* err, mtls_error_code code, const char* fmt, ...) {
         va_list args;
         va_start(args, fmt);
         /* Suppress format-nonliteral warning: fmt is intentionally a parameter for variadic function */
+        /* Note: This warning only exists in GCC/Clang, not MSVC */
+#if defined(__GNUC__) || defined(__clang__)
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
         vsnprintf(err->message, MTLS_ERR_MESSAGE_SIZE, fmt, args);
+#if defined(__GNUC__) || defined(__clang__)
         #pragma GCC diagnostic pop
+#endif
         va_end(args);
         err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';  /* Ensure null termination */
     } else {
@@ -58,10 +63,15 @@ void mtls_err_set_internal(mtls_err* err, mtls_error_code code,
         va_list args;
         va_start(args, fmt);
         /* Suppress format-nonliteral warning: fmt is intentionally a parameter for variadic function */
+        /* Note: This warning only exists in GCC/Clang, not MSVC */
+#if defined(__GNUC__) || defined(__clang__)
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
         vsnprintf(err->message, MTLS_ERR_MESSAGE_SIZE, fmt, args);
+#if defined(__GNUC__) || defined(__clang__)
         #pragma GCC diagnostic pop
+#endif
         va_end(args);
         err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';  /* Ensure null termination */
     } else {
