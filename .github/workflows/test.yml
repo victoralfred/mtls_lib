@@ -229,12 +229,55 @@ jobs:
           choco install openssl -y
           # Wait for installation to complete
           Start-Sleep -Seconds 5
-          # Set OpenSSL environment variables for CMake
-          $opensslPath = "C:\Program Files\OpenSSL-Win64"
-          echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=$opensslPath\include" >> $env:GITHUB_ENV
-          echo "OPENSSL_CRYPTO_LIBRARY=$opensslPath\lib\libcrypto.lib" >> $env:GITHUB_ENV
-          echo "OPENSSL_SSL_LIBRARY=$opensslPath\lib\libssl.lib" >> $env:GITHUB_ENV
+
+          # Find OpenSSL installation
+          $possiblePaths = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\OpenSSL-Win64",
+            "C:\OpenSSL"
+          )
+
+          $opensslRoot = $null
+          foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+              Write-Host "Found OpenSSL at: $path"
+              $opensslRoot = $path
+              break
+            }
+          }
+
+          if (-not $opensslRoot) {
+            Write-Error "OpenSSL not found in any expected location"
+            exit 1
+          }
+
+          # List contents for debugging
+          Write-Host "`nOpenSSL directory structure:"
+          Get-ChildItem $opensslRoot | Format-Table Name
+
+          if (Test-Path "$opensslRoot\lib") {
+            Write-Host "`nLib directory contents:"
+            Get-ChildItem "$opensslRoot\lib" -Include *.lib,*.a -Recurse | Select-Object FullName
+          }
+
+          # Find the actual library files
+          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib","crypto*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib","ssl*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if ($cryptoLib) {
+            Write-Host "Found crypto library: $($cryptoLib.FullName)"
+            echo "OPENSSL_CRYPTO_LIBRARY=$($cryptoLib.FullName)" >> $env:GITHUB_ENV
+          }
+
+          if ($sslLib) {
+            Write-Host "Found SSL library: $($sslLib.FullName)"
+            echo "OPENSSL_SSL_LIBRARY=$($sslLib.FullName)" >> $env:GITHUB_ENV
+          }
+
+          # Set other OpenSSL paths
+          echo "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$opensslRoot\include" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Install dependencies (MSVC)
