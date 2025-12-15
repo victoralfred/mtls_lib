@@ -18,8 +18,6 @@
 #if defined(_WIN32)
     #include <BaseTsd.h>
     typedef SSIZE_T ssize_t;
-#else
-    #include <sys/types.h>
 #endif
 
 #ifdef __cplusplus
@@ -52,10 +50,14 @@ extern "C" {
 
 /*
  * Version information
+ * Provided as both macros (for preprocessor use) and enum (for type safety)
  */
-#define MTLS_VERSION_MAJOR 0
-#define MTLS_VERSION_MINOR 1
-#define MTLS_VERSION_PATCH 0
+enum {
+    MTLS_VERSION_MAJOR = 0,
+    MTLS_VERSION_MINOR = 1,
+    MTLS_VERSION_PATCH = 0
+};
+
 #define MTLS_VERSION_STRING "0.1.0"
 
 /*
@@ -104,20 +106,22 @@ typedef struct mtls_listener mtls_listener;
 
 /*
  * Peer identity information
+ * Size limits for identity fields
  */
-#define MTLS_MAX_COMMON_NAME_LEN 256
-#define MTLS_MAX_SPIFFE_ID_LEN 512
-#define MTLS_MAX_SAN_LEN 256
-
-/*
- * Identity comparison limits
- * Enforce a hard upper bound on identity length to prevent:
- * - Resource exhaustion attacks
- * - Comparison bypass attacks via oversized strings
- * - Timing analysis on unbounded comparisons
- * Identities exceeding this limit are rejected with MTLS_ERR_IDENTITY_TOO_LONG
- */
-#define MTLS_MAX_IDENTITY_LEN 10000
+enum {
+    MTLS_MAX_COMMON_NAME_LEN = 256,
+    MTLS_MAX_SPIFFE_ID_LEN = 512,
+    MTLS_MAX_SAN_LEN = 256,
+    /*
+     * Identity comparison limits
+     * Enforce a hard upper bound on identity length to prevent:
+     * - Resource exhaustion attacks
+     * - Comparison bypass attacks via oversized strings
+     * - Timing analysis on unbounded comparisons
+     * Identities exceeding this limit are rejected with MTLS_ERR_IDENTITY_TOO_LONG
+     */
+    MTLS_MAX_IDENTITY_LEN = 10000
+};
 
 typedef struct mtls_peer_identity {
     char common_name[MTLS_MAX_COMMON_NAME_LEN];

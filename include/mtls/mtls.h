@@ -9,6 +9,13 @@
 #ifndef MTLS_H
 #define MTLS_H
 
+#include <stdint.h>
+#if defined(_WIN32)
+    #include <BaseTsd.h>
+#else
+    #include <sys/types.h>
+#endif
+
 #include "mtls_types.h"
 #include "mtls_error.h"
 #include "mtls_config.h"

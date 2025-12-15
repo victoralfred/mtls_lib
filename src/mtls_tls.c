@@ -16,6 +16,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
 
@@ -294,7 +295,7 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
 
         if (config->ca_cert_pem) {
             /* Validate PEM data length */
-            if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > 1024 * 1024) {
+            if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > (size_t)(1024 * 1024)) {
                 MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate PEM length invalid (max 1MB)");
                 X509_STORE_free(new_store);
                 return -1;
@@ -343,7 +344,7 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
     /* Reload client/server certificate if provided */
     if (config->cert_pem) {
         /* Validate PEM data length */
-        if (config->cert_pem_len == 0 || config->cert_pem_len > 1024 * 1024) {
+        if (config->cert_pem_len == 0 || config->cert_pem_len > (size_t)(1024 * 1024)) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate PEM length invalid (max 1MB)");
             return -1;
         }
@@ -358,7 +359,9 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
 
         if (!cert || !SSL_CTX_use_certificate(ssl_ctx, cert)) {
             set_ssl_error(err, MTLS_ERR_CERT_PARSE_FAILED, "Failed to reload certificate from memory");
-            if (cert) X509_free(cert);
+            if (cert) {
+                X509_free(cert);
+            }
             return -1;
         }
         X509_free(cert);
@@ -372,7 +375,7 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
     /* Reload private key if provided */
     if (config->key_pem) {
         /* Validate PEM data length */
-        if (config->key_pem_len == 0 || config->key_pem_len > 1024 * 1024) {
+        if (config->key_pem_len == 0 || config->key_pem_len > (size_t)(1024 * 1024)) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key PEM length invalid (max 1MB)");
             return -1;
         }
@@ -387,7 +390,9 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
 
         if (!key || !SSL_CTX_use_PrivateKey(ssl_ctx, key)) {
             set_ssl_error(err, MTLS_ERR_KEY_PARSE_FAILED, "Failed to reload private key from memory");
-            if (key) EVP_PKEY_free(key);
+            if (key) {
+                EVP_PKEY_free(key);
+            }
             return -1;
         }
         EVP_PKEY_free(key);
@@ -410,7 +415,9 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
 }
 
 SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx_ptr) {
-    if (!tls_ctx_ptr) return NULL;
+    if (!tls_ctx_ptr) {
+        return NULL;
+    }
     const struct mtls_tls_ctx_internal* tls_ctx = (const struct mtls_tls_ctx_internal*)tls_ctx_ptr;
     return tls_ctx->ssl_ctx;
 }

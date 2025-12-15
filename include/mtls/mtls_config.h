@@ -9,11 +9,17 @@
 #ifndef MTLS_CONFIG_H
 #define MTLS_CONFIG_H
 
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include "mtls_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Forward declarations */
+typedef struct mtls_err mtls_err;
 
 /*
  * Maximum number of allowed SANs
