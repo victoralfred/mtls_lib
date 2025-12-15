@@ -143,18 +143,15 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         const size_t prefix_suffix_len = 6 + 14 + strlen(status) + 1 + 1;  /* 6="Echo: ", 14="\nKill switch: ", 1="\n", 1=null */
         const size_t max_echo_len = sizeof(response) - prefix_suffix_len;
 
-        /* Create truncated echo buffer */
-        char echo_buf[max_echo_len + 1];
-        size_t copy_len = strlen(buffer);
-        if (copy_len > max_echo_len) {
-            copy_len = max_echo_len;
+        /* Truncate buffer in-place if needed (MSVC doesn't support VLAs) */
+        size_t buffer_len = strlen(buffer);
+        if (buffer_len > max_echo_len) {
+            buffer[max_echo_len] = '\0';
         }
-        memcpy(echo_buf, buffer, copy_len);
-        echo_buf[copy_len] = '\0';
 
         snprintf(response, sizeof(response),
                  "Echo: %s\nKill switch: %s\n",
-                 echo_buf,
+                 buffer,
                  status);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);

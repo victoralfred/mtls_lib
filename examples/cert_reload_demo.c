@@ -94,7 +94,13 @@ static void print_cert_info(mtls_ctx* ctx) {
     (void)ctx; /* Suppress unused warning */
 
     time_t now = time(NULL);
+#ifdef _WIN32
+    char time_buf[26];
+    ctime_s(time_buf, sizeof(time_buf), &now);
+    printf("  Last check: %s", time_buf);
+#else
     printf("  Last check: %s", ctime(&now));
+#endif
     printf("═══════════════════════════════════════════════════════\n");
     printf("\n");
 }
@@ -170,25 +176,31 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         /* Send response (limit echo to avoid truncation) */
         time_t now = time(NULL);
         char response[BUFFER_SIZE];
-        const char* time_str = ctime(&now);
+
+        /* Get time string (ctime_s on Windows, ctime on POSIX) */
+        const char* time_str;
+#ifdef _WIN32
+        char time_buf[26];
+        ctime_s(time_buf, sizeof(time_buf), &now);
+        time_str = time_buf;
+#else
+        time_str = ctime(&now);
+#endif
 
         /* Calculate safe echo length: "Echo from cert_reload_demo: " + "\nServer time: " + time_str + null */
         /* ctime() always returns 26 characters including newline */
         const size_t prefix_suffix_len = 29 + 14 + 26 + 1;  /* 29="Echo from cert_reload_demo: ", 14="\nServer time: ", 26=time_str, 1=null */
         const size_t max_echo_len = sizeof(response) - prefix_suffix_len;
 
-        /* Create truncated echo buffer */
-        char echo_buf[max_echo_len + 1];
-        size_t copy_len = strlen(buffer);
-        if (copy_len > max_echo_len) {
-            copy_len = max_echo_len;
+        /* Truncate buffer in-place if needed (MSVC doesn't support VLAs) */
+        size_t buffer_len = strlen(buffer);
+        if (buffer_len > max_echo_len) {
+            buffer[max_echo_len] = '\0';
         }
-        memcpy(echo_buf, buffer, copy_len);
-        echo_buf[copy_len] = '\0';
 
         snprintf(response, sizeof(response),
                  "Echo from cert_reload_demo: %s\nServer time: %s",
-                 echo_buf, time_str);
+                 buffer, time_str);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);
         if (sent > 0) {
