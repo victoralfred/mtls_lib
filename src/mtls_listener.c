@@ -151,6 +151,9 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     socklen_t local_len = sizeof(conn->local_addr.addr.ss);
     if (getsockname(conn->sock, &conn->local_addr.addr.sa, &local_len) == 0) {
         conn->local_addr.len = local_len;
+    } else {
+        /* Failed to get local address, but not critical - continue */
+        conn->local_addr.len = 0;
     }
 
     /* Validate peer identity against allowed SANs if configured */

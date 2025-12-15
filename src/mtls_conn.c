@@ -7,6 +7,7 @@
 #include "internal/mtls_internal.h"
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <openssl/x509.h>
 #include <openssl/err.h>
 
@@ -98,8 +99,8 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
         if (colon) {
             size_t hostname_len = colon - addr;
             char hostname[256];
-            /* Fix: Use <= instead of < to prevent buffer overflow when hostname_len == 255 */
-            if (hostname_len > 0 && hostname_len < sizeof(hostname)) {
+            /* Ensure space for null terminator */
+            if (hostname_len > 0 && hostname_len <= sizeof(hostname) - 1) {
                 memcpy(hostname, addr, hostname_len);
                 hostname[hostname_len] = '\0';
                 
@@ -123,7 +124,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
                 
                 /* Use SSL_set1_host for hostname verification (OpenSSL 1.0.2+) */
                 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-                if (SSL_set1_host(conn->ssl, hostname) != 0) {
+                if (SSL_set1_host(conn->ssl, hostname) == 0) {
                     MTLS_ERR_SET(err, MTLS_ERR_HOSTNAME_MISMATCH,
                                  "Failed to set hostname for verification: %s", hostname);
                     SSL_free(conn->ssl);
@@ -172,6 +173,9 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     socklen_t local_len = sizeof(conn->local_addr.addr.ss);
     if (getsockname(conn->sock, &conn->local_addr.addr.sa, &local_len) == 0) {
         conn->local_addr.len = local_len;
+    } else {
+        /* Failed to get local address, but not critical - continue */
+        conn->local_addr.len = 0;
     }
 
     /* Validate peer identity against allowed SANs if configured */
@@ -226,10 +230,6 @@ ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err) {
     }
 
     /* Validate buffer length to prevent integer overflow and DoS */
-    if (len == 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Read length cannot be zero");
-        return -1;
-    }
     if (len > INT_MAX) {
         len = INT_MAX;
     }
@@ -301,6 +301,15 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
             }
             return (total_written > 0) ? total_written : -1;
         }
+        /* Check for integer overflow before adding */
+        /* SSIZE_MAX may not be defined on all platforms, use SIZE_MAX/2 as safe limit */
+        #ifndef SSIZE_MAX
+        #define SSIZE_MAX ((ssize_t)(SIZE_MAX / 2))
+        #endif
+        if (total_written > SSIZE_MAX - (ssize_t)n) {
+            MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write would overflow ssize_t");
+            return (total_written > 0) ? total_written : -1;
+        }
         total_written += n;
     }
 
@@ -320,7 +329,9 @@ void mtls_close(mtls_conn* conn) {
     }
 
     if (conn->ssl) {
-        SSL_shutdown(conn->ssl);
+        /* Attempt graceful shutdown, but don't fail if it doesn't work */
+        int shutdown_ret = SSL_shutdown(conn->ssl);
+        (void)shutdown_ret;  /* Ignore return value - connection is closing anyway */
         SSL_free(conn->ssl);
         conn->ssl = NULL;
     }

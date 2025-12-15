@@ -47,6 +47,9 @@ mtls_add_test(test_phase4_features)
 # Fuzz test for oversized SAN handling
 mtls_add_test(fuzz_oversized_sans)
 
+# Memory safety and bug fix validation tests
+mtls_add_test(test_memory_safety)
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

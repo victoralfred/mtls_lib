@@ -34,8 +34,13 @@ static time_t asn1_time_to_time_t(const ASN1_TIME* asn1_time) {
     /* For older OpenSSL, manually parse ASN1_TIME */
     /* This is a simplified implementation - production should use ASN1_TIME_to_tm */
     struct tm tm_time = {0};
-    const char* str = (const char*)asn1_time->data;
-    size_t len = strlen(str);
+    /* Use ASN1_STRING_length instead of strlen to avoid buffer overflow */
+    int asn1_len = ASN1_STRING_length(asn1_time);
+    if (asn1_len <= 0 || asn1_len > 32) {
+        return 0;  /* Invalid length */
+    }
+    const char* str = (const char*)ASN1_STRING_data(asn1_time);
+    size_t len = (size_t)asn1_len;
 
     if (asn1_time->type == V_ASN1_UTCTIME) {
         /* YYMMDDHHMMSSZ format */
@@ -156,6 +161,11 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
                 }
 
                 if (san_len > 0 && san_len <= MTLS_MAX_SAN_LEN) {
+                    /* Safety check: ensure we don't exceed allocated array size */
+                    if (identity->san_count >= (size_t)san_count) {
+                        /* This should never happen, but be defensive */
+                        break;
+                    }
                     char* san_str = malloc((size_t)san_len + 1);
                     if (!san_str) {
                         /* Cleanup previously allocated strings */
