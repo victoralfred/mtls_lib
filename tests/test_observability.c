@@ -253,6 +253,7 @@ static void test_client_connection_events(void) {
     /* Verify we got CONNECT_START and CONNECT_FAILURE events */
     int start_idx = find_event(&client_tracker, MTLS_EVENT_CONNECT_START, 0);
     assert(start_idx >= 0);
+    (void)start_idx;  /* Used in assert and printf */
     printf("[PASS] CONNECT_START event found at index %d\n", start_idx);
 
     int failure_idx = find_event(&client_tracker, MTLS_EVENT_CONNECT_FAILURE, 0);
@@ -261,6 +262,7 @@ static void test_client_connection_events(void) {
 
     /* Verify duration is recorded */
     assert(client_tracker.events[failure_idx].duration_us > 0);
+    (void)failure_idx;  /* Used in assert and printf */
     printf("[PASS] Duration recorded: %lu us\n",
            (unsigned long)client_tracker.events[failure_idx].duration_us);
 
@@ -382,6 +384,7 @@ static void test_event_timing(void) {
     int failure_idx = find_event(&tracker, MTLS_EVENT_CONNECT_FAILURE, 0);
     if (failure_idx >= 0) {
         assert(tracker.events[failure_idx].duration_us > 0);
+        (void)failure_idx;  /* Used in assert */
         printf("[PASS] CONNECT_FAILURE has duration: %lu us\n",
                (unsigned long)tracker.events[failure_idx].duration_us);
     }
@@ -434,6 +437,7 @@ static void test_multiple_connections(void) {
         }
     }
     assert(count == 3);
+    (void)count;  /* Used in assert, suppress warning when NDEBUG is defined */
     printf("[PASS] 3 CONNECT_START events recorded\n");
 
     /* Count CONNECT_FAILURE events (should be 3) */
@@ -444,6 +448,7 @@ static void test_multiple_connections(void) {
         }
     }
     assert(count == 3);
+    (void)count;  /* Used in assert, suppress warning when NDEBUG is defined */
     printf("[PASS] 3 CONNECT_FAILURE events recorded\n");
 
     event_tracker_free(&tracker);
