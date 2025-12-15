@@ -65,11 +65,7 @@ void mtls_tls_ctx_free(void* tls_ctx);
 int mtls_tls_ctx_reload_certs(void* tls_ctx, const mtls_config* config, mtls_err* err);
 SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx);
 
-/* Internal helper for SAN validation (not in public API) */
-bool mtls_validate_peer_sans(const mtls_peer_identity* identity,
-                              const char** allowed_sans,
-                              size_t allowed_sans_count);
-
+/* Note: mtls_validate_peer_sans is now in public API (mtls.h) */
 /* Note: Other identity functions are declared in public API (mtls.h) */
 
 #ifdef __cplusplus

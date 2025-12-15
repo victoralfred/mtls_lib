@@ -173,8 +173,8 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
                     san_str[san_len] = '\0';
                     identity->sans[identity->san_count++] = san_str;
 
-                    /* Check for SPIFFE ID */
-                    if (gen->type == GEN_URI && strncmp(san_str, "spiffe://", 9) == 0) {
+                    /* Check for SPIFFE ID using constant-time comparison */
+                    if (gen->type == GEN_URI && platform_consttime_memcmp(san_str, "spiffe://", 9) == 0) {
                         /* Use san_len (actual allocated size) instead of strlen to avoid warnings */
                         size_t spiffe_len = (size_t)san_len;
                         if (spiffe_len < MTLS_MAX_SPIFFE_ID_LEN) {
@@ -246,8 +246,8 @@ void mtls_free_peer_identity(mtls_peer_identity* identity) {
 static bool san_matches_pattern(const char* san, const char* pattern) {
     if (!san || !pattern) return false;
 
-    /* Exact match */
-    if (strcmp(san, pattern) == 0) {
+    /* Exact match using constant-time comparison to prevent timing attacks */
+    if (platform_consttime_strcmp(san, pattern) == 0) {
         return true;
     }
 
@@ -256,7 +256,7 @@ static bool san_matches_pattern(const char* san, const char* pattern) {
         const char* pattern_domain = pattern + 2;  /* Skip "*." */
         const char* san_dot = strchr(san, '.');
 
-        if (san_dot && strcmp(san_dot + 1, pattern_domain) == 0) {
+        if (san_dot && platform_consttime_strcmp(san_dot + 1, pattern_domain) == 0) {
             /* Ensure wildcard only matches one label (not multiple labels) */
             /* Check that there's exactly one dot before the domain part */
             size_t prefix_len = san_dot - san;

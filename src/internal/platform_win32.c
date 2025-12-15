@@ -398,3 +398,59 @@ void platform_secure_zero(void* ptr, size_t len) {
     if (!ptr || len == 0) return;
     SecureZeroMemory(ptr, len);
 }
+
+int platform_consttime_memcmp(const void* a, const void* b, size_t len) {
+    if (!a || !b) {
+        /* If either pointer is NULL, fall back to regular comparison */
+        return (a == b) ? 0 : 1;
+    }
+
+    const volatile unsigned char* pa = (const volatile unsigned char*)a;
+    const volatile unsigned char* pb = (const volatile unsigned char*)b;
+    unsigned char diff = 0;
+
+    /* XOR all bytes and accumulate differences */
+    for (size_t i = 0; i < len; i++) {
+        diff |= (pa[i] ^ pb[i]);
+    }
+
+    /* Return 0 if all bytes were equal, non-zero otherwise */
+    return diff;
+}
+
+int platform_consttime_strcmp(const char* a, const char* b) {
+    if (!a || !b) {
+        /* If either pointer is NULL, fall back to pointer comparison */
+        return (a == b) ? 0 : 1;
+    }
+
+    const volatile unsigned char* pa = (const volatile unsigned char*)a;
+    const volatile unsigned char* pb = (const volatile unsigned char*)b;
+    unsigned char diff = 0;
+    size_t i = 0;
+
+    /* Compare characters until we reach the end of both strings */
+    while (1) {
+        unsigned char ca = pa[i];
+        unsigned char cb = pb[i];
+
+        /* XOR the characters to accumulate differences */
+        diff |= (ca ^ cb);
+
+        /* If both strings have ended, break */
+        if (ca == 0 && cb == 0) {
+            break;
+        }
+
+        /* If only one string has ended, the diff will already be non-zero,
+         * but we continue to avoid timing leaks about string length */
+        i++;
+
+        /* Safety limit to prevent infinite loops on very long strings */
+        if (i > 10000) {
+            break;
+        }
+    }
+
+    return diff;
+}

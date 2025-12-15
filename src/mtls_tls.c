@@ -275,10 +275,133 @@ void mtls_tls_ctx_free(void* tls_ctx_ptr) {
 }
 
 int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls_err* err) {
-    (void)tls_ctx_ptr;
-    (void)config;
-    MTLS_ERR_SET(err, MTLS_ERR_NOT_IMPLEMENTED, "Certificate reload not yet implemented");
-    return -1;
+    if (!tls_ctx_ptr || !config) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Invalid context or config for certificate reload");
+        return -1;
+    }
+
+    struct mtls_tls_ctx_internal* tls_ctx = (struct mtls_tls_ctx_internal*)tls_ctx_ptr;
+    SSL_CTX* ssl_ctx = tls_ctx->ssl_ctx;
+
+    /* Reload CA certificate if provided */
+    if (config->ca_cert_pem || config->ca_cert_path) {
+        /* Create a new certificate store to replace the old one */
+        X509_STORE* new_store = X509_STORE_new();
+        if (!new_store) {
+            set_ssl_error(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to create new certificate store");
+            return -1;
+        }
+
+        if (config->ca_cert_pem) {
+            /* Validate PEM data length */
+            if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > 1024 * 1024) {
+                MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate PEM length invalid (max 1MB)");
+                X509_STORE_free(new_store);
+                return -1;
+            }
+            if (config->ca_cert_pem_len > INT_MAX) {
+                MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate PEM too large");
+                X509_STORE_free(new_store);
+                return -1;
+            }
+
+            BIO* bio = BIO_new_mem_buf(config->ca_cert_pem, (int)config->ca_cert_pem_len);
+            X509* ca_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+            BIO_free(bio);
+
+            if (!ca_cert) {
+                set_ssl_error(err, MTLS_ERR_CA_CERT_PARSE_FAILED, "Failed to parse CA certificate from memory");
+                X509_STORE_free(new_store);
+                return -1;
+            }
+
+            if (!X509_STORE_add_cert(new_store, ca_cert)) {
+                set_ssl_error(err, MTLS_ERR_CA_CERT_PARSE_FAILED, "Failed to add CA certificate to store");
+                X509_free(ca_cert);
+                X509_STORE_free(new_store);
+                return -1;
+            }
+            X509_free(ca_cert);
+        } else if (config->ca_cert_path) {
+            /* Load CA from file into the new store */
+            if (!X509_STORE_load_locations(new_store, config->ca_cert_path, NULL)) {
+                set_ssl_error(err, MTLS_ERR_CA_CERT_NOT_FOUND, "Failed to load CA certificate from file");
+                X509_STORE_free(new_store);
+                return -1;
+            }
+        }
+
+        /* Replace the SSL_CTX's certificate store */
+        SSL_CTX_set_cert_store(ssl_ctx, new_store);
+    }
+
+    /* Reload client/server certificate if provided */
+    if (config->cert_pem) {
+        /* Validate PEM data length */
+        if (config->cert_pem_len == 0 || config->cert_pem_len > 1024 * 1024) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate PEM length invalid (max 1MB)");
+            return -1;
+        }
+        if (config->cert_pem_len > INT_MAX) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate PEM too large");
+            return -1;
+        }
+
+        BIO* cert_bio = BIO_new_mem_buf(config->cert_pem, (int)config->cert_pem_len);
+        X509* cert = PEM_read_bio_X509(cert_bio, NULL, NULL, NULL);
+        BIO_free(cert_bio);
+
+        if (!cert || !SSL_CTX_use_certificate(ssl_ctx, cert)) {
+            set_ssl_error(err, MTLS_ERR_CERT_PARSE_FAILED, "Failed to reload certificate from memory");
+            if (cert) X509_free(cert);
+            return -1;
+        }
+        X509_free(cert);
+    } else if (config->cert_path) {
+        if (!SSL_CTX_use_certificate_file(ssl_ctx, config->cert_path, SSL_FILETYPE_PEM)) {
+            set_ssl_error(err, MTLS_ERR_CERT_NOT_FOUND, "Failed to reload certificate from file");
+            return -1;
+        }
+    }
+
+    /* Reload private key if provided */
+    if (config->key_pem) {
+        /* Validate PEM data length */
+        if (config->key_pem_len == 0 || config->key_pem_len > 1024 * 1024) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key PEM length invalid (max 1MB)");
+            return -1;
+        }
+        if (config->key_pem_len > INT_MAX) {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key PEM too large");
+            return -1;
+        }
+
+        BIO* key_bio = BIO_new_mem_buf(config->key_pem, (int)config->key_pem_len);
+        EVP_PKEY* key = PEM_read_bio_PrivateKey(key_bio, NULL, NULL, NULL);
+        BIO_free(key_bio);
+
+        if (!key || !SSL_CTX_use_PrivateKey(ssl_ctx, key)) {
+            set_ssl_error(err, MTLS_ERR_KEY_PARSE_FAILED, "Failed to reload private key from memory");
+            if (key) EVP_PKEY_free(key);
+            return -1;
+        }
+        EVP_PKEY_free(key);
+    } else if (config->key_path) {
+        if (!SSL_CTX_use_PrivateKey_file(ssl_ctx, config->key_path, SSL_FILETYPE_PEM)) {
+            set_ssl_error(err, MTLS_ERR_KEY_NOT_FOUND, "Failed to reload private key from file");
+            return -1;
+        }
+    }
+
+    /* Verify certificate and key match */
+    if (config->cert_path || config->cert_pem) {
+        if (!SSL_CTX_check_private_key(ssl_ctx)) {
+            set_ssl_error(err, MTLS_ERR_CERT_KEY_MISMATCH, "Reloaded certificate and private key do not match");
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx_ptr) {

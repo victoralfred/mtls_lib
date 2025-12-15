@@ -242,6 +242,26 @@ MTLS_API int64_t mtls_get_cert_ttl_seconds(const mtls_peer_identity* identity);
 MTLS_API bool mtls_has_spiffe_id(const mtls_peer_identity* identity);
 
 /**
+ * Validate peer SANs against an allowed list
+ *
+ * Checks if at least one SAN from the peer certificate matches at least one
+ * pattern in the allowed list. Supports exact matching, wildcard DNS matching
+ * (*.example.com), and SPIFFE ID matching.
+ *
+ * This function is useful for implementing custom SAN validation logic after
+ * connection establishment, or for validating connections that were accepted
+ * without pre-configured allowed_sans in the context.
+ *
+ * @param identity Peer identity
+ * @param allowed_sans Array of allowed SAN patterns
+ * @param allowed_sans_count Number of allowed SANs
+ * @return true if at least one SAN matches, false otherwise
+ */
+MTLS_API bool mtls_validate_peer_sans(const mtls_peer_identity* identity,
+                                       const char** allowed_sans,
+                                       size_t allowed_sans_count);
+
+/**
  * Extract organization from peer certificate
  *
  * Extracts the Organization (O) field from the peer certificate subject.

@@ -150,6 +150,33 @@ uint64_t platform_get_time_us(void);
  */
 void platform_secure_zero(void* ptr, size_t len);
 
+/*
+ * Constant-time memory comparison (prevents timing attacks)
+ *
+ * Compares two memory regions in constant time, regardless of where
+ * the first difference occurs. Use this for comparing secrets, hashes,
+ * or other security-sensitive data.
+ *
+ * @param a First memory region
+ * @param b Second memory region
+ * @param len Length to compare
+ * @return 0 if equal, non-zero if different
+ */
+int platform_consttime_memcmp(const void* a, const void* b, size_t len);
+
+/*
+ * Constant-time string comparison (prevents timing attacks)
+ *
+ * Compares two null-terminated strings in constant time. The comparison
+ * continues through the full length of the longer string to avoid timing
+ * leaks about string length or position of differences.
+ *
+ * @param a First string
+ * @param b Second string
+ * @return 0 if equal, non-zero if different
+ */
+int platform_consttime_strcmp(const char* a, const char* b);
+
 #ifdef __cplusplus
 }
 #endif
