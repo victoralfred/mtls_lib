@@ -51,30 +51,30 @@ static void set_ssl_error(mtls_err* err, mtls_error_code code, const char* msg) 
             if (total_needed <= MTLS_ERR_MESSAGE_SIZE) {
                 /* Everything fits */
                 size_t pos = 0;
-                memcpy(err->message + pos, msg, msg_len);
+                memcpy(err->message + pos, msg, msg_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
                 pos += msg_len;
-                memcpy(err->message + pos, ": ", separator_len);
+                memcpy(err->message + pos, ": ", separator_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
                 pos += separator_len;
-                memcpy(err->message + pos, err_buf, err_len + 1);  /* Include null terminator */
+                memcpy(err->message + pos, err_buf, err_len + 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
             } else {
                 /* Truncate message prefix to fit */
                 size_t available_for_msg = MTLS_ERR_MESSAGE_SIZE - separator_len - err_len - 1;
                 size_t msg_copy_len = (msg_len < available_for_msg) ? msg_len : available_for_msg;
                 size_t pos = 0;
-                memcpy(err->message + pos, msg, msg_copy_len);
+                memcpy(err->message + pos, msg, msg_copy_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
                 pos += msg_copy_len;
-                memcpy(err->message + pos, ": ", separator_len);
+                memcpy(err->message + pos, ": ", separator_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
                 pos += separator_len;
-                memcpy(err->message + pos, err_buf, err_len + 1);  /* Include null terminator */
+                memcpy(err->message + pos, err_buf, err_len + 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
             }
         } else {
             /* No SSL error, just copy the message */
             size_t msg_len = strlen(msg);
             if (msg_len >= MTLS_ERR_MESSAGE_SIZE) {
-                memcpy(err->message, msg, MTLS_ERR_MESSAGE_SIZE - 1);
+                memcpy(err->message, msg, MTLS_ERR_MESSAGE_SIZE - 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
                 err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';
             } else {
-                memcpy(err->message, msg, msg_len + 1);  /* Include null terminator */
+                memcpy(err->message, msg, msg_len + 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
             }
         }
     }
