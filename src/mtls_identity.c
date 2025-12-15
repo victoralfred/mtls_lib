@@ -246,8 +246,18 @@ void mtls_free_peer_identity(mtls_peer_identity* identity) {
 static bool san_matches_pattern(const char* san, const char* pattern) {
     if (!san || !pattern) return false;
 
-    /* Exact match using constant-time comparison to prevent timing attacks */
-    if (platform_consttime_strcmp(san, pattern) == 0) {
+    /* Exact match using constant-time comparison to prevent timing attacks.
+     * platform_consttime_strcmp returns:
+     *   0 = strings equal
+     *   positive = strings differ
+     *   -1 = error (string exceeds MTLS_MAX_IDENTITY_LEN)
+     * Oversized strings are rejected (fail-closed) to prevent bypass attacks. */
+    int cmp_result = platform_consttime_strcmp(san, pattern);
+    if (cmp_result == -1) {
+        /* Identity too long - reject to prevent resource exhaustion/bypass */
+        return false;
+    }
+    if (cmp_result == 0) {
         return true;
     }
 
@@ -256,24 +266,31 @@ static bool san_matches_pattern(const char* san, const char* pattern) {
         const char* pattern_domain = pattern + 2;  /* Skip "*." */
         const char* san_dot = strchr(san, '.');
 
-        if (san_dot && platform_consttime_strcmp(san_dot + 1, pattern_domain) == 0) {
-            /* Ensure wildcard only matches one label (not multiple labels) */
-            /* Check that there's exactly one dot before the domain part */
-            size_t prefix_len = san_dot - san;
-            if (prefix_len > 0 && prefix_len <= 63) {  /* DNS label max length */
-                /* Check that there are no dots in the prefix (single label) */
-                bool has_dot_in_prefix = false;
-                for (const char* p = san; p < san_dot; p++) {
-                    if (*p == '.') {
-                        has_dot_in_prefix = true;
-                        break;
+        if (san_dot) {
+            cmp_result = platform_consttime_strcmp(san_dot + 1, pattern_domain);
+            if (cmp_result == -1) {
+                /* Identity too long - reject */
+                return false;
+            }
+            if (cmp_result == 0) {
+                /* Ensure wildcard only matches one label (not multiple labels) */
+                /* Check that there's exactly one dot before the domain part */
+                size_t prefix_len = san_dot - san;
+                if (prefix_len > 0 && prefix_len <= 63) {  /* DNS label max length */
+                    /* Check that there are no dots in the prefix (single label) */
+                    bool has_dot_in_prefix = false;
+                    for (const char* p = san; p < san_dot; p++) {
+                        if (*p == '.') {
+                            has_dot_in_prefix = true;
+                            break;
+                        }
+                    }
+                    if (!has_dot_in_prefix) {
+                        return true;  /* Valid wildcard match */
                     }
                 }
-                if (!has_dot_in_prefix) {
-                    return true;  /* Valid wildcard match */
-                }
+                return false;  /* Invalid: wildcard matched multiple labels or invalid length */
             }
-            return false;  /* Invalid: wildcard matched multiple labels or invalid length */
         }
     }
 

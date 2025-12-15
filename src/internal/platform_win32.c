@@ -424,12 +424,25 @@ int platform_consttime_strcmp(const char* a, const char* b) {
         return (a == b) ? 0 : 1;
     }
 
+    /* Enforce hard upper bound on identity length.
+     * Identities exceeding MTLS_MAX_IDENTITY_LEN are rejected
+     * to prevent resource exhaustion and comparison bypasses.
+     * Return -1 to signal error (caller must check for MTLS_ERR_IDENTITY_TOO_LONG) */
+    size_t len_a = strnlen(a, MTLS_MAX_IDENTITY_LEN + 1);
+    size_t len_b = strnlen(b, MTLS_MAX_IDENTITY_LEN + 1);
+
+    if (len_a > MTLS_MAX_IDENTITY_LEN || len_b > MTLS_MAX_IDENTITY_LEN) {
+        /* Error: string exceeds maximum allowed length */
+        return -1;
+    }
+
     const volatile unsigned char* pa = (const volatile unsigned char*)a;
     const volatile unsigned char* pb = (const volatile unsigned char*)b;
     unsigned char diff = 0;
     size_t i = 0;
 
-    /* Compare characters until we reach the end of both strings */
+    /* Compare characters until we reach the end of both strings.
+     * We've already verified lengths are within bounds, so this is safe. */
     while (1) {
         unsigned char ca = pa[i];
         unsigned char cb = pb[i];
@@ -445,13 +458,6 @@ int platform_consttime_strcmp(const char* a, const char* b) {
         /* If only one string has ended, the diff will already be non-zero,
          * but we continue to avoid timing leaks about string length */
         i++;
-
-        /* Safety limit to prevent infinite loops on very long strings.
-         * NOTE: Strings longer than 10000 characters cannot be reliably compared.
-         * In practice, certificate SANs and other TLS strings won't exceed this limit. */
-        if (i >= 10000) {
-            break;
-        }
     }
 
     return diff;

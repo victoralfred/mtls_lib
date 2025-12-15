@@ -78,6 +78,7 @@ typedef enum mtls_error_code {
     MTLS_ERR_SPIFFE_PARSE_FAILED = 402,
     MTLS_ERR_CN_NOT_ALLOWED = 403,
     MTLS_ERR_NO_ALLOWED_IDENTITY = 404,
+    MTLS_ERR_IDENTITY_TOO_LONG = 405,
 
     /* Policy errors (5xx) */
     MTLS_ERR_KILL_SWITCH_ENABLED = 500,

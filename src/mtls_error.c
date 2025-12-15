@@ -117,6 +117,7 @@ const char* mtls_err_code_name(mtls_error_code code) {
         case MTLS_ERR_SPIFFE_PARSE_FAILED: return "MTLS_ERR_SPIFFE_PARSE_FAILED";
         case MTLS_ERR_CN_NOT_ALLOWED: return "MTLS_ERR_CN_NOT_ALLOWED";
         case MTLS_ERR_NO_ALLOWED_IDENTITY: return "MTLS_ERR_NO_ALLOWED_IDENTITY";
+        case MTLS_ERR_IDENTITY_TOO_LONG: return "MTLS_ERR_IDENTITY_TOO_LONG";
 
         /* Policy errors */
         case MTLS_ERR_KILL_SWITCH_ENABLED: return "MTLS_ERR_KILL_SWITCH_ENABLED";

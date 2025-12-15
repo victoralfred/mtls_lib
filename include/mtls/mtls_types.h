@@ -109,6 +109,16 @@ typedef struct mtls_listener mtls_listener;
 #define MTLS_MAX_SPIFFE_ID_LEN 512
 #define MTLS_MAX_SAN_LEN 256
 
+/*
+ * Identity comparison limits
+ * Enforce a hard upper bound on identity length to prevent:
+ * - Resource exhaustion attacks
+ * - Comparison bypass attacks via oversized strings
+ * - Timing analysis on unbounded comparisons
+ * Identities exceeding this limit are rejected with MTLS_ERR_IDENTITY_TOO_LONG
+ */
+#define MTLS_MAX_IDENTITY_LEN 10000
+
 typedef struct mtls_peer_identity {
     char common_name[MTLS_MAX_COMMON_NAME_LEN];
     char** sans;                    /* Subject Alternative Names */
