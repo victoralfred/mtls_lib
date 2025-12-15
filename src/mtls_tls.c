@@ -29,56 +29,81 @@ struct mtls_tls_ctx_internal {
 };
 
 /*
+ * Helper function to safely append data to a buffer
+ * Returns the new position after appending
+ */
+static size_t append_buf(char *dest, size_t dest_size, size_t pos, const char *src, size_t src_len) {
+    if (!dest || !src || pos >= dest_size) {
+        return pos;
+    }
+
+    size_t available = dest_size - pos - 1;  /* Reserve space for null terminator */
+    size_t to_copy = (src_len < available) ? src_len : available;
+
+    if (to_copy > 0) {
+        memcpy(dest + pos, src, to_copy);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
+        pos += to_copy;
+        dest[pos] = '\0';  /* Ensure null termination */
+    }
+
+    return pos;
+}
+
+/*
  * Get SSL error and populate mtls_err
  */
-static void set_ssl_error(mtls_err* err, mtls_error_code code, const char* msg) {
+static void set_ssl_error(mtls_err *err, mtls_error_code code, const char *msg) {
     unsigned long ssl_err = ERR_get_error();
 
-    if (err) {
-        err->code = code;
-        err->ssl_err = ssl_err;
+    if (!err || !msg) {
+        return;
+    }
 
-        if (ssl_err != 0) {
-            char err_buf[256];
-            ERR_error_string_n(ssl_err, err_buf, sizeof(err_buf));
+    err->code = code;
+    err->ssl_err = ssl_err;
+    err->message[0] = '\0';
 
-            /* Build error message in parts to avoid truncation warnings */
-            size_t msg_len = strlen(msg);
-            size_t err_len = strlen(err_buf);
-            size_t separator_len = 2;  /* ": " */
-            size_t total_needed = msg_len + separator_len + err_len + 1;  /* +1 for null terminator */
+    if (ssl_err != 0) {
+        char err_buf[256];
+        ERR_error_string_n(ssl_err, err_buf, sizeof(err_buf));
 
-            if (total_needed <= MTLS_ERR_MESSAGE_SIZE) {
-                /* Everything fits */
-                size_t pos = 0;
-                memcpy(err->message + pos, msg, msg_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-                pos += msg_len;
-                memcpy(err->message + pos, ": ", separator_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-                pos += separator_len;
-                memcpy(err->message + pos, err_buf, err_len + 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-            } else {
-                /* Truncate message prefix to fit */
-                size_t available_for_msg = MTLS_ERR_MESSAGE_SIZE - separator_len - err_len - 1;
-                size_t msg_copy_len = (msg_len < available_for_msg) ? msg_len : available_for_msg;
-                size_t pos = 0;
-                memcpy(err->message + pos, msg, msg_copy_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-                pos += msg_copy_len;
-                memcpy(err->message + pos, ": ", separator_len);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-                pos += separator_len;
-                memcpy(err->message + pos, err_buf, err_len + 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-            }
-        } else {
-            /* No SSL error, just copy the message */
-            size_t msg_len = strlen(msg);
-            if (msg_len >= MTLS_ERR_MESSAGE_SIZE) {
-                memcpy(err->message, msg, MTLS_ERR_MESSAGE_SIZE - 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-                err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';
-            } else {
-                memcpy(err->message, msg, msg_len + 1);  // NOLINT(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-            }
-        }
+        size_t pos = 0;
+
+        pos = append_buf(
+            err->message,
+            MTLS_ERR_MESSAGE_SIZE,
+            pos,
+            msg,
+            strlen(msg)
+        );
+
+        pos = append_buf(
+            err->message,
+            MTLS_ERR_MESSAGE_SIZE,
+            pos,
+            ": ",
+            2
+        );
+
+        append_buf(
+            err->message,
+            MTLS_ERR_MESSAGE_SIZE,
+            pos,
+            err_buf,
+            strlen(err_buf)
+        );
+
+    } else {
+        append_buf(
+            err->message,
+            MTLS_ERR_MESSAGE_SIZE,
+            0,
+            msg,
+            strlen(msg)
+        );
     }
 }
+
 
 void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
     /* Initialize OpenSSL (deprecated functions are no-ops in OpenSSL 1.1.0+)
