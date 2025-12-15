@@ -41,6 +41,9 @@ endif()
 mtls_add_test(test_identity)
 mtls_add_test(test_san_validation)
 
+# Phase 4 features tests (constant-time comparison, certificate reload)
+mtls_add_test(test_phase4_features)
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

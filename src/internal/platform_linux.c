@@ -477,8 +477,10 @@ int platform_consttime_strcmp(const char* a, const char* b) {
          * but we continue to avoid timing leaks about string length */
         i++;
 
-        /* Safety limit to prevent infinite loops on very long strings */
-        if (i > 10000) {
+        /* Safety limit to prevent infinite loops on very long strings.
+         * NOTE: Strings longer than 10000 characters cannot be reliably compared.
+         * In practice, certificate SANs and other TLS strings won't exceed this limit. */
+        if (i >= 10000) {
             break;
         }
     }
