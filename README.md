@@ -17,7 +17,7 @@ A minimal, secure, and auditable mTLS (mutual TLS) transport library with cross-
 
 ### Recent Security Fixes (December 2024)
 
-✅ **All critical vulnerabilities remediated** - 16 security fixes applied
+✅ **All critical vulnerabilities remediated** - 20 security and compatibility fixes applied
 
 **Critical Fixes:**
 - **Buffer Overflow Vulnerabilities** - Fixed heap and global buffer overflows in constant-time string comparison
