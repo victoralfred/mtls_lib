@@ -149,12 +149,23 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         buffer[received] = '\0';
         printf("  Received: \"%s\"\n", buffer);
 
-        /* Send response */
+        /* Send response (limit echo to avoid truncation) */
         time_t now = time(NULL);
         char response[BUFFER_SIZE];
+        const char* time_str = ctime(&now);
+
+        /* Calculate max safe buffer size (prefix + time_str + null) */
+        size_t prefix_len = strlen("Echo from cert_reload_demo: \nServer time: ") + strlen(time_str);
+        size_t max_echo = sizeof(response) - prefix_len - 1;
+
+        /* Truncate buffer if needed */
+        if (strlen(buffer) > max_echo) {
+            buffer[max_echo] = '\0';
+        }
+
         snprintf(response, sizeof(response),
                  "Echo from cert_reload_demo: %s\nServer time: %s",
-                 buffer, ctime(&now));
+                 buffer, time_str);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);
         if (sent > 0) {
