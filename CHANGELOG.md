@@ -61,6 +61,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 5: Observability Layer (2024-12-15)
+
+- **NEW:** Complete observability infrastructure with event tracking
+  - Event callback API (`mtls_set_observers()`) for real-time monitoring
+  - 10 event types covering full connection lifecycle
+  - Microsecond-precision timing for performance analysis
+  - Byte counting for I/O operations
+  - Thread-safe event emission without holding locks
+  - Zero overhead when observers not registered
+  - [Commits: 08f7fa3, d01853d, 4847950]
+
+- **NEW:** Event instrumentation for all operations
+  - `mtls_connect()`: CONNECT_START, SUCCESS, FAILURE, KILL_SWITCH_TRIGGERED
+  - `mtls_accept()`: HANDSHAKE_START, SUCCESS, FAILURE events with timing
+  - `mtls_read()` / `mtls_write()`: READ/WRITE events with byte counts
+  - `mtls_close()`: CLOSE event for connection teardown
+  - All events include timestamps and duration tracking where applicable
+  - [Commits: 08f7fa3, d01853d]
+
+- **NEW:** Observability demonstration program (`observability_demo.c`)
+  - Real-time event visualization with color-coded output
+  - Complete metrics tracking (connections, bytes, durations)
+  - Client-server communication with echo protocol
+  - Aggregated statistics display
+  - Demonstrates practical monitoring use cases
+  - [Commit: 4847950]
+
+- **NEW:** Comprehensive observability test suite (`test_observability.c`)
+  - Tests observer registration and unregistration
+  - Verifies all event types (connect, handshake, I/O, close, kill-switch)
+  - Validates timing and byte count tracking
+  - Tests multiple connection handling
+  - [Commit: 4847950]
+
 #### New Example Programs (2024-12-15)
 
 - **NEW:** Kill switch demonstration program (`kill_switch_demo.c`)

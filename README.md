@@ -10,6 +10,7 @@ A minimal, secure, and auditable mTLS (mutual TLS) transport library with cross-
 - **Small & auditable**: Minimal C core with clear separation of concerns
 - **Identity verification**: SAN/SPIFFE URI validation
 - **Emergency kill-switch**: Immediate global connection blocking
+- **Observability layer**: Real-time event tracking, metrics collection, microsecond-precision timing
 - **Structured errors**: Categorized error codes for debugging
 - **Language bindings**: Go, Rust, Java (planned)
 
@@ -322,6 +323,47 @@ mtls_ctx_set_kill_switch(ctx, true);
 mtls_ctx_set_kill_switch(ctx, false);
 ```
 
+### Observability
+
+Track connection lifecycle, I/O operations, and collect metrics:
+
+```c
+// Define event callback
+void on_event(const mtls_event* event, void* userdata) {
+    switch (event->type) {
+        case MTLS_EVENT_CONNECT_SUCCESS:
+            printf("Connected in %lu us\n", event->duration_us);
+            break;
+        case MTLS_EVENT_READ:
+            printf("Read %zu bytes\n", event->bytes);
+            break;
+        case MTLS_EVENT_WRITE:
+            printf("Wrote %zu bytes\n", event->bytes);
+            break;
+        case MTLS_EVENT_KILL_SWITCH_TRIGGERED:
+            printf("Kill-switch blocked connection\n");
+            break;
+        // ... handle other events
+    }
+}
+
+// Register observer
+mtls_observers observers = {
+    .on_event = on_event,
+    .userdata = &my_metrics
+};
+mtls_set_observers(ctx, &observers);
+```
+
+**Event Types:**
+- `MTLS_EVENT_CONNECT_START` / `_SUCCESS` / `_FAILURE` - Connection lifecycle
+- `MTLS_EVENT_HANDSHAKE_START` / `_SUCCESS` / `_FAILURE` - TLS handshake
+- `MTLS_EVENT_READ` / `WRITE` - I/O operations with byte counts
+- `MTLS_EVENT_CLOSE` - Connection termination
+- `MTLS_EVENT_KILL_SWITCH_TRIGGERED` - Emergency kill-switch activation
+
+All events include microsecond-precision timestamps and durations where applicable. See `examples/observability_demo.c` for a complete metrics tracking implementation.
+
 ## Error Handling
 
 Errors are categorized for easier debugging:
@@ -459,6 +501,27 @@ cd build/examples
 # Update certificates on disk, then:
 kill -USR1 <pid>  # Reload certificates without downtime
 ```
+
+### Observability Demo (`observability_demo.c`)
+Comprehensive observability demonstration showing:
+- Real-time event tracking for all connection operations
+- Metrics collection (connections, bytes, durations)
+- Color-coded event visualization
+- Aggregated statistics display
+- Practical monitoring implementation patterns
+- Client-server communication with event streams
+
+```bash
+cd build/examples
+./observability_demo
+```
+
+This demo runs a complete client-server session while tracking:
+- Connection lifecycle events (start, success, failure)
+- TLS handshake timing with microsecond precision
+- I/O operations with byte counts
+- Kill-switch activation events
+- Aggregated metrics for monitoring dashboards
 
 All examples include proper error handling and demonstrate best practices for:
 - Resource cleanup
