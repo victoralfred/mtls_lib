@@ -54,8 +54,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # Position Independent Code for shared libraries
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-    # Linker flags for security
-    if(NOT MTLS_PLATFORM_DARWIN)
+    # Linker flags for security (Linux only, not supported by MinGW or macOS)
+    if(MTLS_PLATFORM_LINUX)
         add_link_options(
             -Wl,-z,relro
             -Wl,-z,now

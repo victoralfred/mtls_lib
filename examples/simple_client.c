@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #define BUFFER_SIZE 4096
 
@@ -95,7 +96,7 @@ int main(int argc, char* argv[]) {
         /* Check certificate validity */
         if (mtls_is_peer_cert_valid(&identity)) {
             int64_t ttl = mtls_get_cert_ttl_seconds(&identity);
-            printf("  Certificate: Valid (expires in %ld days)\n", ttl / 86400);
+            printf("  Certificate: Valid (expires in %" PRId64 " days)\n", ttl / 86400);
         } else {
             printf("  Certificate: ⚠ EXPIRED or NOT YET VALID\n");
         }
