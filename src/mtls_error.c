@@ -29,7 +29,11 @@ void mtls_err_set(mtls_err* err, mtls_error_code code, const char* fmt, ...) {
     if (fmt) {
         va_list args;
         va_start(args, fmt);
+        /* Suppress format-nonliteral warning: fmt is intentionally a parameter for variadic function */
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wformat-nonliteral"
         vsnprintf(err->message, MTLS_ERR_MESSAGE_SIZE, fmt, args);
+        #pragma GCC diagnostic pop
         va_end(args);
         err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';  /* Ensure null termination */
     } else {
@@ -53,7 +57,11 @@ void mtls_err_set_internal(mtls_err* err, mtls_error_code code,
     if (fmt) {
         va_list args;
         va_start(args, fmt);
+        /* Suppress format-nonliteral warning: fmt is intentionally a parameter for variadic function */
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wformat-nonliteral"
         vsnprintf(err->message, MTLS_ERR_MESSAGE_SIZE, fmt, args);
+        #pragma GCC diagnostic pop
         va_end(args);
         err->message[MTLS_ERR_MESSAGE_SIZE - 1] = '\0';  /* Ensure null termination */
     } else {

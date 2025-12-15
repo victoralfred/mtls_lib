@@ -113,14 +113,26 @@ static void print_peer_info(mtls_conn* conn) {
 
     /* Print validity period */
     char time_buf[64];
-    struct tm* tm_info;
+    struct tm* tm_ptr;
 
-    tm_info = localtime(&identity.cert_not_before);
-    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+#ifdef _WIN32
+    /* Use localtime_s on Windows to avoid deprecation warning */
+    struct tm tm_info;
+    localtime_s(&tm_info, &identity.cert_not_before);
+    tm_ptr = &tm_info;
+#else
+    tm_ptr = localtime(&identity.cert_not_before);
+#endif
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_ptr);
     printf("│ Valid from: %-24s│\n", time_buf);
 
-    tm_info = localtime(&identity.cert_not_after);
-    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+#ifdef _WIN32
+    localtime_s(&tm_info, &identity.cert_not_after);
+    tm_ptr = &tm_info;
+#else
+    tm_ptr = localtime(&identity.cert_not_after);
+#endif
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_ptr);
     printf("│ Valid to:   %-24s│\n", time_buf);
 
     printf("└────────────────────────────────────────┘\n\n");
