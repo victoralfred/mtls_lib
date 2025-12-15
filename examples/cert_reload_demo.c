@@ -175,7 +175,6 @@ static void handle_client(mtls_conn* conn, int conn_num) {
 
         /* Send response (limit echo to avoid truncation) */
         time_t now = time(NULL);
-        char response[BUFFER_SIZE];
 
         /* Get time string (ctime_s on Windows, ctime on POSIX) */
         const char* time_str;
@@ -187,20 +186,19 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         time_str = ctime(&now);
 #endif
 
-        /* Calculate safe echo length: "Echo from cert_reload_demo: " + "\nServer time: " + time_str + null */
-        /* ctime() always returns 26 characters including newline */
-        const size_t prefix_suffix_len = 29 + 14 + 26 + 1;  /* 29="Echo from cert_reload_demo: ", 14="\nServer time: ", 26=time_str, 1=null */
-        const size_t max_echo_len = sizeof(response) - prefix_suffix_len;
-
-        /* Truncate buffer in-place if needed (MSVC doesn't support VLAs) */
+        /* Use fixed-size echo buffer to avoid format truncation warnings */
+        /* Max echo size: BUFFER_SIZE - ("Echo from cert_reload_demo: " + "\nServer time: " + ctime (26 chars) + null) */
+        /* 4096 - (29 + 14 + 26 + 1) = 4096 - 70 = 4026 */
+        char safe_echo[4026];
         size_t buffer_len = strlen(buffer);
-        if (buffer_len > max_echo_len) {
-            buffer[max_echo_len] = '\0';
-        }
+        size_t copy_len = buffer_len < sizeof(safe_echo) - 1 ? buffer_len : sizeof(safe_echo) - 1;
+        memcpy(safe_echo, buffer, copy_len);
+        safe_echo[copy_len] = '\0';
 
+        char response[BUFFER_SIZE];
         snprintf(response, sizeof(response),
                  "Echo from cert_reload_demo: %s\nServer time: %s",
-                 buffer, time_str);
+                 safe_echo, time_str);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);
         if (sent > 0) {

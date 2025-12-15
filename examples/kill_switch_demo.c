@@ -135,23 +135,21 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         printf("  Received: \"%s\"\n", buffer);
 
         /* Echo back with status (limit echo to avoid truncation warning) */
-        char response[BUFFER_SIZE];
         bool kill_switch = mtls_ctx_is_kill_switch_enabled(global_ctx);
         const char* status = kill_switch ? "ENABLED" : "DISABLED";
 
-        /* Calculate safe echo length: "Echo: " + "\nKill switch: " + status + "\n" + null */
-        const size_t prefix_suffix_len = 6 + 14 + strlen(status) + 1 + 1;  /* 6="Echo: ", 14="\nKill switch: ", 1="\n", 1=null */
-        const size_t max_echo_len = sizeof(response) - prefix_suffix_len;
-
-        /* Truncate buffer in-place if needed (MSVC doesn't support VLAs) */
+        /* Use fixed-size echo buffer to avoid format truncation warnings */
+        /* Max echo size: BUFFER_SIZE - ("Echo: " + "\nKill switch: DISABLED\n" + null) = 4096 - 31 = 4065 */
+        char safe_echo[4065];
         size_t buffer_len = strlen(buffer);
-        if (buffer_len > max_echo_len) {
-            buffer[max_echo_len] = '\0';
-        }
+        size_t copy_len = buffer_len < sizeof(safe_echo) - 1 ? buffer_len : sizeof(safe_echo) - 1;
+        memcpy(safe_echo, buffer, copy_len);
+        safe_echo[copy_len] = '\0';
 
+        char response[BUFFER_SIZE];
         snprintf(response, sizeof(response),
                  "Echo: %s\nKill switch: %s\n",
-                 buffer,
+                 safe_echo,
                  status);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);
