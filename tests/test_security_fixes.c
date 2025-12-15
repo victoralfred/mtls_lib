@@ -585,8 +585,8 @@ static bool test_edge_case_empty_strings(void) {
     /* Test with empty file path */
     config.ca_cert_path = "";
     ctx = mtls_ctx_create(&config, &err);
-    /* Should fail because empty path is invalid */
-    
+    TEST_ASSERT(ctx == NULL, "Should reject empty certificate path");
+
     return true;
 }
 
@@ -601,7 +601,7 @@ static bool test_edge_case_null_pointers(void) {
     mtls_ctx* ctx = mtls_ctx_create(NULL, &err);
     TEST_ASSERT(ctx == NULL, "Should reject NULL config");
     
-    mtls_conn* conn = mtls_connect(NULL, "example.com:443", &err);
+    const mtls_conn* conn = mtls_connect(NULL, "example.com:443", &err);
     TEST_ASSERT(conn == NULL, "Should reject NULL context");
     
     conn = mtls_connect((mtls_ctx*)0x1, NULL, &err);
@@ -650,7 +650,7 @@ static bool test_edge_case_buffer_boundaries(void) {
     hostname_255[259] = '0';
     hostname_255[260] = '\0';
 
-    mtls_conn* conn;
+    const mtls_conn* conn;
     conn = mtls_connect(ctx, hostname_255, &err);
     /* Should handle gracefully, may fail but shouldn't crash */
 
@@ -700,9 +700,9 @@ static bool test_edge_case_port_boundaries(void) {
     
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     if (!ctx) { return true; } /* Context creation may fail with invalid PEM, but validation logic is tested */
-    
-    mtls_conn* conn;
-    
+
+    const mtls_conn* conn;
+
     /* Test port 1 (minimum valid) */
     conn = mtls_connect(ctx, "example.com:1", &err);
     /* May fail on DNS, but should accept the port */
@@ -744,7 +744,7 @@ static bool test_edge_case_file_path_boundaries(void) {
     mtls_err err;
     mtls_err_init(&err);
 
-    mtls_ctx* ctx;
+    const mtls_ctx* ctx;
     ctx = mtls_ctx_create(&config, &err);
     /* May fail on file access, but should accept the path length */
 
@@ -777,7 +777,7 @@ static bool test_edge_case_pem_boundaries(void) {
     mtls_err err;
     mtls_err_init(&err);
 
-    mtls_ctx* ctx;
+    const mtls_ctx* ctx;
     ctx = mtls_ctx_create(&config, &err);
     /* May fail on parsing, but should accept the size */
 
@@ -861,9 +861,9 @@ static bool test_edge_case_ipv6_format(void) {
     
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     if (!ctx) { return true; } /* Context creation may fail with invalid PEM, but validation logic is tested */
-    
-    mtls_conn* conn;
-    
+
+    const mtls_conn* conn;
+
     /* Test IPv6 with brackets */
     conn = mtls_connect(ctx, "[::1]:8080", &err);
     /* May fail on connection, but should parse correctly */
@@ -901,15 +901,7 @@ static bool test_edge_case_zero_length_inputs(void) {
     
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     TEST_ASSERT(ctx == NULL, "Should reject zero-length PEM");
-    
-    /* Test zero-length read */
-    if (ctx) {
-        char buffer[10];
-        ssize_t result = mtls_read((mtls_conn*)0x1, buffer, 0, &err);
-        TEST_ASSERT(result == -1, "Should reject zero-length read");
-        mtls_ctx_free(ctx);
-    }
-    
+
     return true;
 }
 
@@ -973,9 +965,9 @@ static bool test_edge_case_special_characters(void) {
     
     mtls_ctx* ctx = mtls_ctx_create(&config, &err);
     if (!ctx) { return true; } /* Context creation may fail with invalid PEM, but validation logic is tested */
-    
-    mtls_conn* conn;
-    
+
+    const mtls_conn* conn;
+
     /* Test with newline in hostname */
     conn = mtls_connect(ctx, "example.com\n:8080", &err);
     TEST_ASSERT(conn == NULL, "Should reject hostname with newline");
@@ -1140,7 +1132,7 @@ static bool test_edge_case_int_max_boundary(void) {
     mtls_err err;
     mtls_err_init(&err);
 
-    mtls_ctx* ctx;
+    const mtls_ctx* ctx;
     ctx = mtls_ctx_create(&config, &err);
     /* May fail on parsing, but should handle the size */
 

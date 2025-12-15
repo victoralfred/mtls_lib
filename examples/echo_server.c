@@ -152,7 +152,7 @@ static void handle_client(mtls_conn* conn, const char** allowed_sans,
     printf("  Session: %d messages echoed\n", messages);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, const char* argv[]) {
     if (argc != 5) {
         fprintf(stderr, "Usage: %s <bind:port> <ca_cert> <server_cert> <server_key>\n",
                 argv[0]);

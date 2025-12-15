@@ -226,7 +226,7 @@ typedef struct {
 } server_args;
 
 static void* server_thread(void* arg) {
-    server_args* args = (server_args*)arg;
+    const server_args* args = (const server_args*)arg;
     mtls_err err;
 
     /* Create server context */

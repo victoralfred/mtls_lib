@@ -113,7 +113,7 @@ static void print_peer_info(mtls_conn* conn) {
 
     /* Print validity period */
     char time_buf[64];
-    struct tm* tm_ptr;
+    const struct tm* tm_ptr;
 
 #ifdef _WIN32
     /* Use localtime_s on Windows to avoid deprecation warning */
@@ -180,7 +180,7 @@ static int validate_server_identity(mtls_conn* conn, const char** allowed_sans,
     return validated ? 0 : -1;
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, const char* argv[]) {
     if (argc != 5) {
         fprintf(stderr, "Usage: %s <server:port> <ca_cert> <client_cert> <client_key>\n",
                 argv[0]);

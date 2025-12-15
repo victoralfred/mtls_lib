@@ -209,8 +209,8 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
     const ASN1_TIME* not_before = X509_get0_notBefore(peer_cert);
     const ASN1_TIME* not_after = X509_get0_notAfter(peer_cert);
 #else
-    ASN1_TIME* not_before = X509_get_notBefore(peer_cert);
-    ASN1_TIME* not_after = X509_get_notAfter(peer_cert);
+    const ASN1_TIME* not_before = X509_get_notBefore(peer_cert);
+    const ASN1_TIME* not_after = X509_get_notAfter(peer_cert);
 #endif
 
     identity->cert_not_before = asn1_time_to_time_t(not_before);

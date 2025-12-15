@@ -90,7 +90,7 @@ static const char* event_type_str(mtls_event_type type) {
 static void print_events(event_tracker* tracker) {
     printf("\n[Event Trace] %zu events recorded:\n", tracker->event_count);
     for (size_t i = 0; i < tracker->event_count; i++) {
-        tracked_event* te = &tracker->events[i];
+        const tracked_event* te = &tracker->events[i];
         printf("  [%zu] %s", i, event_type_str(te->type));
         if (te->error_code != 0) {
             printf(" (error: %d)", te->error_code);
@@ -108,7 +108,7 @@ static void print_events(event_tracker* tracker) {
     }
 }
 
-static int find_event(event_tracker* tracker, mtls_event_type type, size_t start_idx) {
+static int find_event(const event_tracker* tracker, mtls_event_type type, size_t start_idx) {
     for (size_t i = start_idx; i < tracker->event_count; i++) {
         if (tracker->events[i].type == type) {
             return (int)i;

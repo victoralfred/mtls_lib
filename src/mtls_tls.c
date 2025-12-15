@@ -411,6 +411,6 @@ int mtls_tls_ctx_reload_certs(void* tls_ctx_ptr, const mtls_config* config, mtls
 
 SSL_CTX* mtls_tls_get_ssl_ctx(void* tls_ctx_ptr) {
     if (!tls_ctx_ptr) return NULL;
-    struct mtls_tls_ctx_internal* tls_ctx = (struct mtls_tls_ctx_internal*)tls_ctx_ptr;
+    const struct mtls_tls_ctx_internal* tls_ctx = (const struct mtls_tls_ctx_internal*)tls_ctx_ptr;
     return tls_ctx->ssl_ctx;
 }

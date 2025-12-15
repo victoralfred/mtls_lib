@@ -52,7 +52,7 @@
 static volatile int keep_running = 1;
 static mtls_ctx* global_ctx = NULL;
 
-static void print_kill_switch_status(mtls_ctx* ctx) {
+static void print_kill_switch_status(const mtls_ctx* ctx) {
     bool enabled = mtls_ctx_is_kill_switch_enabled(ctx);
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
