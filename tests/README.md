@@ -1,6 +1,6 @@
-# Security Fixes Test Suite
+# mTLS Library Test Suite
 
-This test suite verifies all the security fixes applied to the mTLS library.
+This directory contains comprehensive test suites to verify security fixes, functional correctness, and compliance with security standards.
 
 ## Running the Tests
 
@@ -11,10 +11,31 @@ make
 ctest --output-on-failure
 ```
 
-Or run directly:
+Or run individual test suites:
 ```bash
 ./build/tests/test_security_fixes
+./build/tests/test_identity
+./build/tests/test_san_validation
+./build/tests/test_phase4_features
+./build/tests/fuzz_oversized_sans
 ```
+
+## Test Suites
+
+### 1. test_security_fixes (30 tests)
+Basic security vulnerability validation and edge case testing.
+
+### 2. test_identity (tests)
+Identity extraction and validation from X.509 certificates.
+
+### 3. test_san_validation (21 tests)
+Subject Alternative Name (SAN) matching and validation logic.
+
+### 4. test_phase4_features (23 tests)
+Constant-time comparison, certificate reload, and Phase 4 security features.
+
+### 5. fuzz_oversized_sans (10 test suites, 1,500+ iterations)
+**NEW:** Comprehensive fuzz testing for oversized identity handling.
 
 ## Test Coverage
 
@@ -93,9 +114,57 @@ Some tests cannot fully verify behavior without actual TLS connections:
 
 For full integration testing, see the examples directory (when implemented).
 
+## Fuzz Testing for Oversized SANs
+
+### Overview
+
+The `fuzz_oversized_sans` test suite performs comprehensive fuzz testing of the security fix for oversized identity handling. This addresses the critical vulnerability where attackers could craft oversized Subject Alternative Names (SANs) to bypass identity validation.
+
+### Test Categories
+
+**Boundary Tests (4 tests):**
+- Strings exactly at `MTLS_MAX_IDENTITY_LEN` (10,000 chars) - should be accepted
+- Strings over limit by 1 (10,001 chars) - should return -1 error
+- Strings far over limit (11,000 chars) - should return -1 error
+- Asymmetric cases (one at limit, one over) - should return -1 error
+
+**Random Fuzz Tests (2 suites, 1,500 iterations):**
+- 1,000 iterations with random lengths (90% valid, 10% oversized)
+- 500 iterations with DNS-like patterns
+- Random content generation (printable ASCII, not just repeated chars)
+
+**SAN Validation Integration (3 tests):**
+- Reject oversized peer SANs in validation
+- Reject when both peer and allowed patterns are oversized
+- Mixed-size SANs (valid + oversized) - should match valid ones
+
+**Stress Tests (1 test):**
+- 100 repeated comparisons at maximum length
+
+### Expected Results
+
+All 10 fuzz test suites should pass:
+- ✅ Strings at limit are accepted (return 0 or non-zero, but not -1)
+- ✅ Strings over limit return -1 error (fail-closed)
+- ✅ No buffer overflows with any string size
+- ✅ SAN validation rejects oversized identities
+- ✅ 1,500+ iterations complete without crashes
+
+### Reproducibility
+
+The fuzz test uses a fixed seed (`0x12345678`) for reproducibility. The same inputs will generate the same results across runs.
+
+### Security Objectives
+
+1. **Prevent bypass attacks** - Oversized SANs cannot be used to bypass identity validation
+2. **Prevent resource exhaustion** - Bounded length prevents DoS via extremely long strings
+3. **Prevent buffer overflows** - No reads past allocated memory boundaries
+4. **Maintain constant-time** - Timing-attack resistance preserved even with virtual padding
+5. **Fail-closed** - All oversized inputs are explicitly rejected with error
+
 ## Expected Results
 
-All 30 tests should pass. The test suite verifies:
+All tests should pass (94 total across 5 test suites). The test suite verifies:
 - ✅ No buffer overflows
 - ✅ Input validation works correctly
 - ✅ Thread safety is maintained

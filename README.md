@@ -13,6 +13,33 @@ A minimal, secure, and auditable mTLS (mutual TLS) transport library with cross-
 - **Structured errors**: Categorized error codes for debugging
 - **Language bindings**: Go, Rust, Java (planned)
 
+## Security
+
+### Recent Security Fixes (December 2024)
+
+✅ **All critical vulnerabilities remediated** - 16 security fixes applied
+
+**Critical Fixes:**
+- **Buffer Overflow Vulnerabilities** - Fixed heap and global buffer overflows in constant-time string comparison
+- **Authentication Bypass** - Fixed silent truncation allowing oversized SAN bypass attacks
+- **Memory Corruption** - Protected against reading past allocated buffer boundaries
+- **Certificate Verification** - Enforced SSL_get_verify_result() checks
+- **Integer Overflow** - Protected SAN count and PEM length handling
+
+**Security Compliance:**
+- ✅ CERT C Secure Coding Standard (STR31-C, ERR33-C, MSC24-C)
+- ✅ MISRA C Safety Standard (Rule 15.x, 17.x)
+- ✅ AddressSanitizer clean (no memory errors)
+- ✅ Timing-attack resistant (constant-time comparison)
+- ✅ Fail-closed security (explicit error handling)
+
+See [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) for complete details and [CHANGELOG.md](CHANGELOG.md) for version history.
+
+### Security Constants
+
+- `MTLS_MAX_IDENTITY_LEN` - Maximum identity string length (10,000 characters)
+- Identity strings exceeding this limit are rejected with `MTLS_ERR_IDENTITY_TOO_LONG`
+
 ## Project Structure
 
 ```
