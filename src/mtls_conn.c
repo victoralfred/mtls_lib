@@ -286,6 +286,20 @@ ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err) {
         return -1;
     }
 
+    /* Emit READ event */
+    char remote_addr_str[128];
+    platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
+    mtls_event event = {
+        .type = MTLS_EVENT_READ,
+        .remote_addr = remote_addr_str,
+        .conn = conn,
+        .error_code = 0,
+        .timestamp_us = platform_get_time_us(),
+        .duration_us = 0,
+        .bytes = (size_t)n
+    };
+    mtls_emit_event(conn->ctx, &event);
+
     return n;
 }
 
@@ -348,6 +362,20 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
         total_written += n;
     }
 
+    /* Emit WRITE event */
+    char remote_addr_str[128];
+    platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
+    mtls_event event = {
+        .type = MTLS_EVENT_WRITE,
+        .remote_addr = remote_addr_str,
+        .conn = conn,
+        .error_code = 0,
+        .timestamp_us = platform_get_time_us(),
+        .duration_us = 0,
+        .bytes = (size_t)total_written
+    };
+    mtls_emit_event(conn->ctx, &event);
+
     return total_written;
 }
 
@@ -362,6 +390,20 @@ void mtls_close(mtls_conn* conn) {
             return;
         }
     }
+
+    /* Emit CLOSE event */
+    char remote_addr_str[128];
+    platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
+    mtls_event event = {
+        .type = MTLS_EVENT_CLOSE,
+        .remote_addr = remote_addr_str,
+        .conn = conn,
+        .error_code = 0,
+        .timestamp_us = platform_get_time_us(),
+        .duration_us = 0,
+        .bytes = 0
+    };
+    mtls_emit_event(conn->ctx, &event);
 
     if (conn->ssl) {
         /* Attempt graceful shutdown, but don't fail if it doesn't work */

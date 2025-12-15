@@ -72,14 +72,40 @@ mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_err* err) 
 }
 
 mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
+    uint64_t start_time = platform_get_time_us();
+
     if (!listener) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Listener is NULL");
         return NULL;
     }
 
+    /* Emit CONNECT_START event (server-side) */
+    mtls_event event = {
+        .type = MTLS_EVENT_CONNECT_START,
+        .remote_addr = NULL,  /* Not known yet */
+        .conn = NULL,
+        .error_code = 0,
+        .timestamp_us = start_time,
+        .duration_us = 0,
+        .bytes = 0
+    };
+    mtls_emit_event(listener->ctx, &event);
+
     /* Check kill-switch */
     if (mtls_ctx_is_kill_switch_enabled(listener->ctx)) {
         MTLS_ERR_SET(err, MTLS_ERR_KILL_SWITCH_ENABLED, "Kill-switch is enabled");
+
+        /* Emit KILL_SWITCH_TRIGGERED event */
+        event.type = MTLS_EVENT_KILL_SWITCH_TRIGGERED;
+        event.error_code = MTLS_ERR_KILL_SWITCH_ENABLED;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(listener->ctx, &event);
+
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.duration_us = platform_get_time_us() - start_time;
+        mtls_emit_event(listener->ctx, &event);
+
         return NULL;
     }
 
@@ -102,6 +128,12 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
         return NULL;
     }
 
+    /* Format remote address for events */
+    char remote_addr_str[128];
+    platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
+    event.remote_addr = remote_addr_str;
+    event.conn = conn;
+
     /* Create SSL object */
     SSL_CTX* ssl_ctx = mtls_tls_get_ssl_ctx(listener->ctx->tls_ctx);
     conn->ssl = SSL_new(ssl_ctx);
@@ -123,15 +155,42 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
 
     /* Perform TLS handshake (server mode) */
     atomic_store(&conn->state, MTLS_CONN_STATE_HANDSHAKING);
+
+    /* Emit HANDSHAKE_START event */
+    event.type = MTLS_EVENT_HANDSHAKE_START;
+    event.timestamp_us = platform_get_time_us();
+    mtls_emit_event(listener->ctx, &event);
+
+    uint64_t handshake_start = platform_get_time_us();
     if (SSL_accept(conn->ssl) <= 0) {
         unsigned long ssl_err = ERR_get_error();
         MTLS_ERR_SET(err, MTLS_ERR_TLS_HANDSHAKE_FAILED, "TLS handshake failed");
         if (err) err->ssl_err = ssl_err;
+
+        /* Emit HANDSHAKE_FAILURE event */
+        event.type = MTLS_EVENT_HANDSHAKE_FAILURE;
+        event.error_code = MTLS_ERR_TLS_HANDSHAKE_FAILED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - handshake_start;
+        mtls_emit_event(listener->ctx, &event);
+
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
+
         SSL_free(conn->ssl);
         platform_socket_close(conn->sock);
         free(conn);
         return NULL;
     }
+
+    /* Emit HANDSHAKE_SUCCESS event */
+    event.type = MTLS_EVENT_HANDSHAKE_SUCCESS;
+    event.error_code = 0;
+    event.timestamp_us = platform_get_time_us();
+    event.duration_us = event.timestamp_us - handshake_start;
+    mtls_emit_event(listener->ctx, &event);
 
     /* Verify certificate validation result */
     long verify_result = SSL_get_verify_result(conn->ssl);
@@ -141,6 +200,14 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
                      "Certificate verification failed: %s (code: %ld)",
                      verify_msg ? verify_msg : "Unknown error", verify_result);
         if (err) err->ssl_err = verify_result;
+
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_CERT_UNTRUSTED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
+
         SSL_free(conn->ssl);
         platform_socket_close(conn->sock);
         free(conn);
@@ -169,6 +236,14 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
             if (!allowed) {
                 MTLS_ERR_SET(err, MTLS_ERR_IDENTITY_MISMATCH,
                              "Peer identity not in allowed SANs list");
+
+                /* Emit CONNECT_FAILURE event */
+                event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.error_code = MTLS_ERR_IDENTITY_MISMATCH;
+                event.timestamp_us = platform_get_time_us();
+                event.duration_us = event.timestamp_us - start_time;
+                mtls_emit_event(listener->ctx, &event);
+
                 SSL_free(conn->ssl);
                 platform_socket_close(conn->sock);
                 free(conn);
@@ -178,6 +253,14 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
             /* If identity extraction failed but SANs are required, reject */
             MTLS_ERR_SET(err, MTLS_ERR_IDENTITY_MISMATCH,
                          "Failed to extract peer identity for validation");
+
+            /* Emit CONNECT_FAILURE event */
+            event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.error_code = MTLS_ERR_IDENTITY_MISMATCH;
+            event.timestamp_us = platform_get_time_us();
+            event.duration_us = event.timestamp_us - start_time;
+            mtls_emit_event(listener->ctx, &event);
+
             SSL_free(conn->ssl);
             platform_socket_close(conn->sock);
             free(conn);
@@ -186,6 +269,14 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     }
 
     atomic_store(&conn->state, MTLS_CONN_STATE_ESTABLISHED);
+
+    /* Emit CONNECT_SUCCESS event */
+    event.type = MTLS_EVENT_CONNECT_SUCCESS;
+    event.error_code = 0;
+    event.timestamp_us = platform_get_time_us();
+    event.duration_us = event.timestamp_us - start_time;
+    mtls_emit_event(listener->ctx, &event);
+
     return conn;
 }
 
