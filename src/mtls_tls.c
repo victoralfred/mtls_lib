@@ -118,7 +118,7 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
     /* Load CA certificate */
     if (config->ca_cert_pem) {
         /* Validate PEM data length */
-        if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > 1024 * 1024) {
+        if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > 1024UL * 1024) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CA certificate PEM length invalid (max 1MB)");
             SSL_CTX_free(ssl_ctx);
             return NULL;
@@ -158,7 +158,7 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
     /* Load client/server certificate and key if provided */
     if (config->cert_pem) {
         /* Validate PEM data length */
-        if (config->cert_pem_len == 0 || config->cert_pem_len > 1024 * 1024) {
+        if (config->cert_pem_len == 0 || config->cert_pem_len > 1024UL * 1024) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Certificate PEM length invalid (max 1MB)");
             SSL_CTX_free(ssl_ctx);
             return NULL;
@@ -175,7 +175,9 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
 
         if (!cert || !SSL_CTX_use_certificate(ssl_ctx, cert)) {
             set_ssl_error(err, MTLS_ERR_CERT_PARSE_FAILED, "Failed to load certificate from memory");
-            if (cert) X509_free(cert);
+            if (cert) {
+                X509_free(cert);
+            }
             SSL_CTX_free(ssl_ctx);
             return NULL;
         }
@@ -190,7 +192,7 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
 
     if (config->key_pem) {
         /* Validate PEM data length */
-        if (config->key_pem_len == 0 || config->key_pem_len > 1024 * 1024) {
+        if (config->key_pem_len == 0 || config->key_pem_len > 1024UL * 1024) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "Private key PEM length invalid (max 1MB)");
             SSL_CTX_free(ssl_ctx);
             return NULL;
@@ -207,7 +209,9 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
 
         if (!key || !SSL_CTX_use_PrivateKey(ssl_ctx, key)) {
             set_ssl_error(err, MTLS_ERR_KEY_PARSE_FAILED, "Failed to load private key from memory");
-            if (key) EVP_PKEY_free(key);
+            if (key) {
+                EVP_PKEY_free(key);
+            }
             SSL_CTX_free(ssl_ctx);
             return NULL;
         }
@@ -263,7 +267,9 @@ void* mtls_tls_ctx_create(const mtls_config* config, mtls_err* err) {
 }
 
 void mtls_tls_ctx_free(void* tls_ctx_ptr) {
-    if (!tls_ctx_ptr) return;
+    if (!tls_ctx_ptr) {
+        return;
+    }
 
     struct mtls_tls_ctx_internal* tls_ctx = (struct mtls_tls_ctx_internal*)tls_ctx_ptr;
 

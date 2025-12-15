@@ -161,15 +161,19 @@ typedef struct mtls_observers {
 /*
  * Default timeout values (milliseconds)
  */
-#define MTLS_DEFAULT_CONNECT_TIMEOUT_MS  30000  /* 30 seconds */
-#define MTLS_DEFAULT_READ_TIMEOUT_MS     60000  /* 60 seconds */
-#define MTLS_DEFAULT_WRITE_TIMEOUT_MS    60000  /* 60 seconds */
+enum {
+    MTLS_DEFAULT_CONNECT_TIMEOUT_MS = 30000,  /* 30 seconds */
+    MTLS_DEFAULT_READ_TIMEOUT_MS    = 60000,  /* 60 seconds */
+    MTLS_DEFAULT_WRITE_TIMEOUT_MS   = 60000   /* 60 seconds */
+};
 
 /*
  * Buffer size limits
  */
-#define MTLS_MAX_READ_BUFFER_SIZE  (16 * 1024)  /* 16 KB */
-#define MTLS_MAX_WRITE_BUFFER_SIZE (16 * 1024)  /* 16 KB */
+enum {
+    MTLS_MAX_READ_BUFFER_SIZE  = 16 * 1024,  /* 16 KB */
+    MTLS_MAX_WRITE_BUFFER_SIZE = 16 * 1024   /* 16 KB */
+};
 
 #ifdef __cplusplus
 }
