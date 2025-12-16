@@ -76,7 +76,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     if (platform_parse_addr(addr, &conn->remote_addr, err) < 0) {
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
-        event.error_code = err ? (int)err->code : (int)MTLS_ERR_INVALID_ADDRESS;
+        event.error_code = err ? (int)err->code : MTLS_ERR_INVALID_ADDRESS;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(ctx, &event);
@@ -102,7 +102,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     if (conn->sock == MTLS_INVALID_SOCKET) {
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
-        event.error_code = err ? (int)err->code : (int)MTLS_ERR_SOCKET_CREATE_FAILED;
+        event.error_code = err ? (int)err->code : MTLS_ERR_SOCKET_CREATE_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(ctx, &event);
@@ -126,7 +126,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
         event.type = MTLS_EVENT_CONNECT_FAILURE;
         event.remote_addr = remote_addr_str;
         event.conn = conn;
-        event.error_code = err ? (int)err->code : (int)MTLS_ERR_CONNECT_FAILED;
+        event.error_code = err ? (int)err->code : MTLS_ERR_CONNECT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(ctx, &event);
@@ -458,7 +458,12 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
     while (total_written < (ssize_t)len) {
         size_t remaining = len - (size_t)total_written;
         /* Limit to INT_MAX for SSL_write */
-        int write_len = (remaining > (size_t)INT_MAX) ? INT_MAX : (int)remaining;
+        int write_len = 0;
+        if (remaining > (size_t)INT_MAX) {
+            write_len = INT_MAX;
+        } else {
+            write_len = (int)remaining;
+        }
         
         int bytes_written = SSL_write(conn->ssl, buf_ptr + total_written, write_len);
         if (bytes_written <= 0) {

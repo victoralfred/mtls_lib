@@ -3,7 +3,9 @@
  * @brief Linux-specific platform implementation
  */
 
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define _POSIX_C_SOURCE 200809L
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define _GNU_SOURCE
 
 #include "platform.h"
@@ -36,7 +38,9 @@ mtls_socket_t platform_socket_create(int domain, int type, int protocol, mtls_er
     if (sock == MTLS_INVALID_SOCKET) {
         MTLS_ERR_SET(err, MTLS_ERR_SOCKET_CREATE_FAILED,
                      "Failed to create socket: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
     }
     return sock;
 }
@@ -52,7 +56,9 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
     if (flags == -1) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Failed to get socket flags: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -65,7 +71,9 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
     if (fcntl(sock, F_SETFL, flags) == -1) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Failed to set socket flags: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -73,14 +81,16 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
 }
 
 int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err) {
-    struct timeval tv;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    struct timeval time_val;
+    time_val.tv_sec = timeout_ms / 1000;
+    time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
 
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &time_val, sizeof(time_val)) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Failed to set recv timeout: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -88,14 +98,16 @@ int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
 }
 
 int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err) {
-    struct timeval tv;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    struct timeval time_val;
+    time_val.tv_sec = timeout_ms / 1000;
+    time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
 
-    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &time_val, sizeof(time_val)) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Failed to set send timeout: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -107,7 +119,9 @@ int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err* err
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Failed to set SO_REUSEADDR: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -118,7 +132,9 @@ int platform_socket_bind(mtls_socket_t sock, const mtls_addr* addr, mtls_err* er
     if (bind(sock, &addr->addr.sa, addr->len) < 0) {
         MTLS_ERR_SET(err, platform_socket_error_to_mtls(errno),
                      "Failed to bind socket: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -129,7 +145,9 @@ int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err* err) {
     if (listen(sock, backlog) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_SOCKET_LISTEN_FAILED,
                      "Failed to listen on socket: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -143,7 +161,9 @@ mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr* addr, mtls_e
     if (client == MTLS_INVALID_SOCKET) {
         MTLS_ERR_SET(err, MTLS_ERR_ACCEPT_FAILED,
                      "Failed to accept connection: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
     }
 
     return client;
@@ -164,30 +184,35 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
         if (ret < 0 && errno != EINPROGRESS) {
             MTLS_ERR_SET(err, platform_socket_error_to_mtls(errno),
                          "Connect failed: %s", strerror(errno));
-            if (err) err->os_errno = errno;
+            if (err) {
+            err->os_errno = errno;
+        }
             return -1;
         }
 
         if (ret < 0) {
             /* Use select to wait for connection with timeout */
             fd_set write_fds;
-            struct timeval tv;
+            struct timeval time_val;
 
             FD_ZERO(&write_fds);
             FD_SET(sock, &write_fds);
 
-            tv.tv_sec = timeout_ms / 1000;
-            tv.tv_usec = (timeout_ms % 1000) * 1000;
+            time_val.tv_sec = timeout_ms / 1000;
+            time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
 
-            ret = select(sock + 1, NULL, &write_fds, NULL, &tv);
+            ret = select(sock + 1, NULL, &write_fds, NULL, &time_val);
 
             if (ret == 0) {
                 MTLS_ERR_SET(err, MTLS_ERR_CONNECT_TIMEOUT, "Connection timed out");
                 return -1;
-            } else if (ret < 0) {
+            }
+            if (ret < 0) {
                 MTLS_ERR_SET(err, MTLS_ERR_CONNECT_FAILED,
                              "Select failed: %s", strerror(errno));
-                if (err) err->os_errno = errno;
+                if (err) {
+                    err->os_errno = errno;
+                }
                 return -1;
             }
 
@@ -197,7 +222,9 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
             if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &sock_err, &len) < 0) {
                 MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                              "getsockopt failed: %s", strerror(errno));
-                if (err) err->os_errno = errno;
+                if (err) {
+            err->os_errno = errno;
+        }
                 return -1;
             }
 
@@ -217,7 +244,9 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
         if (ret < 0) {
             MTLS_ERR_SET(err, platform_socket_error_to_mtls(errno),
                          "Connect failed: %s", strerror(errno));
-            if (err) err->os_errno = errno;
+            if (err) {
+            err->os_errno = errno;
+        }
             return -1;
         }
     }
@@ -226,42 +255,48 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
 }
 
 ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err* err) {
-    ssize_t n = read(sock, buf, len);
+    ssize_t bytes_read = read(sock, buf, len);
 
-    if (n < 0) {
+    if (bytes_read < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
         } else {
             MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED,
                          "Read failed: %s", strerror(errno));
         }
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
     }
 
-    return n;
+    return bytes_read;
 }
 
 ssize_t platform_socket_write(mtls_socket_t sock, const void* buf, size_t len, mtls_err* err) {
-    ssize_t n = write(sock, buf, len);
+    ssize_t bytes_written = write(sock, buf, len);
 
-    if (n < 0) {
+    if (bytes_written < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
         } else {
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED,
                          "Write failed: %s", strerror(errno));
         }
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
     }
 
-    return n;
+    return bytes_written;
 }
 
 int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err* err) {
     if (shutdown(sock, how) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Shutdown failed: %s", strerror(errno));
-        if (err) err->os_errno = errno;
+        if (err) {
+            err->os_errno = errno;
+        }
         return -1;
     }
 
@@ -283,7 +318,7 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
     char host[256];
     char port[16];
-    const char* colon;
+    const char* colon = NULL;
 
     /* Handle IPv6 addresses [::1]:port */
     if (addr_str[0] == '[') {
@@ -339,7 +374,7 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
     }
 
     /* Validate port number */
-    char* port_end;
+    char* port_end = NULL;
     unsigned long port_num = strtoul(port, &port_end, 10);
     if (*port_end != '\0' || port_num == 0 || port_num > 65535) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
@@ -347,7 +382,8 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
     }
 
     /* Resolve address */
-    struct addrinfo hints, *result;
+    struct addrinfo hints;
+    struct addrinfo* result = NULL;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;     /* Allow IPv4 or IPv6 */
     hints.ai_socktype = SOCK_STREAM;
@@ -370,7 +406,7 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
 int platform_format_addr(const mtls_addr* addr, char* buf, size_t buf_len) {
     char host[INET6_ADDRSTRLEN];
-    uint16_t port;
+    uint16_t port = 0;
 
     if (addr->addr.sa.sa_family == AF_INET) {
         inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
@@ -411,13 +447,15 @@ mtls_error_code platform_socket_error_to_mtls(int socket_err) {
 }
 
 uint64_t platform_get_time_us(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+    struct timespec time_spec;
+    (void)clock_gettime(CLOCK_MONOTONIC, &time_spec);
+    return ((uint64_t)time_spec.tv_sec * 1000000ULL) + ((uint64_t)time_spec.tv_nsec / 1000ULL);
 }
 
 void platform_secure_zero(void* ptr, size_t len) {
-    if (!ptr || len == 0) return;
+    if (!ptr || len == 0) {
+        return;
+    }
 
     /* Use explicit_bzero if available, otherwise volatile */
 #ifdef __GLIBC__
@@ -430,45 +468,45 @@ void platform_secure_zero(void* ptr, size_t len) {
 #endif
 }
 
-int platform_consttime_memcmp(const void* a, const void* b, size_t len) {
-    if (!a || !b) {
+int platform_consttime_memcmp(const void* ptr_a, const void* ptr_b, size_t len) {
+    if (!ptr_a || !ptr_b) {
         /* If either pointer is NULL, fall back to regular comparison */
-        return (a == b) ? 0 : 1;
+        return (ptr_a == ptr_b) ? 0 : 1;
     }
 
-    const volatile unsigned char* pa = (const volatile unsigned char*)a;
-    const volatile unsigned char* pb = (const volatile unsigned char*)b;
+    const volatile unsigned char* ptr_a_bytes = (const volatile unsigned char*)ptr_a;
+    const volatile unsigned char* ptr_b_bytes = (const volatile unsigned char*)ptr_b;
     unsigned char diff = 0;
 
     /* XOR all bytes and accumulate differences */
     for (size_t i = 0; i < len; i++) {
-        diff |= (pa[i] ^ pb[i]);
+        diff |= (ptr_a_bytes[i] ^ ptr_b_bytes[i]);
     }
 
     /* Return 0 if all bytes were equal, non-zero otherwise */
     return diff;
 }
 
-int platform_consttime_strcmp(const char* a, const char* b) {
-    if (!a || !b) {
+int platform_consttime_strcmp(const char* str_a, const char* str_b) {
+    if (!str_a || !str_b) {
         /* If either pointer is NULL, fall back to pointer comparison */
-        return (a == b) ? 0 : 1;
+        return (str_a == str_b) ? 0 : 1;
     }
 
     /* Enforce hard upper bound on identity length.
      * Identities exceeding MTLS_MAX_IDENTITY_LEN are rejected
      * to prevent resource exhaustion and comparison bypasses.
      * Return -1 to signal error (caller must check for MTLS_ERR_IDENTITY_TOO_LONG) */
-    size_t len_a = strnlen(a, MTLS_MAX_IDENTITY_LEN + 1);
-    size_t len_b = strnlen(b, MTLS_MAX_IDENTITY_LEN + 1);
+    size_t len_a = strnlen(str_a, MTLS_MAX_IDENTITY_LEN + 1);
+    size_t len_b = strnlen(str_b, MTLS_MAX_IDENTITY_LEN + 1);
 
     if (len_a > MTLS_MAX_IDENTITY_LEN || len_b > MTLS_MAX_IDENTITY_LEN) {
         /* Error: string exceeds maximum allowed length */
         return -1;
     }
 
-    const volatile unsigned char* pa = (const volatile unsigned char*)a;
-    const volatile unsigned char* pb = (const volatile unsigned char*)b;
+    const volatile unsigned char* str_a_bytes = (const volatile unsigned char*)str_a;
+    const volatile unsigned char* str_b_bytes = (const volatile unsigned char*)str_b;
     unsigned char diff = 0;
 
     /* Determine the maximum length we need to compare (including null terminator).
@@ -480,10 +518,10 @@ int platform_consttime_strcmp(const char* a, const char* b) {
      * This prevents timing attacks based on string length. */
     for (size_t i = 0; i <= max_len; i++) {
         /* Read character from string A, or 0 if past its end */
-        unsigned char ca = (i <= len_a) ? pa[i] : 0;
+        unsigned char ca = (i <= len_a) ? str_a_bytes[i] : 0;
 
         /* Read character from string B, or 0 if past its end */
-        unsigned char cb = (i <= len_b) ? pb[i] : 0;
+        unsigned char cb = (i <= len_b) ? str_b_bytes[i] : 0;
 
         /* XOR the characters to accumulate differences */
         diff |= (ca ^ cb);

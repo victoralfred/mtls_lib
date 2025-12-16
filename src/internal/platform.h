@@ -72,7 +72,7 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
 /*
  * Set socket timeout for read operations
  */
-int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err);
+int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err);  // NOLINT(misc-include-cleaner)
 
 /*
  * Set socket timeout for write operations
@@ -108,7 +108,7 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
 /*
  * Read from socket
  */
-ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err* err);
+ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err* err);  // NOLINT(misc-include-cleaner)
 
 /*
  * Write to socket
@@ -143,7 +143,7 @@ mtls_error_code platform_socket_error_to_mtls(int socket_err);
 /*
  * Get monotonic time in microseconds (for timing/metrics)
  */
-uint64_t platform_get_time_us(void);
+uint64_t platform_get_time_us(void);  // NOLINT(misc-include-cleaner)
 
 /*
  * Secure memory zeroing (prevents compiler optimization)
@@ -157,12 +157,12 @@ void platform_secure_zero(void* ptr, size_t len);
  * the first difference occurs. Use this for comparing secrets, hashes,
  * or other security-sensitive data.
  *
- * @param a First memory region
- * @param b Second memory region
+ * @param lhs First memory region
+ * @param rhs Second memory region
  * @param len Length to compare
  * @return 0 if equal, non-zero if different
  */
-int platform_consttime_memcmp(const void* a, const void* b, size_t len);
+int platform_consttime_memcmp(const void* lhs, const void* rhs, size_t len);
 
 /*
  * Constant-time string comparison (prevents timing attacks)
@@ -171,11 +171,11 @@ int platform_consttime_memcmp(const void* a, const void* b, size_t len);
  * continues through the full length of the longer string to avoid timing
  * leaks about string length or position of differences.
  *
- * @param a First string
- * @param b Second string
+ * @param lhs First string
+ * @param rhs Second string
  * @return 0 if equal, non-zero if different
  */
-int platform_consttime_strcmp(const char* a, const char* b);
+int platform_consttime_strcmp(const char* lhs, const char* rhs);
 
 #ifdef __cplusplus
 }

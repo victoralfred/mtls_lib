@@ -9,7 +9,9 @@
 #include <stdarg.h>
 
 void mtls_err_init(mtls_err* err) {
-    if (!err) return;
+    if (!err) {
+        return;
+    }
 
     memset(err, 0, sizeof(*err));
     err->code = MTLS_OK;
@@ -20,7 +22,9 @@ void mtls_err_clear(mtls_err* err) {
 }
 
 void mtls_err_set(mtls_err* err, mtls_error_code code, const char* fmt, ...) {
-    if (!err) return;
+    if (!err) {
+        return;
+    }
 
     err->code = code;
     err->file = NULL;
@@ -53,7 +57,9 @@ void mtls_err_set(mtls_err* err, mtls_error_code code, const char* fmt, ...) {
 void mtls_err_set_internal(mtls_err* err, mtls_error_code code,
                            const char* file, int line,
                            const char* fmt, ...) {
-    if (!err) return;
+    if (!err) {
+        return;
+    }
 
     err->code = code;
     err->file = file;
@@ -163,13 +169,27 @@ const char* mtls_err_code_name(mtls_error_code code) {
 }
 
 const char* mtls_err_category_name(mtls_error_code code) {
-    if (code == MTLS_OK) return "Success";
-    if (mtls_err_is_config(code)) return "Configuration";
-    if (mtls_err_is_network(code)) return "Network";
-    if (mtls_err_is_tls(code)) return "TLS/Certificate";
-    if (mtls_err_is_identity(code)) return "Identity";
-    if (mtls_err_is_policy(code)) return "Policy";
-    if (mtls_err_is_io(code)) return "I/O";
+    if (code == MTLS_OK) {
+        return "Success";
+    }
+    if (mtls_err_is_config(code)) {
+        return "Configuration";
+    }
+    if (mtls_err_is_network(code)) {
+        return "Network";
+    }
+    if (mtls_err_is_tls(code)) {
+        return "TLS/Certificate";
+    }
+    if (mtls_err_is_identity(code)) {
+        return "Identity";
+    }
+    if (mtls_err_is_policy(code)) {
+        return "Policy";
+    }
+    if (mtls_err_is_io(code)) {
+        return "I/O";
+    }
     return "Internal";
 }
 

@@ -132,7 +132,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     if (conn->sock == MTLS_INVALID_SOCKET) {
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
-        event.error_code = err ? (int)err->code : (int)MTLS_ERR_ACCEPT_FAILED;
+        event.error_code = err ? (int)err->code : MTLS_ERR_ACCEPT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(listener->ctx, &event);
