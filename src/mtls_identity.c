@@ -188,11 +188,13 @@ int mtls_get_peer_identity(mtls_conn* conn, mtls_peer_identity* identity, mtls_e
                         /* Use san_len (actual allocated size) instead of strlen to avoid warnings */
                         size_t spiffe_len = (size_t)san_len;
                         if (spiffe_len < MTLS_MAX_SPIFFE_ID_LEN) {
+                            /* Copy entire string including null terminator */
                             memcpy(identity->spiffe_id, san_str, spiffe_len + 1);
                         } else {
-                            /* Copy maximum allowed, truncating to fit in buffer */
-                            memcpy(identity->spiffe_id, san_str, MTLS_MAX_SPIFFE_ID_LEN - 1);
-                            identity->spiffe_id[MTLS_MAX_SPIFFE_ID_LEN - 1] = '\0';
+                            /* Truncate to fit in buffer - copy only what fits */
+                            size_t copy_len = MTLS_MAX_SPIFFE_ID_LEN - 1;
+                            memcpy(identity->spiffe_id, san_str, copy_len);
+                            identity->spiffe_id[copy_len] = '\0';
                         }
                     }
                 }
