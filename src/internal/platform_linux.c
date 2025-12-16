@@ -406,7 +406,7 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
 int platform_format_addr(const mtls_addr* addr, char* buf, size_t buf_len) {
     char host[INET6_ADDRSTRLEN];
-    uint16_t port = 0;
+    uint16_t port;
 
     if (addr->addr.sa.sa_family == AF_INET) {
         inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
@@ -468,63 +468,63 @@ void platform_secure_zero(void* ptr, size_t len) {
 #endif
 }
 
-int platform_consttime_memcmp(const void* ptr_a, const void* ptr_b, size_t len) {
-    if (!ptr_a || !ptr_b) {
+int platform_consttime_memcmp(const void* lhs, const void* rhs, size_t len) {
+    if (!lhs || !rhs) {
         /* If either pointer is NULL, fall back to regular comparison */
-        return (ptr_a == ptr_b) ? 0 : 1;
+        return (lhs == rhs) ? 0 : 1;
     }
 
-    const volatile unsigned char* ptr_a_bytes = (const volatile unsigned char*)ptr_a;
-    const volatile unsigned char* ptr_b_bytes = (const volatile unsigned char*)ptr_b;
+    const volatile unsigned char* lhs_bytes = (const volatile unsigned char*)lhs;
+    const volatile unsigned char* rhs_bytes = (const volatile unsigned char*)rhs;
     unsigned char diff = 0;
 
     /* XOR all bytes and accumulate differences */
     for (size_t i = 0; i < len; i++) {
-        diff |= (ptr_a_bytes[i] ^ ptr_b_bytes[i]);
+        diff |= (lhs_bytes[i] ^ rhs_bytes[i]);
     }
 
     /* Return 0 if all bytes were equal, non-zero otherwise */
     return diff;
 }
 
-int platform_consttime_strcmp(const char* str_a, const char* str_b) {
-    if (!str_a || !str_b) {
+int platform_consttime_strcmp(const char* lhs, const char* rhs) {
+    if (!lhs || !rhs) {
         /* If either pointer is NULL, fall back to pointer comparison */
-        return (str_a == str_b) ? 0 : 1;
+        return (lhs == rhs) ? 0 : 1;
     }
 
     /* Enforce hard upper bound on identity length.
      * Identities exceeding MTLS_MAX_IDENTITY_LEN are rejected
      * to prevent resource exhaustion and comparison bypasses.
      * Return -1 to signal error (caller must check for MTLS_ERR_IDENTITY_TOO_LONG) */
-    size_t len_a = strnlen(str_a, MTLS_MAX_IDENTITY_LEN + 1);
-    size_t len_b = strnlen(str_b, MTLS_MAX_IDENTITY_LEN + 1);
+    size_t len_lhs = strnlen(lhs, MTLS_MAX_IDENTITY_LEN + 1);
+    size_t len_rhs = strnlen(rhs, MTLS_MAX_IDENTITY_LEN + 1);
 
-    if (len_a > MTLS_MAX_IDENTITY_LEN || len_b > MTLS_MAX_IDENTITY_LEN) {
+    if (len_lhs > MTLS_MAX_IDENTITY_LEN || len_rhs > MTLS_MAX_IDENTITY_LEN) {
         /* Error: string exceeds maximum allowed length */
         return -1;
     }
 
-    const volatile unsigned char* str_a_bytes = (const volatile unsigned char*)str_a;
-    const volatile unsigned char* str_b_bytes = (const volatile unsigned char*)str_b;
+    const volatile unsigned char* lhs_bytes = (const volatile unsigned char*)lhs;
+    const volatile unsigned char* rhs_bytes = (const volatile unsigned char*)rhs;
     unsigned char diff = 0;
 
     /* Determine the maximum length we need to compare (including null terminator).
      * We iterate up to max_len+1 to compare the null terminators as well. */
-    size_t max_len = (len_a > len_b) ? len_a : len_b;
+    size_t max_len = (len_lhs > len_rhs) ? len_lhs : len_rhs;
 
     /* Constant-time comparison: iterate a fixed number of times based on the
      * longer string. For shorter string, we virtually pad with zeros.
      * This prevents timing attacks based on string length. */
     for (size_t i = 0; i <= max_len; i++) {
-        /* Read character from string A, or 0 if past its end */
-        unsigned char ca = (i <= len_a) ? str_a_bytes[i] : 0;
+        /* Read character from left string, or 0 if past its end */
+        unsigned char clhs = (i <= len_lhs) ? lhs_bytes[i] : 0;
 
-        /* Read character from string B, or 0 if past its end */
-        unsigned char cb = (i <= len_b) ? str_b_bytes[i] : 0;
+        /* Read character from right string, or 0 if past its end */
+        unsigned char crhs = (i <= len_rhs) ? rhs_bytes[i] : 0;
 
         /* XOR the characters to accumulate differences */
-        diff |= (ca ^ cb);
+        diff |= (clhs ^ crhs);
     }
 
     return diff;
