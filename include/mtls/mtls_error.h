@@ -105,90 +105,94 @@ typedef enum mtls_error_code {
 /*
  * Error message buffer size
  */
-#define MTLS_ERR_MESSAGE_SIZE 256
+enum { MTLS_ERR_MESSAGE_SIZE = 256 };
 
 /*
  * Error structure with context
  */
 typedef struct mtls_err {
-    mtls_error_code code;           /* Primary error code */
-    char message[MTLS_ERR_MESSAGE_SIZE];  /* Human-readable message */
-    int os_errno;                   /* OS error code (errno) */
-    unsigned long ssl_err;          /* SSL library error code */
-    const char* file;               /* Source file (debug) */
-    int line;                       /* Source line (debug) */
+    mtls_error_code code;                /* Primary error code */
+    char message[MTLS_ERR_MESSAGE_SIZE]; /* Human-readable message */
+    int os_errno;                        /* OS error code (errno) */
+    unsigned long ssl_err;               /* SSL library error code */
+    const char *file;                    /* Source file (debug) */
+    int line;                            /* Source line (debug) */
 } mtls_err;
 
 /*
  * Initialize an error structure
  */
-MTLS_API void mtls_err_init(mtls_err* err);
+MTLS_API void mtls_err_init(mtls_err *err);
 
 /*
  * Clear an error structure
  */
-MTLS_API void mtls_err_clear(mtls_err* err);
+MTLS_API void mtls_err_clear(mtls_err *err);
 
 /*
  * Set error with formatted message
  */
-MTLS_API void mtls_err_set(mtls_err* err, mtls_error_code code, const char* fmt, ...);
+MTLS_API void mtls_err_set(mtls_err *err, mtls_error_code code, const char *fmt, ...);
 
 /*
  * Set error with file/line information (internal use)
  */
-MTLS_API void mtls_err_set_internal(mtls_err* err, mtls_error_code code,
-                                     const char* file, int line,
-                                     const char* fmt, ...);
+MTLS_API void mtls_err_set_internal(mtls_err *err, mtls_error_code code, const char *file, int line,
+                                    const char *fmt, ...);
 
 /*
  * Get human-readable error code name
  */
-MTLS_API const char* mtls_err_code_name(mtls_error_code code);
+MTLS_API const char *mtls_err_code_name(mtls_error_code code);
 
 /*
  * Get human-readable error category name
  */
-MTLS_API const char* mtls_err_category_name(mtls_error_code code);
+MTLS_API const char *mtls_err_category_name(mtls_error_code code);
 
 /*
  * Format error to string buffer
  */
-MTLS_API int mtls_err_format(const mtls_err* err, char* buf, size_t buf_size);
+MTLS_API int mtls_err_format(const mtls_err *err, char *buf, size_t buf_size);
 
 /*
  * Check if error is a specific category
  */
-static inline bool mtls_err_is_config(mtls_error_code code) {
+static inline bool mtls_err_is_config(mtls_error_code code)
+{
     return code >= 100 && code < 200;
 }
 
-static inline bool mtls_err_is_network(mtls_error_code code) {
+static inline bool mtls_err_is_network(mtls_error_code code)
+{
     return code >= 200 && code < 300;
 }
 
-static inline bool mtls_err_is_tls(mtls_error_code code) {
+static inline bool mtls_err_is_tls(mtls_error_code code)
+{
     return code >= 300 && code < 400;
 }
 
-static inline bool mtls_err_is_identity(mtls_error_code code) {
+static inline bool mtls_err_is_identity(mtls_error_code code)
+{
     return code >= 400 && code < 500;
 }
 
-static inline bool mtls_err_is_policy(mtls_error_code code) {
+static inline bool mtls_err_is_policy(mtls_error_code code)
+{
     return code >= 500 && code < 600;
 }
 
-static inline bool mtls_err_is_io(mtls_error_code code) {
+static inline bool mtls_err_is_io(mtls_error_code code)
+{
     return code >= 600 && code < 700;
 }
 
-static inline bool mtls_err_is_recoverable(mtls_error_code code) {
+static inline bool mtls_err_is_recoverable(mtls_error_code code)
+{
     /* Timeouts and would-block are recoverable */
-    return code == MTLS_ERR_CONNECT_TIMEOUT ||
-           code == MTLS_ERR_READ_TIMEOUT ||
-           code == MTLS_ERR_WRITE_TIMEOUT ||
-           code == MTLS_ERR_WOULD_BLOCK;
+    return code == MTLS_ERR_CONNECT_TIMEOUT || code == MTLS_ERR_READ_TIMEOUT ||
+           code == MTLS_ERR_WRITE_TIMEOUT || code == MTLS_ERR_WOULD_BLOCK;
 }
 
 /*

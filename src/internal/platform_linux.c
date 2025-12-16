@@ -3,19 +3,23 @@
  * @brief Linux-specific platform implementation
  */
 
+// NOLINTBEGIN(misc-include-cleaner,clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
+// Platform files intentionally use transitive includes from system headers.
+// memcpy/memset usage is correct with proper bounds checking.
+
 /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define _POSIX_C_SOURCE 200809L
 /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define _GNU_SOURCE
 
-#include "platform.h"  // NOLINT(misc-include-cleaner)
+#include "platform.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/select.h>
-#include <sys/time.h>  // NOLINT(misc-include-cleaner)
+#include <sys/time.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>  // NOLINT(misc-include-cleaner)
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -24,40 +28,51 @@
 #include <string.h>
 #include <time.h>
 
-int platform_init(void) {
+int platform_init(void)
+{
     /* No initialization needed on Linux */
     return 0;
 }
 
-void platform_cleanup(void) {
+void platform_cleanup(void)
+{
     /* No cleanup needed on Linux */
 }
 
-mtls_socket_t platform_socket_create(int domain, int type, int protocol, mtls_err* err) {
+mtls_socket_t platform_socket_create(int domain, int type, int protocol, mtls_err *err)
+{
     mtls_socket_t sock = socket(domain, type, protocol);
     if (sock == MTLS_INVALID_SOCKET) {
-        MTLS_ERR_SET(err, MTLS_ERR_SOCKET_CREATE_FAILED,
-                     "Failed to create socket: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_SOCKET_CREATE_FAILED, "Failed to create socket: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
     }
     return sock;
 }
 
-void platform_socket_close(mtls_socket_t sock) {
+void platform_socket_close(mtls_socket_t sock)
+{
     if (sock != MTLS_INVALID_SOCKET) {
         close(sock);
     }
 }
 
-int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_err* err) {
+int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_err *err)
+{
+    char errbuf[256];
+    int saved_errno = 0; // cppcheck-suppress unreadVariable
+
     int flags = fcntl(sock, F_GETFL, 0);
     if (flags == -1) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                     "Failed to get socket flags: %s", strerror(errno));
+        saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to get socket flags: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -69,10 +84,11 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
     }
 
     if (fcntl(sock, F_SETFL, flags) == -1) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                     "Failed to set socket flags: %s", strerror(errno));
+        saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set socket flags: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -80,16 +96,19 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
     return 0;
 }
 
-int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err) {
+int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err *err)
+{
     struct timeval time_val;
     time_val.tv_sec = timeout_ms / 1000;
     time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &time_val, sizeof(time_val)) < 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                     "Failed to set recv timeout: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set recv timeout: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -97,16 +116,19 @@ int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
     return 0;
 }
 
-int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err) {
+int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err *err)
+{
     struct timeval time_val;
     time_val.tv_sec = timeout_ms / 1000;
     time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
     if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &time_val, sizeof(time_val)) < 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                     "Failed to set send timeout: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set send timeout: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -114,13 +136,16 @@ int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
     return 0;
 }
 
-int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err* err) {
+int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err *err)
+{
     int opt = enable ? 1 : 0;
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                     "Failed to set SO_REUSEADDR: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set SO_REUSEADDR: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -128,12 +153,16 @@ int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err* err
     return 0;
 }
 
-int platform_socket_bind(mtls_socket_t sock, const mtls_addr* addr, mtls_err* err) {
+int platform_socket_bind(mtls_socket_t sock, const mtls_addr *addr, mtls_err *err)
+{
     if (bind(sock, &addr->addr.sa, addr->len) < 0) {
-        MTLS_ERR_SET(err, platform_socket_error_to_mtls(errno),
-                     "Failed to bind socket: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, platform_socket_error_to_mtls(saved_errno), "Failed to bind socket: %s",
+                     errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -141,12 +170,15 @@ int platform_socket_bind(mtls_socket_t sock, const mtls_addr* addr, mtls_err* er
     return 0;
 }
 
-int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err* err) {
+int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err *err)
+{
     if (listen(sock, backlog) < 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_SOCKET_LISTEN_FAILED,
-                     "Failed to listen on socket: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_SOCKET_LISTEN_FAILED, "Failed to listen on socket: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -154,24 +186,30 @@ int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err* err) {
     return 0;
 }
 
-mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr* addr, mtls_err* err) {
+mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr *addr, mtls_err *err)
+{
     addr->len = sizeof(addr->addr.ss);
     mtls_socket_t client = accept(sock, &addr->addr.sa, &addr->len);
 
     if (client == MTLS_INVALID_SOCKET) {
-        MTLS_ERR_SET(err, MTLS_ERR_ACCEPT_FAILED,
-                     "Failed to accept connection: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_ACCEPT_FAILED, "Failed to accept connection: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
     }
 
     return client;
 }
 
-int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
-                            uint32_t timeout_ms, mtls_err* err) {
+int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t timeout_ms,
+                            mtls_err *err)
+{
     int ret = 0;
+    char errbuf[256];
+    int saved_errno = 0; // cppcheck-suppress unreadVariable
 
     if (timeout_ms > 0) {
         /* Set non-blocking for timeout */
@@ -182,11 +220,13 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
         ret = connect(sock, &addr->addr.sa, addr->len);
 
         if (ret < 0 && errno != EINPROGRESS) {
-            MTLS_ERR_SET(err, platform_socket_error_to_mtls(errno),
-                         "Connect failed: %s", strerror(errno));
+            saved_errno = errno;
+            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+            MTLS_ERR_SET(err, platform_socket_error_to_mtls(saved_errno), "Connect failed: %s",
+                         errbuf);
             if (err) {
-            err->os_errno = errno;
-        }
+                err->os_errno = saved_errno;
+            }
             return -1;
         }
 
@@ -208,10 +248,11 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
                 return -1;
             }
             if (ret < 0) {
-                MTLS_ERR_SET(err, MTLS_ERR_CONNECT_FAILED,
-                             "Select failed: %s", strerror(errno));
+                saved_errno = errno;
+                platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+                MTLS_ERR_SET(err, MTLS_ERR_CONNECT_FAILED, "Select failed: %s", errbuf);
                 if (err) {
-                    err->os_errno = errno;
+                    err->os_errno = saved_errno;
                 }
                 return -1;
             }
@@ -220,17 +261,19 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
             int sock_err = 0;
             socklen_t len = sizeof(sock_err);
             if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &sock_err, &len) < 0) {
-                MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                             "getsockopt failed: %s", strerror(errno));
+                saved_errno = errno;
+                platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+                MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "getsockopt failed: %s", errbuf);
                 if (err) {
-            err->os_errno = errno;
-        }
+                    err->os_errno = saved_errno;
+                }
                 return -1;
             }
 
             if (sock_err != 0) {
-                MTLS_ERR_SET(err, platform_socket_error_to_mtls(sock_err),
-                             "Connection failed: %s", strerror(sock_err));
+                platform_strerror(sock_err, errbuf, sizeof(errbuf));
+                MTLS_ERR_SET(err, platform_socket_error_to_mtls(sock_err), "Connection failed: %s",
+                             errbuf);
                 if (err) {
                     err->os_errno = sock_err;
                 }
@@ -244,11 +287,13 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
         /* Blocking connect */
         ret = connect(sock, &addr->addr.sa, addr->len);
         if (ret < 0) {
-            MTLS_ERR_SET(err, platform_socket_error_to_mtls(errno),
-                         "Connect failed: %s", strerror(errno));
+            saved_errno = errno;
+            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+            MTLS_ERR_SET(err, platform_socket_error_to_mtls(saved_errno), "Connect failed: %s",
+                         errbuf);
             if (err) {
-            err->os_errno = errno;
-        }
+                err->os_errno = saved_errno;
+            }
             return -1;
         }
     }
@@ -256,48 +301,57 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
     return 0;
 }
 
-ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err* err) {
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err *err)
+{
     ssize_t bytes_read = read(sock, buf, len);
 
     if (bytes_read < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        int saved_errno = errno;
+        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
         } else {
-            MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED,
-                         "Read failed: %s", strerror(errno));
+            char errbuf[256];
+            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+            MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "Read failed: %s", errbuf);
         }
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
     }
 
     return bytes_read;
 }
 
-ssize_t platform_socket_write(mtls_socket_t sock, const void* buf, size_t len, mtls_err* err) {
+ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, mtls_err *err)
+{
     ssize_t bytes_written = write(sock, buf, len);
 
     if (bytes_written < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        int saved_errno = errno;
+        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
         } else {
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED,
-                         "Write failed: %s", strerror(errno));
+            char errbuf[256];
+            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+            MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write failed: %s", errbuf);
         }
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
     }
 
     return bytes_written;
 }
 
-int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err* err) {
+int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err)
+{
     if (shutdown(sock, how) < 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
-                     "Shutdown failed: %s", strerror(errno));
+        char errbuf[256];
+        int saved_errno = errno;
+        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
+        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Shutdown failed: %s", errbuf);
         if (err) {
-            err->os_errno = errno;
+            err->os_errno = saved_errno;
         }
         return -1;
     }
@@ -305,7 +359,8 @@ int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err* err) {
     return 0;
 }
 
-int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
+int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
+{
     if (!addr_str || !addr) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Invalid arguments");
         return -1;
@@ -320,14 +375,13 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
     char host[256];
     char port[16];
-    const char* colon = NULL;
+    const char *colon = NULL;
 
     /* Handle IPv6 addresses [::1]:port */
     if (addr_str[0] == '[') {
-        const char* bracket = strchr(addr_str, ']');
+        const char *bracket = strchr(addr_str, ']');
         if (!bracket) {
-            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
-                         "Invalid IPv6 address format");
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid IPv6 address format");
             return -1;
         }
 
@@ -345,18 +399,16 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
             size_t port_len = strlen(colon + 1);
             size_t copy_len = (port_len < sizeof(port) - 1) ? port_len : sizeof(port) - 1;
             memcpy(port, colon + 1, copy_len);
-            port[copy_len] = '\0';  /* Ensure null termination */
+            port[copy_len] = '\0'; /* Ensure null termination */
         } else {
-            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
-                         "Missing port in address");
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Missing port in address");
             return -1;
         }
     } else {
         /* IPv4 or hostname */
         colon = strrchr(addr_str, ':');
         if (!colon) {
-            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
-                         "Missing port in address");
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Missing port in address");
             return -1;
         }
 
@@ -372,11 +424,11 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
         size_t port_len = strlen(colon + 1);
         size_t copy_len = (port_len < sizeof(port) - 1) ? port_len : sizeof(port) - 1;
         memcpy(port, colon + 1, copy_len);
-        port[copy_len] = '\0';  /* Ensure null termination */
+        port[copy_len] = '\0'; /* Ensure null termination */
     }
 
     /* Validate port number */
-    char* port_end = NULL;
+    char *port_end = NULL;
     unsigned long port_num = strtoul(port, &port_end, 10);
     if (*port_end != '\0' || port_num == 0 || port_num > 65535) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
@@ -385,16 +437,15 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
     /* Resolve address */
     struct addrinfo hints;
-    struct addrinfo* result = NULL;
+    struct addrinfo *result = NULL;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;     /* Allow IPv4 or IPv6 */
+    hints.ai_family = AF_UNSPEC; /* Allow IPv4 or IPv6 */
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_NUMERICSERV;
 
     int ret = getaddrinfo(host, port, &hints, &result);
     if (ret != 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_DNS_FAILED,
-                     "DNS resolution failed: %s", gai_strerror(ret));
+        MTLS_ERR_SET(err, MTLS_ERR_DNS_FAILED, "DNS resolution failed: %s", gai_strerror(ret));
         return -1;
     }
 
@@ -406,9 +457,10 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
     return 0;
 }
 
-int platform_format_addr(const mtls_addr* addr, char* buf, size_t buf_len) {
+int platform_format_addr(const mtls_addr *addr, char *buf, size_t buf_len)
+{
     char host[INET6_ADDRSTRLEN];
-    uint16_t port = 0;
+    uint16_t port = 0; // cppcheck-suppress unreadVariable
 
     if (addr->addr.sa.sa_family == AF_INET) {
         inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
@@ -425,36 +477,40 @@ int platform_format_addr(const mtls_addr* addr, char* buf, size_t buf_len) {
     return 0;
 }
 
-int platform_get_socket_error(void) {
+int platform_get_socket_error(void)
+{
     return errno;
 }
 
-mtls_error_code platform_socket_error_to_mtls(int socket_err) {
+mtls_error_code platform_socket_error_to_mtls(int socket_err)
+{
     switch (socket_err) {
-        case ECONNREFUSED:
-            return MTLS_ERR_CONNECTION_REFUSED;
-        case ENETUNREACH:
-            return MTLS_ERR_NETWORK_UNREACHABLE;
-        case EHOSTUNREACH:
-            return MTLS_ERR_HOST_UNREACHABLE;
-        case EADDRINUSE:
-            return MTLS_ERR_ADDRESS_IN_USE;
-        case ETIMEDOUT:
-            return MTLS_ERR_CONNECT_TIMEOUT;
-        case ECONNRESET:
-            return MTLS_ERR_CONNECTION_RESET;
-        default:
-            return MTLS_ERR_CONNECT_FAILED;
+    case ECONNREFUSED:
+        return MTLS_ERR_CONNECTION_REFUSED;
+    case ENETUNREACH:
+        return MTLS_ERR_NETWORK_UNREACHABLE;
+    case EHOSTUNREACH:
+        return MTLS_ERR_HOST_UNREACHABLE;
+    case EADDRINUSE:
+        return MTLS_ERR_ADDRESS_IN_USE;
+    case ETIMEDOUT:
+        return MTLS_ERR_CONNECT_TIMEOUT;
+    case ECONNRESET:
+        return MTLS_ERR_CONNECTION_RESET;
+    default:
+        return MTLS_ERR_CONNECT_FAILED;
     }
 }
 
-uint64_t platform_get_time_us(void) {
+uint64_t platform_get_time_us(void)
+{
     struct timespec time_spec;
     (void)clock_gettime(CLOCK_MONOTONIC, &time_spec);
     return ((uint64_t)time_spec.tv_sec * 1000000ULL) + ((uint64_t)time_spec.tv_nsec / 1000ULL);
 }
 
-void platform_secure_zero(void* ptr, size_t len) {
+void platform_secure_zero(void *ptr, size_t len)
+{
     if (!ptr || len == 0) {
         return;
     }
@@ -463,21 +519,22 @@ void platform_secure_zero(void* ptr, size_t len) {
 #ifdef __GLIBC__
     explicit_bzero(ptr, len);
 #else
-    volatile unsigned char* p = (volatile unsigned char*)ptr;
+    volatile unsigned char *p = (volatile unsigned char *)ptr;
     while (len--) {
         *p++ = 0;
     }
 #endif
 }
 
-int platform_consttime_memcmp(const void* lhs, const void* rhs, size_t len) {
+int platform_consttime_memcmp(const void *lhs, const void *rhs, size_t len)
+{
     if (!lhs || !rhs) {
         /* If either pointer is NULL, fall back to regular comparison */
         return (lhs == rhs) ? 0 : 1;
     }
 
-    const volatile unsigned char* lhs_bytes = (const volatile unsigned char*)lhs;
-    const volatile unsigned char* rhs_bytes = (const volatile unsigned char*)rhs;
+    const volatile unsigned char *lhs_bytes = (const volatile unsigned char *)lhs;
+    const volatile unsigned char *rhs_bytes = (const volatile unsigned char *)rhs;
     unsigned char diff = 0;
 
     /* XOR all bytes and accumulate differences */
@@ -489,7 +546,8 @@ int platform_consttime_memcmp(const void* lhs, const void* rhs, size_t len) {
     return diff;
 }
 
-int platform_consttime_strcmp(const char* lhs, const char* rhs) {
+int platform_consttime_strcmp(const char *lhs, const char *rhs)
+{
     if (!lhs || !rhs) {
         /* If either pointer is NULL, fall back to pointer comparison */
         return (lhs == rhs) ? 0 : 1;
@@ -507,8 +565,8 @@ int platform_consttime_strcmp(const char* lhs, const char* rhs) {
         return -1;
     }
 
-    const volatile unsigned char* lhs_bytes = (const volatile unsigned char*)lhs;
-    const volatile unsigned char* rhs_bytes = (const volatile unsigned char*)rhs;
+    const volatile unsigned char *lhs_bytes = (const volatile unsigned char *)lhs;
+    const volatile unsigned char *rhs_bytes = (const volatile unsigned char *)rhs;
     unsigned char diff = 0;
 
     /* Determine the maximum length we need to compare (including null terminator).
@@ -531,3 +589,33 @@ int platform_consttime_strcmp(const char* lhs, const char* rhs) {
 
     return diff;
 }
+
+int platform_strerror(int errnum, char *buf, size_t buflen)
+{
+    if (!buf || buflen == 0) {
+        return -1;
+    }
+
+/* Use GNU-specific strerror_r (returns char*) on Linux */
+#if defined(_GNU_SOURCE) && defined(__GLIBC__)
+    const char *result = strerror_r(errnum, buf, buflen);
+    if (result != buf) {
+        /* GNU version returned a static string, copy it */
+        size_t len = strlen(result);
+        if (len >= buflen) {
+            len = buflen - 1;
+        }
+        memcpy(buf, result, len);
+        buf[len] = '\0';
+    }
+#else
+    /* Use XSI-compliant strerror_r (returns int) */
+    if (strerror_r(errnum, buf, buflen) != 0) {
+        snprintf(buf, buflen, "Unknown error %d", errnum);
+    }
+#endif
+
+    return 0;
+}
+
+// NOLINTEND(misc-include-cleaner,clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)

@@ -20,15 +20,15 @@ extern "C" {
  * Platform-specific socket handle type
  */
 #if defined(MTLS_PLATFORM_WINDOWS)
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    typedef SOCKET mtls_socket_t;
-    #define MTLS_INVALID_SOCKET INVALID_SOCKET
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+typedef SOCKET mtls_socket_t;
+#    define MTLS_INVALID_SOCKET INVALID_SOCKET
 #else
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    typedef int mtls_socket_t;
-    #define MTLS_INVALID_SOCKET (-1)
+#    include <sys/socket.h>
+#    include <netinet/in.h>
+typedef int mtls_socket_t;
+#    define MTLS_INVALID_SOCKET (-1)
 #endif
 
 /*
@@ -57,7 +57,7 @@ void platform_cleanup(void);
 /*
  * Create a socket
  */
-mtls_socket_t platform_socket_create(int domain, int type, int protocol, mtls_err* err);
+mtls_socket_t platform_socket_create(int domain, int type, int protocol, mtls_err *err);
 
 /*
  * Close a socket
@@ -67,68 +67,70 @@ void platform_socket_close(mtls_socket_t sock);
 /*
  * Set socket to non-blocking mode
  */
-int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_err* err);
+int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_err *err);
 
 /*
  * Set socket timeout for read operations
  */
-int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err);  // NOLINT(misc-include-cleaner)
+int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms,
+                                     mtls_err *err); // NOLINT(misc-include-cleaner)
 
 /*
  * Set socket timeout for write operations
  */
-int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err);
+int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err *err);
 
 /*
  * Set SO_REUSEADDR option
  */
-int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err* err);
+int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err *err);
 
 /*
  * Bind socket to address
  */
-int platform_socket_bind(mtls_socket_t sock, const mtls_addr* addr, mtls_err* err);
+int platform_socket_bind(mtls_socket_t sock, const mtls_addr *addr, mtls_err *err);
 
 /*
  * Listen on socket
  */
-int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err* err);
+int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err *err);
 
 /*
  * Accept incoming connection
  */
-mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr* addr, mtls_err* err);
+mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr *addr, mtls_err *err);
 
 /*
  * Connect to remote address
  */
-int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
-                            uint32_t timeout_ms, mtls_err* err);
+int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t timeout_ms,
+                            mtls_err *err);
 
 /*
  * Read from socket
  */
-ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err* err);  // NOLINT(misc-include-cleaner)
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len,
+                             mtls_err *err); // NOLINT(misc-include-cleaner)
 
 /*
  * Write to socket
  */
-ssize_t platform_socket_write(mtls_socket_t sock, const void* buf, size_t len, mtls_err* err);
+ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, mtls_err *err);
 
 /*
  * Shutdown socket (for graceful close)
  */
-int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err* err);
+int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err);
 
 /*
  * Parse address string (e.g., "host:port" or "[::1]:8080")
  */
-int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err);
+int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err);
 
 /*
  * Format address to string
  */
-int platform_format_addr(const mtls_addr* addr, char* buf, size_t buf_len);
+int platform_format_addr(const mtls_addr *addr, char *buf, size_t buf_len);
 
 /*
  * Get last socket error code
@@ -143,12 +145,12 @@ mtls_error_code platform_socket_error_to_mtls(int socket_err);
 /*
  * Get monotonic time in microseconds (for timing/metrics)
  */
-uint64_t platform_get_time_us(void);  // NOLINT(misc-include-cleaner)
+uint64_t platform_get_time_us(void); // NOLINT(misc-include-cleaner)
 
 /*
  * Secure memory zeroing (prevents compiler optimization)
  */
-void platform_secure_zero(void* ptr, size_t len);
+void platform_secure_zero(void *ptr, size_t len);
 
 /*
  * Constant-time memory comparison (prevents timing attacks)
@@ -162,7 +164,7 @@ void platform_secure_zero(void* ptr, size_t len);
  * @param len Length to compare
  * @return 0 if equal, non-zero if different
  */
-int platform_consttime_memcmp(const void* lhs, const void* rhs, size_t len);
+int platform_consttime_memcmp(const void *lhs, const void *rhs, size_t len);
 
 /*
  * Constant-time string comparison (prevents timing attacks)
@@ -175,7 +177,20 @@ int platform_consttime_memcmp(const void* lhs, const void* rhs, size_t len);
  * @param rhs Second string
  * @return 0 if equal, non-zero if different
  */
-int platform_consttime_strcmp(const char* lhs, const char* rhs);
+int platform_consttime_strcmp(const char *lhs, const char *rhs);
+
+/*
+ * Thread-safe error string formatting
+ *
+ * Returns a human-readable error string for the given errno value.
+ * This is a thread-safe wrapper around strerror()/strerror_r().
+ *
+ * @param errnum Error number (errno value)
+ * @param buf Buffer to store error string
+ * @param buflen Size of buffer
+ * @return 0 on success, -1 on error
+ */
+int platform_strerror(int errnum, char *buf, size_t buflen);
 
 #ifdef __cplusplus
 }

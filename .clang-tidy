@@ -21,7 +21,7 @@ Checks: >
   -readability-function-cognitive-complexity,
   security-*
 
-WarningsAsErrors: ''
+WarningsAsErrors: '*'
 
 HeaderFilterRegex: '.*'
 

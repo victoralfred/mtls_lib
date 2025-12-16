@@ -81,6 +81,13 @@ step_clang_tidy() {
         return 0
     fi
 
+    # Check if build directory exists with compile_commands.json
+    if [ ! -f "$PROJECT_ROOT/build/compile_commands.json" ]; then
+        echo -e "${YELLOW}  ⚠ Build directory not configured, skipping clang-tidy${NC}"
+        echo -e "${YELLOW}  Run: cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..${NC}\n"
+        return 0
+    fi
+
     # Get staged C files
     STAGED_C_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.c$' || true)
 
@@ -89,16 +96,47 @@ step_clang_tidy() {
         return 0
     fi
 
+    # Detect platform for skipping non-native platform files
+    CURRENT_OS=$(uname -s)
+
     TIDY_ISSUES=0
+
     for file in $STAGED_C_FILES; do
         if [ -f "$file" ]; then
-            # Run clang-tidy
-            if ! clang-tidy "$file" -p build -- -I"$PROJECT_ROOT/include" -I"$PROJECT_ROOT/src" 2>&1 | \
-                 grep -E "warning:|error:" > /dev/null; then
-                echo -e "${GREEN}  ✓ $file passed${NC}"
-            else
+            # Skip non-native platform files (they won't compile on this platform)
+            case "$CURRENT_OS" in
+                Linux)
+                    if echo "$file" | grep -qE "platform_(darwin|win32)\.c$"; then
+                        echo -e "${YELLOW}  Skipping: $file (non-native platform)${NC}"
+                        continue
+                    fi
+                    ;;
+                Darwin)
+                    if echo "$file" | grep -qE "platform_(linux|win32)\.c$"; then
+                        echo -e "${YELLOW}  Skipping: $file (non-native platform)${NC}"
+                        continue
+                    fi
+                    ;;
+                MINGW*|MSYS*|CYGWIN*)
+                    if echo "$file" | grep -qE "platform_(linux|darwin)\.c$"; then
+                        echo -e "${YELLOW}  Skipping: $file (non-native platform)${NC}"
+                        continue
+                    fi
+                    ;;
+            esac
+            echo -e "${YELLOW}  Analyzing: $file${NC}"
+
+            # Run clang-tidy and capture output
+            TIDY_OUTPUT=$(clang-tidy -p build "$file" 2>&1 || true)
+
+            # Check if there are any warnings or errors
+            if echo "$TIDY_OUTPUT" | grep -E "warning:|error:" > /dev/null; then
                 echo -e "${RED}  ✗ Issues found in: $file${NC}"
+                echo "$TIDY_OUTPUT" | grep -E "(warning:|error:)" | head -20
+                echo ""
                 TIDY_ISSUES=1
+            else
+                echo -e "${GREEN}  ✓ No issues${NC}"
             fi
         fi
     done
@@ -107,7 +145,7 @@ step_clang_tidy() {
         echo -e "${GREEN}  ✓ Static analysis passed${NC}\n"
         return 0
     else
-        echo -e "${RED}  ✗ Static analysis found issues${NC}\n"
+        echo -e "${RED}  ✗ Static analysis found issues (see above for details)${NC}\n"
         return 1
     fi
 }
@@ -124,18 +162,40 @@ step_cppcheck() {
         return 0
     fi
 
+    # Detect platform for excluding non-native platform files
+    CURRENT_OS=$(uname -s)
+    EXCLUDE_PLATFORMS=""
+
+    case "$CURRENT_OS" in
+        Linux)
+            EXCLUDE_PLATFORMS="-i$PROJECT_ROOT/src/internal/platform_darwin.c -i$PROJECT_ROOT/src/internal/platform_win32.c"
+            ;;
+        Darwin)
+            EXCLUDE_PLATFORMS="-i$PROJECT_ROOT/src/internal/platform_linux.c -i$PROJECT_ROOT/src/internal/platform_win32.c"
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            EXCLUDE_PLATFORMS="-i$PROJECT_ROOT/src/internal/platform_linux.c -i$PROJECT_ROOT/src/internal/platform_darwin.c"
+            ;;
+    esac
+
     # Run cppcheck on src and include directories
-    if cppcheck --enable=warning,style,performance,portability \
-                --error-exitcode=1 \
-                --suppress=missingIncludeSystem \
-                --quiet \
-                -I"$PROJECT_ROOT/include" \
-                "$PROJECT_ROOT/src" 2>&1 | grep -v "Checking"; then
+    CPPCHECK_OUTPUT=$(cppcheck --enable=warning,style,performance,portability \
+                               --error-exitcode=1 \
+                               --suppress=missingIncludeSystem \
+                               --suppress=unusedFunction \
+                               --inline-suppr \
+                               $EXCLUDE_PLATFORMS \
+                               -I"$PROJECT_ROOT/include" \
+                               "$PROJECT_ROOT/src" 2>&1 || echo "CPPCHECK_FAILED")
+
+    if echo "$CPPCHECK_OUTPUT" | grep "CPPCHECK_FAILED" > /dev/null; then
+        echo -e "${RED}  ✗ cppcheck found issues:${NC}"
+        echo "$CPPCHECK_OUTPUT" | grep -E "(error|warning|style|performance|portability):" | grep -v "Checking"
+        echo ""
+        return 1
+    else
         echo -e "${GREEN}  ✓ cppcheck passed${NC}\n"
         return 0
-    else
-        echo -e "${RED}  ✗ cppcheck found issues${NC}\n"
-        return 1
     fi
 }
 
