@@ -78,7 +78,7 @@ int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
     time_val.tv_sec = timeout_ms / 1000;
     time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
 
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &time_val, sizeof(time_val)) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
                      "Failed to set recv timeout: %s", strerror(errno));
         if (err) err->os_errno = errno;
@@ -232,7 +232,7 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
 ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err* err) {
     ssize_t n = read(sock, buf, len);
 
-    if (bytes_read < 0) {
+    if (n < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
         } else {
@@ -244,13 +244,13 @@ ssize_t platform_socket_read(mtls_socket_t sock, void* buf, size_t len, mtls_err
         }
     }
 
-    return bytes_read;
+    return n;
 }
 
 ssize_t platform_socket_write(mtls_socket_t sock, const void* buf, size_t len, mtls_err* err) {
     ssize_t bytes_written = write(sock, buf, len);
 
-    if (n < 0) {
+    if (bytes_written < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
         } else {
@@ -260,7 +260,7 @@ ssize_t platform_socket_write(mtls_socket_t sock, const void* buf, size_t len, m
         if (err) err->os_errno = errno;
     }
 
-    return n;
+    return bytes_written;
 }
 
 int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err* err) {
