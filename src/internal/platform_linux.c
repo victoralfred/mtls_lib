@@ -8,14 +8,14 @@
 /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define _GNU_SOURCE
 
-#include "platform.h"
+#include "platform.h"  // NOLINT(misc-include-cleaner)
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/select.h>
-#include <sys/time.h>
+#include <sys/time.h>  // NOLINT(misc-include-cleaner)
 #include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <netinet/tcp.h>  // NOLINT(misc-include-cleaner)
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -83,7 +83,7 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
 int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err) {
     struct timeval time_val;
     time_val.tv_sec = timeout_ms / 1000;
-    time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
+    time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &time_val, sizeof(time_val)) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
@@ -100,7 +100,7 @@ int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
 int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err* err) {
     struct timeval time_val;
     time_val.tv_sec = timeout_ms / 1000;
-    time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
+    time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
     if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &time_val, sizeof(time_val)) < 0) {
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL,
@@ -171,7 +171,7 @@ mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr* addr, mtls_e
 
 int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
                             uint32_t timeout_ms, mtls_err* err) {
-    int ret;
+    int ret = 0;
 
     if (timeout_ms > 0) {
         /* Set non-blocking for timeout */
@@ -199,7 +199,7 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
             FD_SET(sock, &write_fds);
 
             time_val.tv_sec = timeout_ms / 1000;
-            time_val.tv_usec = (timeout_ms % 1000U) * 1000U;
+            time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
             ret = select(sock + 1, NULL, &write_fds, NULL, &time_val);
 
@@ -231,7 +231,9 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr* addr,
             if (sock_err != 0) {
                 MTLS_ERR_SET(err, platform_socket_error_to_mtls(sock_err),
                              "Connection failed: %s", strerror(sock_err));
-                if (err) err->os_errno = sock_err;
+                if (err) {
+                    err->os_errno = sock_err;
+                }
                 return -1;
             }
         }
@@ -406,7 +408,7 @@ int platform_parse_addr(const char* addr_str, mtls_addr* addr, mtls_err* err) {
 
 int platform_format_addr(const mtls_addr* addr, char* buf, size_t buf_len) {
     char host[INET6_ADDRSTRLEN];
-    uint16_t port;
+    uint16_t port = 0;
 
     if (addr->addr.sa.sa_family == AF_INET) {
         inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
