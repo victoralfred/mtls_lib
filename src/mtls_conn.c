@@ -147,6 +147,19 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
         return NULL;
     }
 
+    /* Apply read/write timeouts to socket.
+     * These affect SSL_read/SSL_write operations including the handshake. */
+    uint32_t read_timeout = ctx->config.read_timeout_ms;
+    uint32_t write_timeout = ctx->config.write_timeout_ms;
+    if (read_timeout > 0) {
+        /* Ignore errors - timeout is optional optimization */
+        (void)platform_socket_set_recv_timeout(conn->sock, read_timeout, NULL);
+    }
+    if (write_timeout > 0) {
+        /* Ignore errors - timeout is optional optimization */
+        (void)platform_socket_set_send_timeout(conn->sock, write_timeout, NULL);
+    }
+
     /* Format remote address for events */
     char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
@@ -601,6 +614,10 @@ void mtls_close(mtls_conn *conn)
     }
 
     if (conn->sock != MTLS_INVALID_SOCKET) {
+        /* Graceful socket shutdown before close.
+         * SHUT_WR (1) signals EOF to peer, allowing graceful TCP teardown.
+         * Ignore errors - we're closing anyway. */
+        (void)platform_socket_shutdown(conn->sock, 1 /* SHUT_WR */, NULL);
         platform_socket_close(conn->sock);
         conn->sock = MTLS_INVALID_SOCKET;
     }

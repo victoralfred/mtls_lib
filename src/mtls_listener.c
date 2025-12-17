@@ -151,6 +151,19 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
         return NULL;
     }
 
+    /* Apply read/write timeouts to accepted socket.
+     * These affect SSL_read/SSL_write operations including the handshake. */
+    uint32_t read_timeout = listener->ctx->config.read_timeout_ms;
+    uint32_t write_timeout = listener->ctx->config.write_timeout_ms;
+    if (read_timeout > 0) {
+        /* Ignore errors - timeout is optional optimization */
+        (void)platform_socket_set_recv_timeout(conn->sock, read_timeout, NULL);
+    }
+    if (write_timeout > 0) {
+        /* Ignore errors - timeout is optional optimization */
+        (void)platform_socket_set_send_timeout(conn->sock, write_timeout, NULL);
+    }
+
     /* Format remote address for events */
     char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));

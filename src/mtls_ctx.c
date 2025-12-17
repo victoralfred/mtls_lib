@@ -9,6 +9,15 @@
 #include "internal/mtls_internal.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
+
+/*
+ * Reference counter for platform initialization.
+ * platform_init() is called on first context creation.
+ * platform_cleanup() is called when the last context is freed.
+ * This ensures proper WSAStartup/WSACleanup pairing on Windows.
+ */
+static atomic_int platform_ref_count = 0;
 
 void mtls_config_init(mtls_config *config)
 {
@@ -155,14 +164,23 @@ mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err)
         return NULL;
     }
 
-    /* Initialize platform (WSAStartup on Windows) */
-    if (platform_init() < 0) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Platform initialization failed");
-        return NULL;
+    /* Initialize platform (WSAStartup on Windows).
+     * Use atomic increment to ensure thread-safe reference counting.
+     * Only call platform_init() on first context creation. */
+    if (atomic_fetch_add(&platform_ref_count, 1) == 0) {
+        if (platform_init() < 0) {
+            atomic_fetch_sub(&platform_ref_count, 1);
+            MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Platform initialization failed");
+            return NULL;
+        }
     }
 
     /* Validate configuration */
     if (mtls_config_validate(config, err) < 0) {
+        /* Decrement ref count on validation failure */
+        if (atomic_fetch_sub(&platform_ref_count, 1) == 1) {
+            platform_cleanup();
+        }
         return NULL;
     }
 
@@ -170,6 +188,10 @@ mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err)
     mtls_ctx *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate context");
+        /* Decrement ref count on allocation failure */
+        if (atomic_fetch_sub(&platform_ref_count, 1) == 1) {
+            platform_cleanup();
+        }
         return NULL;
     }
 
@@ -277,6 +299,13 @@ void mtls_ctx_free(mtls_ctx *ctx)
     platform_secure_zero(ctx, sizeof(*ctx));
 
     free(ctx);
+
+    /* Decrement platform reference count.
+     * Call platform_cleanup() when last context is freed.
+     * This ensures proper WSACleanup on Windows. */
+    if (atomic_fetch_sub(&platform_ref_count, 1) == 1) {
+        platform_cleanup();
+    }
 }
 
 int mtls_ctx_reload_certs(mtls_ctx *ctx, mtls_err *err)
