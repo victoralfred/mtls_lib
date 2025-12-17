@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Server Example
+### Server Example (Simple)
 
 ```rust
 use mtls::{Config, Context};
@@ -59,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = Context::new(&config)?;
     let listener = ctx.listen("0.0.0.0:8443")?;
 
+    // Simple loop - works for single-threaded servers
     for conn_result in listener.incoming() {
         match conn_result {
             Ok(mut conn) => {
@@ -75,7 +76,135 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Server Example (Multi-threaded with Graceful Shutdown)
+
+When you need to shut down the listener from another thread (e.g., for graceful shutdown), you must use `Arc<Mutex<Listener>>` and **release the lock before calling `accept()`**. This allows `shutdown()` to interrupt the blocking `accept()` call:
+
+```rust
+use mtls::{Config, Context};
+use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::builder()
+        .ca_cert_file("ca.pem")
+        .cert_file("server.pem", "server.key")
+        .require_client_cert(true)
+        .build()?;
+
+    let ctx = Context::new(&config)?;
+    let listener = Arc::new(Mutex::new(ctx.listen("0.0.0.0:8443")?));
+    let stop_flag = Arc::new(AtomicBool::new(false));
+
+    // Spawn acceptor thread
+    let listener_acceptor = listener.clone();
+    let stop_acceptor = stop_flag.clone();
+    let acceptor_handle = thread::spawn(move || {
+        loop {
+            if stop_acceptor.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // Get pointer to listener while holding lock, then release lock
+            // before blocking accept() call. This allows shutdown() to interrupt accept()
+            let listener_ptr: *const mtls::Listener = {
+                let guard = listener_acceptor.lock().unwrap();
+                if guard.is_closed() {
+                    break;
+                }
+                &*guard as *const mtls::Listener
+            };
+
+            // SAFETY: Listener is in Arc, so it remains valid.
+            // accept() only needs &self, so concurrent reads are safe.
+            // shutdown() modifies state, but accept() checks closed state internally.
+            let accept_result = unsafe { (*listener_ptr).accept() };
+
+            match accept_result {
+                Ok(mut conn) => {
+                    // Handle connection (spawn handler thread if needed)...
+                    thread::spawn(move || {
+                        let mut buf = [0u8; 1024];
+                        if let Ok(n) = conn.read(&mut buf) {
+                            let _ = conn.write_all(&buf[..n]);
+                        }
+                        conn.close();
+                    });
+                }
+                Err(_) => {
+                    if stop_acceptor.load(Ordering::SeqCst) {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // ... do work ...
+
+    // Graceful shutdown: signal stop and shutdown listener
+    stop_flag.store(true, Ordering::SeqCst);
+    {
+        let mut guard = listener.lock().unwrap();
+        guard.shutdown(); // This interrupts blocking accept() calls
+    }
+
+    acceptor_handle.join().unwrap();
+    Ok(())
+}
+```
+
+**Important Notes on Listener Shutdown:**
+- `accept()` blocks until a connection arrives or the listener is shut down
+- `shutdown()` interrupts blocking `accept()` calls by calling `shutdown()` on the underlying socket at the OS level
+- If you hold a `Mutex` lock during `accept()`, `shutdown()` cannot acquire the lock → deadlock
+- Always release the lock **before** calling `accept()` when using `Arc<Mutex<Listener>>`
+- The `shutdown()` method requires `&mut self`, so use `Mutex` when sharing across threads
+- The unsafe pointer usage in the example above is necessary because Rust's borrow checker cannot verify that the listener remains valid after releasing the lock. This is safe because:
+  - The listener is stored in an `Arc`, ensuring it lives as long as needed
+  - `accept()` only requires `&self` (immutable reference), so concurrent reads are safe
+  - `shutdown()` modifies internal state, but `accept()` checks the closed state internally
+- The `serve()` convenience method handles the accept loop internally, but still requires proper synchronization (`Arc<Mutex<Listener>>`) for multi-threaded shutdown scenarios
+
 ## API Overview
+
+### Listener
+
+The `Listener` type provides three main ways to accept connections:
+
+1. **`incoming()` iterator** - Simplest for single-threaded servers:
+   ```rust
+   for conn_result in listener.incoming() {
+       match conn_result {
+           Ok(conn) => { /* handle */ }
+           Err(e) => { /* error */ }
+       }
+   }
+   ```
+
+2. **`accept()` loop** - More control, suitable for single-threaded use:
+   ```rust
+   loop {
+       match listener.accept() {
+           Ok(conn) => { /* handle */ }
+           Err(e) => { /* error */ }
+       }
+   }
+   ```
+
+3. **`serve()` method** - Convenience method that handles the accept loop:
+   ```rust
+   listener.serve(|conn| {
+       thread::spawn(move || {
+           // Handle connection in separate thread
+       });
+       Ok(())
+   })?;
+   ```
+
+For multi-threaded scenarios where you need to shut down from another thread, use `Arc<Mutex<Listener>>` and release the lock before calling `accept()`, as shown in the multi-threaded example above.
 
 ### Configuration
 
@@ -153,7 +282,19 @@ ctx.set_kill_switch(false);
 
 - `Context` is `Send + Sync` - can be shared across threads
 - `Conn` is `Send` but NOT `Sync` - use from one thread at a time
-- `Listener` is `Send` but NOT `Sync` - use from one thread at a time
+- `Listener` is `Send` but NOT `Sync` - can be moved between threads, but use from one thread at a time
+
+### Listener Thread Safety and Shutdown
+
+The `Listener` type can be moved between threads (`Send`), but concurrent access requires synchronization:
+
+- **Single-threaded use**: Direct use is fine - `accept()` blocks until a connection arrives
+- **Multi-threaded shutdown**: Use `Arc<Mutex<Listener>>` but **release the lock before calling `accept()`**
+  - Holding the lock during `accept()` prevents `shutdown()` from acquiring it → deadlock
+  - `shutdown()` calls `shutdown()` on the underlying socket, which interrupts blocking `accept()` calls at the OS level
+  - Always check the stop flag between `accept()` calls
+
+See the "Multi-threaded with Graceful Shutdown" example above for the correct pattern.
 
 ## Error Handling
 
