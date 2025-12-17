@@ -361,3 +361,4 @@ yarn.lock
 dev_plan_pm
 error.txt
 error2.txt
+.claude/*
