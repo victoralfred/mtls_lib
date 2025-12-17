@@ -268,6 +268,58 @@ int main(void) {
 }
 ```
 
+### Go Bindings
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    mtls "github.com/yourusername/mtls-go"
+)
+
+func main() {
+    // Configure mTLS
+    config := mtls.DefaultConfig()
+    config.CACertPath = "/path/to/ca.pem"
+    config.CertPath = "/path/to/client.pem"
+    config.KeyPath = "/path/to/client.key"
+
+    // Create context
+    ctx, err := mtls.NewContext(config)
+    if err != nil {
+        log.Fatalf("Failed to create context: %v", err)
+    }
+    defer ctx.Close()
+
+    // Connect to server
+    conn, err := ctx.Connect("example.com:8443")
+    if err != nil {
+        log.Fatalf("Connection failed: %v", err)
+    }
+    defer conn.Close()
+
+    // Get peer identity
+    identity, err := conn.PeerIdentity()
+    if err == nil {
+        fmt.Printf("Connected to: %s\n", identity.CommonName)
+        fmt.Printf("SPIFFE ID: %s\n", identity.SPIFFEID)
+        fmt.Printf("Certificate valid: %v\n", identity.IsValid())
+    }
+
+    // Use as io.Reader/Writer
+    conn.Write([]byte("Hello, mTLS!\n"))
+
+    buf := make([]byte, 1024)
+    n, _ := conn.Read(buf)
+    fmt.Printf("Received: %s", buf[:n])
+}
+```
+
+See [bindings/go/README.md](bindings/go/README.md) for complete Go documentation.
+
 ## Configuration
 
 ### Certificate Loading
@@ -571,3 +623,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 - [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Development workflow and tooling
 - [IDENTITY_VERIFICATION.md](docs/IDENTITY_VERIFICATION.md) - Complete identity verification guide
 - [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) - Security fixes and vulnerability remediation
+- [Go Bindings](bindings/go/README.md) - Go language bindings documentation
