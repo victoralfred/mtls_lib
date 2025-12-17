@@ -113,10 +113,10 @@ fn find_openssl() {
     // Fallback: Try common Homebrew paths on macOS
     if cfg!(target_os = "macos") {
         let homebrew_paths = [
-            "/opt/homebrew/opt/openssl@3/lib",  // Apple Silicon (openssl@3)
-            "/opt/homebrew/opt/openssl/lib",     // Apple Silicon (default)
-            "/usr/local/opt/openssl@3/lib",      // Intel (openssl@3)
-            "/usr/local/opt/openssl/lib",        // Intel (default)
+            "/opt/homebrew/opt/openssl@3/lib", // Apple Silicon (openssl@3)
+            "/opt/homebrew/opt/openssl/lib",   // Apple Silicon (default)
+            "/usr/local/opt/openssl@3/lib",    // Intel (openssl@3)
+            "/usr/local/opt/openssl/lib",      // Intel (default)
         ];
 
         for path in &homebrew_paths {

@@ -240,6 +240,11 @@ impl PeerIdentity {
 ///
 /// Supports exact match, DNS wildcard matching (*.example.com), and
 /// SPIFFE ID wildcard matching (spiffe://example.com/*).
+///
+/// This is a convenience function used primarily for testing. The production
+/// code in `validate_sans` uses the specific matching functions directly
+/// for better performance.
+#[cfg(test)]
 fn match_san(san: &str, pattern: &str) -> bool {
     // Exact match
     if san == pattern {
