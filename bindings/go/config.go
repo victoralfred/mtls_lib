@@ -58,6 +58,53 @@ type Config struct {
 	EnableOCSP bool // Enable OCSP stapling
 }
 
+// Validate checks the configuration for errors.
+//
+// Returns an error if:
+//   - MinTLSVersion is greater than MaxTLSVersion
+//   - TLS versions are invalid (not TLS12 or TLS13)
+//   - No certificate source is provided (neither path nor PEM)
+func (c *Config) Validate() error {
+	// Validate TLS versions if explicitly set
+	if c.MinTLSVersion != 0 {
+		if c.MinTLSVersion != TLS12 && c.MinTLSVersion != TLS13 {
+			return &Error{
+				Code:    ErrInvalidConfig,
+				Message: "invalid MinTLSVersion: must be TLS12 (0x0303) or TLS13 (0x0304)",
+			}
+		}
+	}
+
+	if c.MaxTLSVersion != 0 {
+		if c.MaxTLSVersion != TLS12 && c.MaxTLSVersion != TLS13 {
+			return &Error{
+				Code:    ErrInvalidConfig,
+				Message: "invalid MaxTLSVersion: must be TLS12 (0x0303) or TLS13 (0x0304)",
+			}
+		}
+	}
+
+	// Check version ordering (only if both are set)
+	if c.MinTLSVersion != 0 && c.MaxTLSVersion != 0 {
+		if c.MinTLSVersion > c.MaxTLSVersion {
+			return &Error{
+				Code:    ErrInvalidConfig,
+				Message: "MinTLSVersion cannot be greater than MaxTLSVersion",
+			}
+		}
+	}
+
+	// Validate that at least one certificate source is provided
+	if c.CACertPath == "" && len(c.CACertPEM) == 0 {
+		return &Error{
+			Code:    ErrInvalidConfig,
+			Message: "CA certificate is required: provide CACertPath or CACertPEM",
+		}
+	}
+
+	return nil
+}
+
 // DefaultConfig returns a Config with secure default values.
 //
 // Defaults:

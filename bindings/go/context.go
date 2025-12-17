@@ -35,6 +35,11 @@ func NewContext(config *Config) (*Context, error) {
 		}
 	}
 
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
 	// Convert Go config to C config
 	cConfig, allocations := config.toC()
 	defer freeConfigC(allocations)
@@ -146,7 +151,7 @@ func (c *Context) Listen(addr string) (*Listener, error) {
 		return nil, convertError(&cErr)
 	}
 
-	listener := &Listener{listener: cListener, ctx: c}
+	listener := &Listener{listener: cListener, ctx: c, addr: addr}
 	runtime.SetFinalizer(listener, (*Listener).finalizer)
 
 	return listener, nil

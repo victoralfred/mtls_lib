@@ -59,11 +59,16 @@ func (c *Conn) PeerIdentity() (*PeerIdentity, error) {
 		NotAfter:   time.Unix(int64(cIdentity.cert_not_after), 0),
 	}
 
-	// Copy SANs array
+	// Copy SANs array with bounds checking
+	// MTLS_MAX_CERT_SANS is 128 in the C library
+	const maxCertSANs = 128
 	sanCount := int(cIdentity.san_count)
+	if sanCount > maxCertSANs {
+		sanCount = maxCertSANs // Enforce C library's limit for safety
+	}
 	if sanCount > 0 && cIdentity.sans != nil {
 		identity.SANs = make([]string, sanCount)
-		sanSlice := (*[1 << 20]*C.char)(unsafe.Pointer(cIdentity.sans))[:sanCount:sanCount]
+		sanSlice := (*[maxCertSANs]*C.char)(unsafe.Pointer(cIdentity.sans))[:sanCount:sanCount]
 		for i, cStr := range sanSlice {
 			if cStr != nil {
 				identity.SANs[i] = C.GoString(cStr)
@@ -200,16 +205,34 @@ func (c *Conn) ValidatePeerSANs(allowedSANs []string) (bool, error) {
 // ValidateSANs checks if any of the identity's SANs match the allowed patterns.
 //
 // This is a standalone function that can be used for custom validation logic.
+// The function is optimized to use O(1) lookups for exact matches while
+// falling back to linear matching for wildcard patterns.
 func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 	if identity == nil || len(allowedSANs) == 0 {
 		return false
 	}
 
-	// Convert to C format and call the C validation function
-	// For simplicity, we implement the matching in Go
+	// Separate exact matches (for O(1) lookup) from wildcard patterns
+	exactMatches := make(map[string]struct{}, len(allowedSANs))
+	var wildcardPatterns []string
+
+	for _, san := range allowedSANs {
+		if len(san) > 2 && san[0] == '*' && san[1] == '.' {
+			wildcardPatterns = append(wildcardPatterns, san)
+		} else {
+			exactMatches[san] = struct{}{}
+		}
+	}
+
+	// Check peer SANs
 	for _, peerSAN := range identity.SANs {
-		for _, allowedSAN := range allowedSANs {
-			if matchSAN(peerSAN, allowedSAN) {
+		// Fast path: exact match
+		if _, ok := exactMatches[peerSAN]; ok {
+			return true
+		}
+		// Slow path: wildcard matching
+		for _, pattern := range wildcardPatterns {
+			if matchWildcard(peerSAN, pattern) {
 				return true
 			}
 		}
@@ -217,8 +240,11 @@ func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 
 	// Also check SPIFFE ID
 	if identity.SPIFFEID != "" {
-		for _, allowedSAN := range allowedSANs {
-			if matchSAN(identity.SPIFFEID, allowedSAN) {
+		if _, ok := exactMatches[identity.SPIFFEID]; ok {
+			return true
+		}
+		for _, pattern := range wildcardPatterns {
+			if matchWildcard(identity.SPIFFEID, pattern) {
 				return true
 			}
 		}
@@ -233,25 +259,35 @@ func matchSAN(san, pattern string) bool {
 	if san == pattern {
 		return true
 	}
+	return matchWildcard(san, pattern)
+}
 
-	// Wildcard matching for DNS names (*.example.com)
-	if len(pattern) > 2 && pattern[0] == '*' && pattern[1] == '.' {
-		suffix := pattern[1:] // .example.com
-		// san must have at least one character before the suffix
-		if len(san) > len(suffix) {
-			sanSuffix := san[len(san)-len(suffix):]
-			if sanSuffix == suffix {
-				// Check that there's no additional dots in the prefix
-				prefix := san[:len(san)-len(suffix)]
-				for _, c := range prefix {
-					if c == '.' {
-						return false
-					}
-				}
-				return true
-			}
+// matchWildcard checks if a SAN matches a wildcard pattern (*.example.com).
+// The pattern must start with "*." for this function to be useful.
+func matchWildcard(san, pattern string) bool {
+	// Pattern should be *.something
+	if len(pattern) < 3 || pattern[0] != '*' || pattern[1] != '.' {
+		return false
+	}
+
+	suffix := pattern[1:] // .example.com
+	// san must have at least one character before the suffix
+	if len(san) <= len(suffix) {
+		return false
+	}
+
+	sanSuffix := san[len(san)-len(suffix):]
+	if sanSuffix != suffix {
+		return false
+	}
+
+	// Check that there's no additional dots in the prefix (single-level wildcard)
+	prefix := san[:len(san)-len(suffix)]
+	for _, c := range prefix {
+		if c == '.' {
+			return false
 		}
 	}
 
-	return false
+	return true
 }
