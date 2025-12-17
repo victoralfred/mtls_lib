@@ -27,11 +27,11 @@ import (
 )
 
 const (
-	maxRetries       = 3
-	retryDelay       = 2 * time.Second
-	connectTimeout   = 10 * time.Second
-	messageCount     = 5
-	messageDelay     = 500 * time.Millisecond
+	maxRetries     = 3
+	retryDelay     = 2 * time.Second
+	connectTimeout = 10 * time.Second
+	messageCount   = 5
+	messageDelay   = 500 * time.Millisecond
 )
 
 func main() {

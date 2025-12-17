@@ -163,16 +163,50 @@ impl PeerIdentity {
 
     /// Check if any of the identity's SANs match the allowed patterns.
     ///
-    /// Supports exact matching and wildcard DNS matching (*.example.com).
+    /// Supports:
+    /// - Exact matching
+    /// - DNS wildcard matching (*.example.com)
+    /// - SPIFFE ID wildcard matching (spiffe://example.com/*)
+    ///
+    /// This function is optimized to use O(1) lookups for exact matches while
+    /// falling back to linear matching for wildcard patterns.
     pub fn validate_sans(&self, allowed_sans: &[String]) -> bool {
         if allowed_sans.is_empty() {
             return false;
         }
 
+        // Separate exact matches (for O(1) lookup) from wildcard patterns
+        let mut exact_matches = std::collections::HashSet::<&str>::new();
+        let mut dns_wildcard_patterns = Vec::new();
+        let mut spiffe_wildcard_patterns = Vec::new();
+
+        for san in allowed_sans {
+            if san.len() > 2 && san.starts_with("*.") {
+                // DNS wildcard: *.example.com
+                dns_wildcard_patterns.push(san.as_str());
+            } else if san.len() > 2 && san.ends_with("/*") {
+                // SPIFFE ID wildcard: spiffe://example.com/*
+                spiffe_wildcard_patterns.push(san.as_str());
+            } else {
+                exact_matches.insert(san);
+            }
+        }
+
         // Check each peer SAN
         for peer_san in &self.sans {
-            for allowed in allowed_sans {
-                if match_san(peer_san, allowed) {
+            // Check exact match first
+            if exact_matches.contains(peer_san.as_str()) {
+                return true;
+            }
+            // DNS wildcard matching
+            for pattern in dns_wildcard_patterns.iter() {
+                if match_dns_wildcard(peer_san, pattern) {
+                    return true;
+                }
+            }
+            // SPIFFE ID wildcard matching
+            for pattern in spiffe_wildcard_patterns.iter() {
+                if match_spiffe_wildcard(peer_san, pattern) {
                     return true;
                 }
             }
@@ -180,8 +214,19 @@ impl PeerIdentity {
 
         // Also check SPIFFE ID
         if let Some(ref spiffe_id) = self.spiffe_id {
-            for allowed in allowed_sans {
-                if match_san(spiffe_id, allowed) {
+            // Check exact match first
+            if exact_matches.contains(spiffe_id.as_str()) {
+                return true;
+            }
+            // DNS wildcard matching (unlikely but possible)
+            for pattern in dns_wildcard_patterns.iter() {
+                if match_dns_wildcard(spiffe_id, pattern) {
+                    return true;
+                }
+            }
+            // SPIFFE ID wildcard matching
+            for pattern in spiffe_wildcard_patterns.iter() {
+                if match_spiffe_wildcard(spiffe_id, pattern) {
                     return true;
                 }
             }
@@ -192,25 +237,88 @@ impl PeerIdentity {
 }
 
 /// Match a SAN against a pattern, supporting wildcards.
+///
+/// Supports exact match, DNS wildcard matching (*.example.com), and
+/// SPIFFE ID wildcard matching (spiffe://example.com/*).
 fn match_san(san: &str, pattern: &str) -> bool {
     // Exact match
     if san == pattern {
         return true;
     }
+    // Try DNS wildcard first
+    if pattern.len() > 2 && pattern.starts_with("*.") {
+        return match_dns_wildcard(san, pattern);
+    }
+    // Try SPIFFE ID wildcard
+    if pattern.len() > 2 && pattern.ends_with("/*") {
+        return match_spiffe_wildcard(san, pattern);
+    }
+    false
+}
 
-    // Wildcard match (*.example.com)
-    if pattern.starts_with("*.") {
-        let suffix = &pattern[1..]; // .example.com
-        if san.len() > suffix.len() && san.ends_with(suffix) {
-            // Check that prefix has no dots (single level wildcard)
-            let prefix = &san[..san.len() - suffix.len()];
-            if !prefix.contains('.') {
-                return true;
-            }
-        }
+/// Match a SAN against a DNS wildcard pattern (*.example.com).
+fn match_dns_wildcard(san: &str, pattern: &str) -> bool {
+    // Pattern should be *.something
+    if !pattern.starts_with("*.") {
+        return false;
     }
 
-    false
+    let suffix = &pattern[1..]; // .example.com
+    if san.len() <= suffix.len() {
+        return false;
+    }
+
+    if !san.ends_with(suffix) {
+        return false;
+    }
+
+    // Check that prefix has no dots (single level wildcard)
+    // *.example.com matches api.example.com but not sub.api.example.com
+    let prefix = &san[..san.len() - suffix.len()];
+    if prefix.contains('.') {
+        return false;
+    }
+
+    true
+}
+
+/// Match a SAN against a SPIFFE ID wildcard pattern (spiffe://example.com/*).
+///
+/// The pattern must end with "/*" for this function to be useful.
+/// Wildcard patterns require a path component - they do NOT match the base
+/// SPIFFE ID without a path (e.g., spiffe://example.com/* does NOT match
+/// spiffe://example.com).
+fn match_spiffe_wildcard(san: &str, pattern: &str) -> bool {
+    // Pattern should end with /*
+    if pattern.len() < 3 || !pattern.ends_with("/*") {
+        return false;
+    }
+
+    let prefix = &pattern[..pattern.len() - 2]; // spiffe://example.com
+                                                // san must be at least as long as the prefix
+    if san.len() < prefix.len() {
+        return false;
+    }
+
+    // Check if san starts with the prefix
+    if !san.starts_with(prefix) {
+        return false;
+    }
+
+    // For SPIFFE IDs, the remaining part after the prefix should be a valid path
+    // (starts with / and contains no wildcards)
+    let remaining = &san[prefix.len()..];
+    if remaining.is_empty() {
+        // Wildcard pattern requires a path component
+        // Exact match (no path) should be handled by exact match logic, not wildcard
+        return false;
+    }
+    if !remaining.starts_with('/') {
+        return false;
+    }
+
+    // Valid SPIFFE ID path (no wildcards in the actual ID)
+    true
 }
 
 #[cfg(test)]
@@ -233,10 +341,37 @@ mod tests {
 
     #[test]
     fn test_match_san_wildcard() {
+        // DNS wildcards
         assert!(match_san("foo.example.com", "*.example.com"));
         assert!(match_san("bar.example.com", "*.example.com"));
         assert!(!match_san("foo.bar.example.com", "*.example.com")); // Multi-level
         assert!(!match_san("example.com", "*.example.com")); // No prefix
+
+        // SPIFFE ID wildcards
+        assert!(match_san(
+            "spiffe://example.com/service/api",
+            "spiffe://example.com/*"
+        ));
+        assert!(match_san(
+            "spiffe://example.com/client/frontend",
+            "spiffe://example.com/client/*"
+        ));
+        assert!(match_san(
+            "spiffe://example.com/service",
+            "spiffe://example.com/*"
+        ));
+        assert!(!match_san(
+            "spiffe://example.com/service",
+            "spiffe://example.com/client/*"
+        ));
+        assert!(!match_san(
+            "spiffe://other.com/service",
+            "spiffe://example.com/*"
+        ));
+        // Wildcard should NOT match base SPIFFE ID without path
+        assert!(!match_san("spiffe://example.com", "spiffe://example.com/*"));
+        // But exact match should work
+        assert!(match_san("spiffe://example.com", "spiffe://example.com"));
     }
 
     #[test]
@@ -252,5 +387,88 @@ mod tests {
         assert!(identity.validate_sans(&["client.example.com".to_string()]));
         assert!(identity.validate_sans(&["*.example.com".to_string()]));
         assert!(!identity.validate_sans(&["other.com".to_string()]));
+    }
+
+    #[test]
+    fn test_validate_sans_with_spiffe_wildcard() {
+        // Test that SPIFFE ID wildcards work correctly
+        let identity = PeerIdentity {
+            common_name: "test".to_string(),
+            sans: vec!["client.example.com".to_string()],
+            spiffe_id: Some("spiffe://example.com/client/frontend".to_string()),
+            not_before: UNIX_EPOCH,
+            not_after: SystemTime::now() + Duration::from_secs(3600),
+        };
+
+        // Test SPIFFE wildcard matching
+        let allowed = vec![
+            "spiffe://example.com/client/*".to_string(), // Should match
+            "*.example.com".to_string(),                 // DNS wildcard
+        ];
+        assert!(identity.validate_sans(&allowed));
+
+        // Test non-matching SPIFFE wildcard
+        let allowed2 = vec!["spiffe://example.com/service/*".to_string()]; // Should not match
+        assert!(!identity.validate_sans(&allowed2));
+
+        // Test exact SPIFFE match
+        let allowed3 = vec!["spiffe://example.com/client/frontend".to_string()]; // Exact match
+        assert!(identity.validate_sans(&allowed3));
+
+        // Test that wildcard does NOT match base SPIFFE ID without path
+        let identity2 = PeerIdentity {
+            common_name: "test".to_string(),
+            sans: vec![],
+            spiffe_id: Some("spiffe://example.com".to_string()), // No path component
+            not_before: UNIX_EPOCH,
+            not_after: SystemTime::now() + Duration::from_secs(3600),
+        };
+        let allowed4 = vec!["spiffe://example.com/*".to_string()]; // Wildcard should NOT match base ID
+        assert!(!identity2.validate_sans(&allowed4));
+
+        // Test that exact match still works for base SPIFFE ID
+        let allowed5 = vec!["spiffe://example.com".to_string()]; // Exact match should work
+        assert!(identity2.validate_sans(&allowed5));
+    }
+
+    #[test]
+    fn test_match_spiffe_wildcard() {
+        // Test SPIFFE wildcard matching
+        assert!(match_spiffe_wildcard(
+            "spiffe://example.com/service/api",
+            "spiffe://example.com/*"
+        ));
+        assert!(match_spiffe_wildcard(
+            "spiffe://example.com/client/frontend",
+            "spiffe://example.com/client/*"
+        ));
+        assert!(match_spiffe_wildcard(
+            "spiffe://example.com/service",
+            "spiffe://example.com/*"
+        ));
+
+        // Test non-matching cases
+        assert!(!match_spiffe_wildcard(
+            "spiffe://example.com/service",
+            "spiffe://example.com/client/*"
+        ));
+        assert!(!match_spiffe_wildcard(
+            "spiffe://other.com/service",
+            "spiffe://example.com/*"
+        ));
+        // Wildcard should NOT match base SPIFFE ID without path
+        assert!(!match_spiffe_wildcard(
+            "spiffe://example.com",
+            "spiffe://example.com/*"
+        ));
+        // Invalid patterns
+        assert!(!match_spiffe_wildcard(
+            "spiffe://example.com/service",
+            "spiffe://example.com/"
+        ));
+        assert!(!match_spiffe_wildcard(
+            "spiffe://example.com/service",
+            "invalid"
+        ));
     }
 }

@@ -46,27 +46,27 @@ const (
 	ErrInvalidAddress     ErrorCode = 211
 
 	// TLS/certificate errors (3xx)
-	ErrTLSInitFailed         ErrorCode = 300
-	ErrTLSHandshakeFailed    ErrorCode = 301
-	ErrTLSVersionMismatch    ErrorCode = 302
-	ErrTLSCipherMismatch     ErrorCode = 303
-	ErrCertExpired           ErrorCode = 304
-	ErrCertNotYetValid       ErrorCode = 305
-	ErrCertRevoked           ErrorCode = 306
-	ErrCertUntrusted         ErrorCode = 307
-	ErrCertChainTooLong      ErrorCode = 308
-	ErrCertSignatureInvalid  ErrorCode = 309
-	ErrNoPeerCert            ErrorCode = 310
-	ErrHostnameMismatch      ErrorCode = 311
-	ErrTLSShutdownFailed     ErrorCode = 312
+	ErrTLSInitFailed        ErrorCode = 300
+	ErrTLSHandshakeFailed   ErrorCode = 301
+	ErrTLSVersionMismatch   ErrorCode = 302
+	ErrTLSCipherMismatch    ErrorCode = 303
+	ErrCertExpired          ErrorCode = 304
+	ErrCertNotYetValid      ErrorCode = 305
+	ErrCertRevoked          ErrorCode = 306
+	ErrCertUntrusted        ErrorCode = 307
+	ErrCertChainTooLong     ErrorCode = 308
+	ErrCertSignatureInvalid ErrorCode = 309
+	ErrNoPeerCert           ErrorCode = 310
+	ErrHostnameMismatch     ErrorCode = 311
+	ErrTLSShutdownFailed    ErrorCode = 312
 
 	// Identity/verification errors (4xx)
-	ErrIdentityMismatch   ErrorCode = 400
-	ErrSANNotAllowed      ErrorCode = 401
-	ErrSPIFFEParseFailed  ErrorCode = 402
-	ErrCNNotAllowed       ErrorCode = 403
-	ErrNoAllowedIdentity  ErrorCode = 404
-	ErrIdentityTooLong    ErrorCode = 405
+	ErrIdentityMismatch  ErrorCode = 400
+	ErrSANNotAllowed     ErrorCode = 401
+	ErrSPIFFEParseFailed ErrorCode = 402
+	ErrCNNotAllowed      ErrorCode = 403
+	ErrNoAllowedIdentity ErrorCode = 404
+	ErrIdentityTooLong   ErrorCode = 405
 
 	// Policy errors (5xx)
 	ErrKillSwitchEnabled    ErrorCode = 500
