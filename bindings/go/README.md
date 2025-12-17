@@ -421,6 +421,17 @@ if err != nil {
 - Use separate `Conn` instances for different goroutines
 - `EventMetrics` is thread-safe for concurrent reads and writes
 
+## Examples
+
+Complete example programs are available in the `examples/` directory:
+
+- **simple_client** - Basic client that connects and exchanges messages
+- **simple_server** - Basic server that accepts connections
+- **echo_server** - Echo server with SAN-based authorization
+- **advanced_client** - Advanced client with retry logic and context support
+
+See [examples/README.md](examples/README.md) for detailed instructions.
+
 ## Testing
 
 ```bash
