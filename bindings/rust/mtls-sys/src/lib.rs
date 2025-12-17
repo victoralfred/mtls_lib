@@ -27,6 +27,9 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 #![allow(clippy::all)]
+// Suppress warning for function pointer comparisons in generated bindings
+// This is safe because function pointers in FFI are compared by value, not address
+#![allow(unpredictable_function_pointer_comparisons)]
 
 // Include the generated bindings
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

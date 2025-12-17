@@ -238,9 +238,10 @@ impl Context {
     {
         let id = register_callback(Box::new(callback));
 
-        let mut observers = mtls_sys::mtls_observers::default();
-        observers.on_event = Some(c_event_callback);
-        observers.userdata = id as *mut c_void;
+        let observers = mtls_sys::mtls_observers {
+            on_event: Some(c_event_callback),
+            userdata: id as *mut c_void,
+        };
 
         let result = unsafe { mtls_sys::mtls_set_observers(self.as_ptr(), &observers) };
 

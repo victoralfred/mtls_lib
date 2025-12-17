@@ -8,19 +8,14 @@ use crate::error::{Error, ErrorCode, Result};
 use crate::ffi_helpers::to_c_string;
 
 /// TLS version enumeration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u16)]
 pub enum TlsVersion {
     /// TLS 1.2
+    #[default]
     Tls12 = 0x0303,
     /// TLS 1.3
     Tls13 = 0x0304,
-}
-
-impl Default for TlsVersion {
-    fn default() -> Self {
-        TlsVersion::Tls12
-    }
 }
 
 /// Configuration for creating an mTLS context.
@@ -409,10 +404,12 @@ mod tests {
 
     #[test]
     fn test_config_validation_tls_version() {
-        let mut config = Config::default();
-        config.ca_cert_pem = Some(vec![1, 2, 3]); // Dummy PEM
-        config.min_tls_version = TlsVersion::Tls13;
-        config.max_tls_version = TlsVersion::Tls12;
+        let config = Config {
+            ca_cert_pem: Some(vec![1, 2, 3]), // Dummy PEM
+            min_tls_version: TlsVersion::Tls13,
+            max_tls_version: TlsVersion::Tls12,
+            ..Config::default()
+        };
 
         let result = config.validate();
         assert!(result.is_err());
