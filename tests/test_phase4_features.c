@@ -4,6 +4,7 @@
  */
 
 #include "mtls/mtls.h"
+#include "mtls/mtls_types.h"
 #include "mtls/mtls_error.h"
 #include "mtls/mtls_config.h"
 #include "internal/platform.h"
@@ -13,24 +14,24 @@
 #include <stdbool.h>
 
 /* Test framework macros */
-#define TEST_ASSERT(condition, msg) \
-    do { \
-        if (!(condition)) { \
+#define TEST_ASSERT(condition, msg)                                        \
+    do {                                                                   \
+        if (!(condition)) {                                                \
             fprintf(stderr, "FAIL: %s:%d: %s\n", __FILE__, __LINE__, msg); \
-            return false; \
-        } \
+            return false;                                                  \
+        }                                                                  \
     } while (0)
 
-#define TEST_RUN(name) \
-    do { \
+#define TEST_RUN(name)                       \
+    do {                                     \
         printf("Running test: %s\n", #name); \
-        if (test_##name()) { \
-            printf("  PASS: %s\n", #name); \
-            passed++; \
-        } else { \
-            printf("  FAIL: %s\n", #name); \
-            failed++; \
-        } \
+        if (test_##name()) {                 \
+            printf("  PASS: %s\n", #name);   \
+            passed++;                        \
+        } else {                             \
+            printf("  FAIL: %s\n", #name);   \
+            failed++;                        \
+        }                                    \
     } while (0)
 
 /* Test counters */
@@ -44,9 +45,10 @@ static int failed = 0;
 /**
  * Test 1: Basic string equality
  */
-static bool test_consttime_strcmp_equal(void) {
-    const char* str1 = "hello";
-    const char* str2 = "hello";
+static bool test_consttime_strcmp_equal(void)
+{
+    const char *str1 = "hello";
+    const char *str2 = "hello";
 
     int result = platform_consttime_strcmp(str1, str2);
     TEST_ASSERT(result == 0, "Equal strings should return 0");
@@ -57,9 +59,10 @@ static bool test_consttime_strcmp_equal(void) {
 /**
  * Test 2: String inequality
  */
-static bool test_consttime_strcmp_not_equal(void) {
-    const char* str1 = "hello";
-    const char* str2 = "world";
+static bool test_consttime_strcmp_not_equal(void)
+{
+    const char *str1 = "hello";
+    const char *str2 = "world";
 
     int result = platform_consttime_strcmp(str1, str2);
     TEST_ASSERT(result != 0, "Different strings should return non-zero");
@@ -70,15 +73,16 @@ static bool test_consttime_strcmp_not_equal(void) {
 /**
  * Test 3: Empty strings
  */
-static bool test_consttime_strcmp_empty(void) {
-    const char* str1 = "";
-    const char* str2 = "";
+static bool test_consttime_strcmp_empty(void)
+{
+    const char *str1 = "";
+    const char *str2 = "";
 
     int result = platform_consttime_strcmp(str1, str2);
     TEST_ASSERT(result == 0, "Empty strings should be equal");
 
     /* One empty, one not */
-    const char* str3 = "hello";
+    const char *str3 = "hello";
     result = platform_consttime_strcmp(str1, str3);
     TEST_ASSERT(result != 0, "Empty vs non-empty should not be equal");
 
@@ -88,8 +92,9 @@ static bool test_consttime_strcmp_empty(void) {
 /**
  * Test 4: NULL pointer handling
  */
-static bool test_consttime_strcmp_null(void) {
-    const char* str = "hello";
+static bool test_consttime_strcmp_null(void)
+{
+    const char *str = "hello";
 
     /* Both NULL should be considered equal */
     int result = platform_consttime_strcmp(NULL, NULL);
@@ -108,9 +113,10 @@ static bool test_consttime_strcmp_null(void) {
 /**
  * Test 5: Different length strings
  */
-static bool test_consttime_strcmp_different_lengths(void) {
-    const char* short_str = "hi";
-    const char* long_str = "hello";
+static bool test_consttime_strcmp_different_lengths(void)
+{
+    const char *short_str = "hi";
+    const char *long_str = "hello";
 
     int result = platform_consttime_strcmp(short_str, long_str);
     TEST_ASSERT(result != 0, "Different length strings should not be equal");
@@ -121,9 +127,10 @@ static bool test_consttime_strcmp_different_lengths(void) {
 /**
  * Test 6: Case sensitivity
  */
-static bool test_consttime_strcmp_case_sensitive(void) {
-    const char* lower = "hello";
-    const char* upper = "HELLO";
+static bool test_consttime_strcmp_case_sensitive(void)
+{
+    const char *lower = "hello";
+    const char *upper = "HELLO";
 
     int result = platform_consttime_strcmp(lower, upper);
     TEST_ASSERT(result != 0, "Comparison should be case-sensitive");
@@ -134,10 +141,11 @@ static bool test_consttime_strcmp_case_sensitive(void) {
 /**
  * Test 7: Strings with special characters
  */
-static bool test_consttime_strcmp_special_chars(void) {
-    const char* str1 = "hello@world!";
-    const char* str2 = "hello@world!";
-    const char* str3 = "hello@world?";
+static bool test_consttime_strcmp_special_chars(void)
+{
+    const char *str1 = "hello@world!";
+    const char *str2 = "hello@world!";
+    const char *str3 = "hello@world?";
 
     int result = platform_consttime_strcmp(str1, str2);
     TEST_ASSERT(result == 0, "Equal strings with special chars should return 0");
@@ -151,15 +159,16 @@ static bool test_consttime_strcmp_special_chars(void) {
 /**
  * Test 8: Long strings (within safety limit)
  */
-static bool test_consttime_strcmp_long_strings(void) {
+static bool test_consttime_strcmp_long_strings(void)
+{
     /* Create strings within the 10000 character safety limit */
     char long_str1[5000];
     char long_str2[5000];
 
-    memset(long_str1, 'A', sizeof(long_str1) - 1);
+    (void)mtls_memset_s(long_str1, sizeof(long_str1), 'A', sizeof(long_str1) - 1);
     long_str1[sizeof(long_str1) - 1] = '\0';
 
-    memcpy(long_str2, long_str1, sizeof(long_str2));
+    (void)mtls_memcpy_s(long_str2, sizeof(long_str2), long_str1, sizeof(long_str2));
 
     /* Should work correctly within the limit */
     int result = platform_consttime_strcmp(long_str1, long_str2);
@@ -171,13 +180,13 @@ static bool test_consttime_strcmp_long_strings(void) {
     TEST_ASSERT(result != 0, "Long different strings should not be equal");
 
     /* Make one character different at the beginning */
-    memcpy(long_str2, long_str1, sizeof(long_str2));
+    (void)mtls_memcpy_s(long_str2, sizeof(long_str2), long_str1, sizeof(long_str2));
     long_str2[0] = 'B';
     result = platform_consttime_strcmp(long_str1, long_str2);
     TEST_ASSERT(result != 0, "Difference at start should be detected");
 
     /* Make one character different in the middle */
-    memcpy(long_str2, long_str1, sizeof(long_str2));
+    (void)mtls_memcpy_s(long_str2, sizeof(long_str2), long_str1, sizeof(long_str2));
     long_str2[2500] = 'B';
     result = platform_consttime_strcmp(long_str1, long_str2);
     TEST_ASSERT(result != 0, "Difference in middle should be detected");
@@ -188,16 +197,21 @@ static bool test_consttime_strcmp_long_strings(void) {
 /**
  * Test 9: String at maximum allowed length (boundary test)
  */
-static bool test_consttime_strcmp_max_length(void) {
+static bool test_consttime_strcmp_max_length(void)
+{
     /* MTLS_MAX_IDENTITY_LEN = 10000, so create strings of exactly that length */
-    char* max_str1 = (char*)malloc(MTLS_MAX_IDENTITY_LEN + 1);
-    char* max_str2 = (char*)malloc(MTLS_MAX_IDENTITY_LEN + 1);
-    TEST_ASSERT(max_str1 && max_str2, "Memory allocation should succeed");
+    char *max_str1 = (char *)malloc(MTLS_MAX_IDENTITY_LEN + 1);
+    char *max_str2 = (char *)malloc(MTLS_MAX_IDENTITY_LEN + 1);
+    if (!max_str1 || !max_str2) {
+        free(max_str1);
+        free(max_str2);
+        TEST_ASSERT(false, "Memory allocation should succeed");
+    }
 
     /* Fill with 'A' characters up to the maximum length */
-    memset(max_str1, 'A', MTLS_MAX_IDENTITY_LEN);
+    (void)mtls_memset_s(max_str1, MTLS_MAX_IDENTITY_LEN + 1, 'A', MTLS_MAX_IDENTITY_LEN);
     max_str1[MTLS_MAX_IDENTITY_LEN] = '\0';
-    memcpy(max_str2, max_str1, MTLS_MAX_IDENTITY_LEN + 1);
+    (void)mtls_memcpy_s(max_str2, MTLS_MAX_IDENTITY_LEN + 1, max_str1, MTLS_MAX_IDENTITY_LEN + 1);
 
     /* Strings at exactly the limit should work correctly */
     int result = platform_consttime_strcmp(max_str1, max_str2);
@@ -206,7 +220,8 @@ static bool test_consttime_strcmp_max_length(void) {
     /* Make one character different */
     max_str2[MTLS_MAX_IDENTITY_LEN - 1] = 'B';
     result = platform_consttime_strcmp(max_str1, max_str2);
-    TEST_ASSERT(result != 0 && result != -1, "Strings at max length should be comparable when different");
+    TEST_ASSERT(result != 0 && result != -1,
+                "Strings at max length should be comparable when different");
 
     free(max_str1);
     free(max_str2);
@@ -217,16 +232,21 @@ static bool test_consttime_strcmp_max_length(void) {
 /**
  * Test 10: Oversized strings (should be rejected)
  */
-static bool test_consttime_strcmp_oversized(void) {
+static bool test_consttime_strcmp_oversized(void)
+{
     /* Create strings that exceed MTLS_MAX_IDENTITY_LEN */
     size_t oversized_len = MTLS_MAX_IDENTITY_LEN + 100;
-    char* oversized_str1 = (char*)malloc(oversized_len + 1);
-    char* oversized_str2 = (char*)malloc(oversized_len + 1);
-    TEST_ASSERT(oversized_str1 && oversized_str2, "Memory allocation should succeed");
+    char *oversized_str1 = (char *)malloc(oversized_len + 1);
+    char *oversized_str2 = (char *)malloc(oversized_len + 1);
+    if (!oversized_str1 || !oversized_str2) {
+        free(oversized_str1);
+        free(oversized_str2);
+        TEST_ASSERT(false, "Memory allocation should succeed");
+    }
 
-    memset(oversized_str1, 'A', oversized_len);
+    (void)mtls_memset_s(oversized_str1, oversized_len + 1, 'A', oversized_len);
     oversized_str1[oversized_len] = '\0';
-    memcpy(oversized_str2, oversized_str1, oversized_len + 1);
+    (void)mtls_memcpy_s(oversized_str2, oversized_len + 1, oversized_str1, oversized_len + 1);
 
     /* Oversized strings should return -1 (error) even when equal */
     int result = platform_consttime_strcmp(oversized_str1, oversized_str2);
@@ -246,14 +266,17 @@ static bool test_consttime_strcmp_oversized(void) {
 /**
  * Test 11: Asymmetric oversized strings
  */
-static bool test_consttime_strcmp_asymmetric_oversized(void) {
+static bool test_consttime_strcmp_asymmetric_oversized(void)
+{
     /* One normal string, one oversized */
-    const char* normal_str = "hello";
+    const char *normal_str = "hello";
     size_t oversized_len = MTLS_MAX_IDENTITY_LEN + 100;
-    char* oversized_str = (char*)malloc(oversized_len + 1);
-    TEST_ASSERT(oversized_str, "Memory allocation should succeed");
+    char *oversized_str = (char *)malloc(oversized_len + 1);
+    if (!oversized_str) {
+        TEST_ASSERT(false, "Memory allocation should succeed");
+    }
 
-    memset(oversized_str, 'A', oversized_len);
+    (void)mtls_memset_s(oversized_str, oversized_len + 1, 'A', oversized_len);
     oversized_str[oversized_len] = '\0';
 
     /* Should reject when first string is oversized */
@@ -276,11 +299,12 @@ static bool test_consttime_strcmp_asymmetric_oversized(void) {
 /**
  * Test 12: Basic memory equality
  */
-static bool test_consttime_memcmp_equal(void) {
-    const unsigned char data1[] = {0x01, 0x02, 0x03, 0x04};
-    const unsigned char data2[] = {0x01, 0x02, 0x03, 0x04};
+static bool test_consttime_memcmp_equal(void)
+{
+    const unsigned char DATA1[] = {0x01, 0x02, 0x03, 0x04};
+    const unsigned char DATA2[] = {0x01, 0x02, 0x03, 0x04};
 
-    int result = platform_consttime_memcmp(data1, data2, sizeof(data1));
+    int result = platform_consttime_memcmp(DATA1, DATA2, sizeof(DATA1));
     TEST_ASSERT(result == 0, "Equal memory regions should return 0");
 
     return true;
@@ -289,11 +313,12 @@ static bool test_consttime_memcmp_equal(void) {
 /**
  * Test 13: Memory inequality
  */
-static bool test_consttime_memcmp_not_equal(void) {
-    const unsigned char data1[] = {0x01, 0x02, 0x03, 0x04};
-    const unsigned char data2[] = {0x01, 0x02, 0x03, 0x05};
+static bool test_consttime_memcmp_not_equal(void)
+{
+    const unsigned char DATA1[] = {0x01, 0x02, 0x03, 0x04};
+    const unsigned char DATA2[] = {0x01, 0x02, 0x03, 0x05};
 
-    int result = platform_consttime_memcmp(data1, data2, sizeof(data1));
+    int result = platform_consttime_memcmp(DATA1, DATA2, sizeof(DATA1));
     TEST_ASSERT(result != 0, "Different memory regions should return non-zero");
 
     return true;
@@ -302,11 +327,12 @@ static bool test_consttime_memcmp_not_equal(void) {
 /**
  * Test 14: Zero-length comparison
  */
-static bool test_consttime_memcmp_zero_length(void) {
-    const unsigned char data1[] = {0x01, 0x02};
-    const unsigned char data2[] = {0x03, 0x04};
+static bool test_consttime_memcmp_zero_length(void)
+{
+    const unsigned char DATA1[] = {0x01, 0x02};
+    const unsigned char DATA2[] = {0x03, 0x04};
 
-    int result = platform_consttime_memcmp(data1, data2, 0);
+    int result = platform_consttime_memcmp(DATA1, DATA2, 0);
     TEST_ASSERT(result == 0, "Zero-length comparison should return 0");
 
     return true;
@@ -315,18 +341,19 @@ static bool test_consttime_memcmp_zero_length(void) {
 /**
  * Test 15: NULL pointer handling in memcmp
  */
-static bool test_consttime_memcmp_null(void) {
-    const unsigned char data[] = {0x01, 0x02};
+static bool test_consttime_memcmp_null(void)
+{
+    const unsigned char DATA[] = {0x01, 0x02};
 
     /* Both NULL should be considered equal */
     int result = platform_consttime_memcmp(NULL, NULL, 10);
     TEST_ASSERT(result == 0, "NULL == NULL should return 0");
 
     /* One NULL should not equal non-NULL */
-    result = platform_consttime_memcmp(data, NULL, sizeof(data));
+    result = platform_consttime_memcmp(DATA, NULL, sizeof(DATA));
     TEST_ASSERT(result != 0, "Data vs NULL should not be equal");
 
-    result = platform_consttime_memcmp(NULL, data, sizeof(data));
+    result = platform_consttime_memcmp(NULL, DATA, sizeof(DATA));
     TEST_ASSERT(result != 0, "NULL vs Data should not be equal");
 
     return true;
@@ -335,16 +362,17 @@ static bool test_consttime_memcmp_null(void) {
 /**
  * Test 16: Difference at different positions
  */
-static bool test_consttime_memcmp_diff_positions(void) {
-    const unsigned char data1[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+static bool test_consttime_memcmp_diff_positions(void)
+{
+    const unsigned char DATA1[] = {0x01, 0x02, 0x03, 0x04, 0x05};
     unsigned char data2[5];
 
     /* Test difference at each position */
-    for (size_t i = 0; i < sizeof(data1); i++) {
-        memcpy(data2, data1, sizeof(data1));
-        data2[i] ^= 0xFF;  /* Flip all bits at position i */
+    for (size_t i = 0; i < sizeof(DATA1); i++) {
+        (void)mtls_memcpy_s(data2, sizeof(data2), DATA1, sizeof(DATA1));
+        data2[i] ^= 0xFF; /* Flip all bits at position i */
 
-        int result = platform_consttime_memcmp(data1, data2, sizeof(data1));
+        int result = platform_consttime_memcmp(DATA1, data2, sizeof(DATA1));
         TEST_ASSERT(result != 0, "Difference at any position should be detected");
     }
 
@@ -354,12 +382,13 @@ static bool test_consttime_memcmp_diff_positions(void) {
 /**
  * Test 17: All-zeros vs all-ones
  */
-static bool test_consttime_memcmp_extremes(void) {
+static bool test_consttime_memcmp_extremes(void)
+{
     unsigned char zeros[16];
     unsigned char ones[16];
 
-    memset(zeros, 0x00, sizeof(zeros));
-    memset(ones, 0xFF, sizeof(ones));
+    (void)mtls_memset_s(zeros, sizeof(zeros), 0x00, sizeof(zeros));
+    (void)mtls_memset_s(ones, sizeof(ones), 0xFF, sizeof(ones));
 
     int result = platform_consttime_memcmp(zeros, ones, sizeof(zeros));
     TEST_ASSERT(result != 0, "All-zeros vs all-ones should not be equal");
@@ -376,18 +405,23 @@ static bool test_consttime_memcmp_extremes(void) {
 /**
  * Test 18: Large memory blocks
  */
-static bool test_consttime_memcmp_large_blocks(void) {
+static bool test_consttime_memcmp_large_blocks(void)
+{
     size_t size = 10000;
-    unsigned char* data1 = (unsigned char*)malloc(size);
-    unsigned char* data2 = (unsigned char*)malloc(size);
+    unsigned char *data1 = (unsigned char *)malloc(size);
+    unsigned char *data2 = (unsigned char *)malloc(size);
 
-    TEST_ASSERT(data1 && data2, "Memory allocation should succeed");
+    if (!data1 || !data2) {
+        free(data1);
+        free(data2);
+        TEST_ASSERT(false, "Memory allocation should succeed");
+    }
 
     /* Fill with pseudo-random data */
     for (size_t i = 0; i < size; i++) {
         data1[i] = (unsigned char)(i & 0xFF);
     }
-    memcpy(data2, data1, size);
+    (void)mtls_memcpy_s(data2, size, data1, size);
 
     int result = platform_consttime_memcmp(data1, data2, size);
     TEST_ASSERT(result == 0, "Large equal blocks should return 0");
@@ -410,7 +444,8 @@ static bool test_consttime_memcmp_large_blocks(void) {
 /**
  * Test 19: Certificate reload with NULL context
  */
-static bool test_cert_reload_null_context(void) {
+static bool test_cert_reload_null_context(void)
+{
     mtls_config config;
     mtls_config_init(&config);
 
@@ -427,8 +462,9 @@ static bool test_cert_reload_null_context(void) {
 /**
  * Test 20: SAN validation with NULL identity
  */
-static bool test_san_validation_null_identity(void) {
-    const char* allowed_sans[] = {"example.com"};
+static bool test_san_validation_null_identity(void)
+{
+    const char *allowed_sans[] = {"example.com"};
 
     bool result = mtls_validate_peer_sans(NULL, allowed_sans, 1);
     TEST_ASSERT(result == false, "NULL identity should return false");
@@ -439,9 +475,10 @@ static bool test_san_validation_null_identity(void) {
 /**
  * Test 21: SAN validation with NULL allowed list
  */
-static bool test_san_validation_null_allowed(void) {
+static bool test_san_validation_null_allowed(void)
+{
     mtls_peer_identity identity;
-    memset(&identity, 0, sizeof(identity));
+    (void)mtls_memset_s(&identity, sizeof(identity), 0, sizeof(identity));
 
     bool result = mtls_validate_peer_sans(&identity, NULL, 1);
     TEST_ASSERT(result == false, "NULL allowed list should return false");
@@ -452,11 +489,12 @@ static bool test_san_validation_null_allowed(void) {
 /**
  * Test 22: SAN validation with zero count
  */
-static bool test_san_validation_zero_count(void) {
+static bool test_san_validation_zero_count(void)
+{
     mtls_peer_identity identity;
-    memset(&identity, 0, sizeof(identity));
+    (void)mtls_memset_s(&identity, sizeof(identity), 0, sizeof(identity));
 
-    const char* allowed_sans[] = {"example.com"};
+    const char *allowed_sans[] = {"example.com"};
 
     bool result = mtls_validate_peer_sans(&identity, allowed_sans, 0);
     TEST_ASSERT(result == false, "Zero count should return false");
@@ -467,13 +505,14 @@ static bool test_san_validation_zero_count(void) {
 /**
  * Test 23: SAN validation with empty identity SANs
  */
-static bool test_san_validation_empty_sans(void) {
+static bool test_san_validation_empty_sans(void)
+{
     mtls_peer_identity identity;
-    memset(&identity, 0, sizeof(identity));
+    (void)mtls_memset_s(&identity, sizeof(identity), 0, sizeof(identity));
     identity.san_count = 0;
     identity.sans = NULL;
 
-    const char* allowed_sans[] = {"example.com"};
+    const char *allowed_sans[] = {"example.com"};
 
     bool result = mtls_validate_peer_sans(&identity, allowed_sans, 1);
     TEST_ASSERT(result == false, "Empty SANs should return false");
@@ -484,7 +523,8 @@ static bool test_san_validation_empty_sans(void) {
 /* ============================================================================
  * Main Test Runner
  * ============================================================================ */
-int main(void) {
+int main(void)
+{
     printf("========================================\n");
     printf("Phase 4 Features Test Suite\n");
     printf("========================================\n\n");

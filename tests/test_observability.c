@@ -6,19 +6,22 @@
  */
 
 #include "mtls/mtls.h"
+#include "mtls/mtls_config.h"
+#include "mtls/mtls_error.h"
+#include "mtls/mtls_types.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <pthread.h>
-#include <unistd.h>
+#include <threads.h>
 
 /* Test certificate paths */
-#define CA_CERT     "../certs/ca-cert.pem"
+#define CA_CERT "../certs/ca-cert.pem"
 #define SERVER_CERT "../certs/server-cert.pem"
-#define SERVER_KEY  "../certs/server-key.pem"
+#define SERVER_KEY "../certs/server-key.pem"
 #define CLIENT_CERT "../certs/client-cert.pem"
-#define CLIENT_KEY  "../certs/client-key.pem"
+#define CLIENT_KEY "../certs/client-key.pem"
 
 /* Test event tracking */
 typedef struct {
@@ -30,85 +33,102 @@ typedef struct {
     char remote_addr[128];
 } tracked_event;
 
-#define MAX_TRACKED_EVENTS 100
+enum { MAX_TRACKED_EVENTS = 100 };
 
 typedef struct {
     tracked_event events[MAX_TRACKED_EVENTS];
     size_t event_count;
-    pthread_mutex_t lock;
+    mtx_t lock;
 } event_tracker;
 
-static void event_tracker_init(event_tracker* tracker) {
-    memset(tracker, 0, sizeof(*tracker));
-    pthread_mutex_init(&tracker->lock, NULL);
+static void event_tracker_init(event_tracker *tracker)
+{
+    (void)mtls_memset_s(tracker, sizeof(*tracker), 0, sizeof(*tracker));
+    (void)mtx_init(&tracker->lock, mtx_plain);
 }
 
-static void event_tracker_free(event_tracker* tracker) {
-    pthread_mutex_destroy(&tracker->lock);
+static void event_tracker_free(event_tracker *tracker)
+{
+    mtx_destroy(&tracker->lock);
 }
 
-static void event_callback(const mtls_event* event, void* userdata) {
-    event_tracker* tracker = (event_tracker*)userdata;
+static void event_callback(const mtls_event *event, void *userdata)
+{
+    event_tracker *tracker = (event_tracker *)userdata;
 
-    pthread_mutex_lock(&tracker->lock);
+    (void)mtx_lock(&tracker->lock);
 
     if (tracker->event_count < MAX_TRACKED_EVENTS) {
-        tracked_event* te = &tracker->events[tracker->event_count++];
-        te->type = event->type;
-        te->error_code = event->error_code;
-        te->timestamp_us = event->timestamp_us;
-        te->duration_us = event->duration_us;
-        te->bytes = event->bytes;
+        tracked_event *tracked = &tracker->events[tracker->event_count++];
+        tracked->type = event->type;
+        tracked->error_code = event->error_code;
+        tracked->timestamp_us = event->timestamp_us;
+        tracked->duration_us = event->duration_us;
+        tracked->bytes = event->bytes;
 
         if (event->remote_addr) {
-            strncpy(te->remote_addr, event->remote_addr, sizeof(te->remote_addr) - 1);
-            te->remote_addr[sizeof(te->remote_addr) - 1] = '\0';
+            (void)snprintf(tracked->remote_addr, sizeof(tracked->remote_addr), "%s",
+                           event->remote_addr);
         } else {
-            te->remote_addr[0] = '\0';
+            tracked->remote_addr[0] = '\0';
         }
     }
 
-    pthread_mutex_unlock(&tracker->lock);
+    (void)mtx_unlock(&tracker->lock);
 }
 
-static const char* event_type_str(mtls_event_type type) {
+static const char *event_type_str(mtls_event_type type)
+{
     switch (type) {
-        case MTLS_EVENT_CONNECT_START: return "CONNECT_START";
-        case MTLS_EVENT_CONNECT_SUCCESS: return "CONNECT_SUCCESS";
-        case MTLS_EVENT_CONNECT_FAILURE: return "CONNECT_FAILURE";
-        case MTLS_EVENT_HANDSHAKE_START: return "HANDSHAKE_START";
-        case MTLS_EVENT_HANDSHAKE_SUCCESS: return "HANDSHAKE_SUCCESS";
-        case MTLS_EVENT_HANDSHAKE_FAILURE: return "HANDSHAKE_FAILURE";
-        case MTLS_EVENT_READ: return "READ";
-        case MTLS_EVENT_WRITE: return "WRITE";
-        case MTLS_EVENT_CLOSE: return "CLOSE";
-        case MTLS_EVENT_KILL_SWITCH_TRIGGERED: return "KILL_SWITCH_TRIGGERED";
-        default: return "UNKNOWN";
+    case MTLS_EVENT_CONNECT_START:
+        return "CONNECT_START";
+    case MTLS_EVENT_CONNECT_SUCCESS:
+        return "CONNECT_SUCCESS";
+    case MTLS_EVENT_CONNECT_FAILURE:
+        return "CONNECT_FAILURE";
+    case MTLS_EVENT_HANDSHAKE_START:
+        return "HANDSHAKE_START";
+    case MTLS_EVENT_HANDSHAKE_SUCCESS:
+        return "HANDSHAKE_SUCCESS";
+    case MTLS_EVENT_HANDSHAKE_FAILURE:
+        return "HANDSHAKE_FAILURE";
+    case MTLS_EVENT_READ:
+        return "READ";
+    case MTLS_EVENT_WRITE:
+        return "WRITE";
+    case MTLS_EVENT_CLOSE:
+        return "CLOSE";
+    case MTLS_EVENT_KILL_SWITCH_TRIGGERED:
+        return "KILL_SWITCH_TRIGGERED";
+    default:
+        return "UNKNOWN";
     }
 }
 
-static void print_events(event_tracker* tracker) {
+static void print_events(event_tracker *tracker)
+{
     printf("\n[Event Trace] %zu events recorded:\n", tracker->event_count);
     for (size_t i = 0; i < tracker->event_count; i++) {
-        const tracked_event* te = &tracker->events[i];
-        printf("  [%zu] %s", i, event_type_str(te->type));
-        if (te->error_code != 0) {
-            printf(" (error: %d)", te->error_code);
+        const tracked_event *tracked = &tracker->events[i];
+        printf("  [%zu] %s", i, event_type_str(tracked->type));
+        if (tracked->error_code != 0) {
+            printf(" (error: %d)", tracked->error_code);
         }
-        if (te->duration_us > 0) {
-            printf(" (duration: %lu us)", (unsigned long)te->duration_us);
+        if (tracked->duration_us > 0) {
+            printf(" (duration: %lu us)", (unsigned long)tracked->duration_us);
         }
-        if (te->bytes > 0) {
-            printf(" (bytes: %zu)", te->bytes);
+        if (tracked->bytes > 0) {
+            printf(" (bytes: %zu)", tracked->bytes);
         }
-        if (te->remote_addr[0] != '\0') {
-            printf(" (addr: %s)", te->remote_addr);
+        if (tracked->remote_addr[0] != '\0') {
+            printf(" (addr: %s)", tracked->remote_addr);
         }
         printf("\n");
     }
 }
 
-static int find_event(const event_tracker* tracker, mtls_event_type type, size_t start_idx) {
+static int find_event(const event_tracker *tracker, mtls_event_type type, size_t start_idx)
+{
     for (size_t i = start_idx; i < tracker->event_count; i++) {
         if (tracker->events[i].type == type) {
             return (int)i;
@@ -117,48 +137,9 @@ static int find_event(const event_tracker* tracker, mtls_event_type type, size_t
     return -1;
 }
 
-/* Server thread for accepting connections */
-typedef struct {
-    mtls_ctx* ctx;
-    const char* bind_addr;
-    int num_clients;
-    event_tracker* tracker;
-} server_args;
-
-__attribute__((unused))
-static void* server_thread(void* arg) {
-    server_args* args = (server_args*)arg;
-    mtls_err err;
-
-    mtls_listener* listener = mtls_listen(args->ctx, args->bind_addr, &err);
-    if (!listener) {
-        fprintf(stderr, "[Server] Failed to listen: %s\n", err.message);
-        return NULL;
-    }
-
-    for (int i = 0; i < args->num_clients; i++) {
-        mtls_conn* conn = mtls_accept(listener, &err);
-        if (!conn) {
-            fprintf(stderr, "[Server] Failed to accept: %s\n", err.message);
-            continue;
-        }
-
-        /* Echo back any data */
-        char buffer[256];
-        ssize_t n = mtls_read(conn, buffer, sizeof(buffer), &err);
-        if (n > 0) {
-            mtls_write(conn, buffer, (size_t)n, &err);
-        }
-
-        mtls_close(conn);
-    }
-
-    mtls_listener_close(listener);
-    return NULL;
-}
-
 /* Test 1: Basic event callback registration */
-static void test_observer_registration(void) {
+static void test_observer_registration(void)
+{
     printf("\n=== Test 1: Observer Registration ===\n");
 
     mtls_config config;
@@ -168,7 +149,7 @@ static void test_observer_registration(void) {
     config.key_path = CLIENT_KEY;
 
     mtls_err err;
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
     if (ctx == NULL) {
         printf("[SKIP] Test certificates not found (expected in CI): %s\n", err.message);
         printf("[PASS] Observer registration API verified (structure only)\n");
@@ -179,19 +160,16 @@ static void test_observer_registration(void) {
     event_tracker_init(&tracker);
 
     /* Register observer */
-    mtls_observers observers = {
-        .on_event = event_callback,
-        .userdata = &tracker
-    };
+    mtls_observers observers = {.on_event = event_callback, .userdata = &tracker};
 
     int ret = mtls_set_observers(ctx, &observers);
     assert(ret == 0);
-    (void)ret;  /* Suppress unused variable warning after assert */
+    (void)ret; /* Suppress unused variable warning after assert */
 
     /* Unregister observer (pass NULL) */
     ret = mtls_set_observers(ctx, NULL);
     assert(ret == 0);
-    (void)ret;  /* Suppress unused variable warning after assert */
+    (void)ret; /* Suppress unused variable warning after assert */
 
     event_tracker_free(&tracker);
     mtls_ctx_free(ctx);
@@ -200,7 +178,8 @@ static void test_observer_registration(void) {
 }
 
 /* Test 2: Client connection lifecycle events */
-static void test_client_connection_events(void) {
+static void test_client_connection_events(void)
+{
     printf("\n=== Test 2: Client Connection Events ===\n");
 
     /* Start server */
@@ -211,7 +190,7 @@ static void test_client_connection_events(void) {
     server_config.key_path = SERVER_KEY;
 
     mtls_err err;
-    mtls_ctx* server_ctx = mtls_ctx_create(&server_config, &err);
+    mtls_ctx *server_ctx = mtls_ctx_create(&server_config, &err);
     if (server_ctx == NULL) {
         printf("[SKIP] Test certificates not found (expected in CI): %s\n", err.message);
         printf("[PASS] Client connection events API verified (structure only)\n");
@@ -221,15 +200,12 @@ static void test_client_connection_events(void) {
     event_tracker server_tracker;
     event_tracker_init(&server_tracker);
 
-    mtls_observers server_observers = {
-        .on_event = event_callback,
-        .userdata = &server_tracker
-    };
+    mtls_observers server_observers = {.on_event = event_callback, .userdata = &server_tracker};
     mtls_set_observers(server_ctx, &server_observers);
 
     /* For simplicity, we'll just test with a failing connection */
     /* (Full client-server test requires dynamic port handling) */
-    (void)server_tracker;  /* Suppress unused variable warning */
+    (void)server_tracker; /* Suppress unused variable warning */
 
     /* Create client context */
     mtls_config client_config;
@@ -237,9 +213,9 @@ static void test_client_connection_events(void) {
     client_config.ca_cert_path = CA_CERT;
     client_config.cert_path = CLIENT_CERT;
     client_config.key_path = CLIENT_KEY;
-    client_config.connect_timeout_ms = 100;  /* Short timeout */
+    client_config.connect_timeout_ms = 100; /* Short timeout */
 
-    mtls_ctx* client_ctx = mtls_ctx_create(&client_config, &err);
+    mtls_ctx *client_ctx = mtls_ctx_create(&client_config, &err);
     if (client_ctx == NULL) {
         printf("[SKIP] Test certificates not found (expected in CI): %s\n", err.message);
         printf("[PASS] Client connection events API verified (structure only)\n");
@@ -251,23 +227,20 @@ static void test_client_connection_events(void) {
     event_tracker client_tracker;
     event_tracker_init(&client_tracker);
 
-    mtls_observers client_observers = {
-        .on_event = event_callback,
-        .userdata = &client_tracker
-    };
+    mtls_observers client_observers = {.on_event = event_callback, .userdata = &client_tracker};
     mtls_set_observers(client_ctx, &client_observers);
 
     /* Attempt connection to non-existent server (should fail) */
-    mtls_conn* conn = mtls_connect(client_ctx, "127.0.0.1:1", &err);
-    assert(conn == NULL);  /* Connection should fail */
-    (void)conn;  /* Suppress unused variable warning after assert */
+    mtls_conn *conn = mtls_connect(client_ctx, "127.0.0.1:1", &err);
+    assert(conn == NULL); /* Connection should fail */
+    (void)conn;           /* Suppress unused variable warning after assert */
 
     print_events(&client_tracker);
 
     /* Verify we got CONNECT_START and CONNECT_FAILURE events */
     int start_idx = find_event(&client_tracker, MTLS_EVENT_CONNECT_START, 0);
     assert(start_idx >= 0);
-    (void)start_idx;  /* Used in assert and printf */
+    (void)start_idx; /* Used in assert and printf */
     printf("[PASS] CONNECT_START event found at index %d\n", start_idx);
 
     int failure_idx = find_event(&client_tracker, MTLS_EVENT_CONNECT_FAILURE, 0);
@@ -276,7 +249,7 @@ static void test_client_connection_events(void) {
 
     /* Verify duration is recorded */
     assert(client_tracker.events[failure_idx].duration_us > 0);
-    (void)failure_idx;  /* Used in assert and printf */
+    (void)failure_idx; /* Used in assert and printf */
     printf("[PASS] Duration recorded: %lu us\n",
            (unsigned long)client_tracker.events[failure_idx].duration_us);
 
@@ -289,7 +262,8 @@ static void test_client_connection_events(void) {
 }
 
 /* Test 3: Kill switch events */
-static void test_kill_switch_events(void) {
+static void test_kill_switch_events(void)
+{
     printf("\n=== Test 3: Kill Switch Events ===\n");
 
     mtls_config config;
@@ -297,10 +271,10 @@ static void test_kill_switch_events(void) {
     config.ca_cert_path = CA_CERT;
     config.cert_path = CLIENT_CERT;
     config.key_path = CLIENT_KEY;
-    config.kill_switch_enabled = false;  /* Start disabled */
+    config.kill_switch_enabled = false; /* Start disabled */
 
     mtls_err err;
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
     if (ctx == NULL) {
         printf("[SKIP] Test certificates not found (expected in CI): %s\n", err.message);
         printf("[PASS] Kill switch events API verified (structure only)\n");
@@ -310,20 +284,17 @@ static void test_kill_switch_events(void) {
     event_tracker tracker;
     event_tracker_init(&tracker);
 
-    mtls_observers observers = {
-        .on_event = event_callback,
-        .userdata = &tracker
-    };
+    mtls_observers observers = {.on_event = event_callback, .userdata = &tracker};
     mtls_set_observers(ctx, &observers);
 
     /* Enable kill switch */
     mtls_ctx_set_kill_switch(ctx, true);
 
     /* Attempt connection - should be blocked */
-    mtls_conn* conn = mtls_connect(ctx, "127.0.0.1:443", &err);
+    mtls_conn *conn = mtls_connect(ctx, "127.0.0.1:443", &err);
     assert(conn == NULL);
     assert(err.code == MTLS_ERR_KILL_SWITCH_ENABLED);
-    (void)conn;  /* Suppress unused variable warning after assert */
+    (void)conn; /* Suppress unused variable warning after assert */
 
     print_events(&tracker);
 
@@ -331,7 +302,7 @@ static void test_kill_switch_events(void) {
     int start_idx = find_event(&tracker, MTLS_EVENT_CONNECT_START, 0);
     assert(start_idx >= 0);
     printf("[PASS] CONNECT_START event found\n");
-    (void)start_idx;  /* Suppress unused variable warning after assert */
+    (void)start_idx; /* Suppress unused variable warning after assert */
 
     int kill_switch_idx = find_event(&tracker, MTLS_EVENT_KILL_SWITCH_TRIGGERED, 0);
     assert(kill_switch_idx >= 0);
@@ -340,11 +311,11 @@ static void test_kill_switch_events(void) {
     int failure_idx = find_event(&tracker, MTLS_EVENT_CONNECT_FAILURE, 0);
     assert(failure_idx >= 0);
     printf("[PASS] CONNECT_FAILURE event found\n");
-    (void)failure_idx;  /* Suppress unused variable warning after assert */
+    (void)failure_idx; /* Suppress unused variable warning after assert */
 
     /* Verify error code is set */
     assert(tracker.events[kill_switch_idx].error_code == MTLS_ERR_KILL_SWITCH_ENABLED);
-    (void)kill_switch_idx;  /* Suppress unused variable warning after assert */
+    (void)kill_switch_idx; /* Suppress unused variable warning after assert */
     printf("[PASS] Error code correctly set in KILL_SWITCH_TRIGGERED event\n");
 
     event_tracker_free(&tracker);
@@ -354,7 +325,8 @@ static void test_kill_switch_events(void) {
 }
 
 /* Test 4: I/O events (requires mock/loopback) */
-static void test_io_events_basic(void) {
+static void test_io_events_basic(void)
+{
     printf("\n=== Test 4: I/O Events (Basic) ===\n");
 
     /* This test would require a full client-server setup */
@@ -364,7 +336,8 @@ static void test_io_events_basic(void) {
 }
 
 /* Test 5: Event timing verification */
-static void test_event_timing(void) {
+static void test_event_timing(void)
+{
     printf("\n=== Test 5: Event Timing ===\n");
 
     mtls_config config;
@@ -375,7 +348,7 @@ static void test_event_timing(void) {
     config.connect_timeout_ms = 100;
 
     mtls_err err;
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
     if (ctx == NULL) {
         printf("[SKIP] Test certificates not found (expected in CI): %s\n", err.message);
         printf("[PASS] Event timing API verified (structure only)\n");
@@ -385,16 +358,13 @@ static void test_event_timing(void) {
     event_tracker tracker;
     event_tracker_init(&tracker);
 
-    mtls_observers observers = {
-        .on_event = event_callback,
-        .userdata = &tracker
-    };
+    mtls_observers observers = {.on_event = event_callback, .userdata = &tracker};
     mtls_set_observers(ctx, &observers);
 
     /* Attempt connection that will fail */
-    mtls_conn* conn = mtls_connect(ctx, "127.0.0.1:1", &err);
+    mtls_conn *conn = mtls_connect(ctx, "127.0.0.1:1", &err);
     assert(conn == NULL);
-    (void)conn;  /* Suppress unused variable warning after assert */
+    (void)conn; /* Suppress unused variable warning after assert */
 
     /* Verify all events have timestamps */
     for (size_t i = 0; i < tracker.event_count; i++) {
@@ -406,7 +376,7 @@ static void test_event_timing(void) {
     int failure_idx = find_event(&tracker, MTLS_EVENT_CONNECT_FAILURE, 0);
     if (failure_idx >= 0) {
         assert(tracker.events[failure_idx].duration_us > 0);
-        (void)failure_idx;  /* Used in assert */
+        (void)failure_idx; /* Used in assert */
         printf("[PASS] CONNECT_FAILURE has duration: %lu us\n",
                (unsigned long)tracker.events[failure_idx].duration_us);
     }
@@ -418,7 +388,8 @@ static void test_event_timing(void) {
 }
 
 /* Test 6: Multiple connections */
-static void test_multiple_connections(void) {
+static void test_multiple_connections(void)
+{
     printf("\n=== Test 6: Multiple Connections ===\n");
 
     mtls_config config;
@@ -429,7 +400,7 @@ static void test_multiple_connections(void) {
     config.connect_timeout_ms = 100;
 
     mtls_err err;
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
     if (ctx == NULL) {
         printf("[SKIP] Test certificates not found (expected in CI): %s\n", err.message);
         printf("[PASS] Multiple connections API verified (structure only)\n");
@@ -439,18 +410,15 @@ static void test_multiple_connections(void) {
     event_tracker tracker;
     event_tracker_init(&tracker);
 
-    mtls_observers observers = {
-        .on_event = event_callback,
-        .userdata = &tracker
-    };
+    mtls_observers observers = {.on_event = event_callback, .userdata = &tracker};
     mtls_set_observers(ctx, &observers);
 
     /* Attempt 3 connections (all will fail) */
     for (int i = 0; i < 3; i++) {
-        mtls_conn* conn = mtls_connect(ctx, "127.0.0.1:1", &err);
+        mtls_conn *conn = mtls_connect(ctx, "127.0.0.1:1", &err);
         assert(conn == NULL);
-        (void)conn;  /* Suppress unused variable warning after assert */
-        (void)i;     /* Suppress unused variable warning */
+        (void)conn; /* Suppress unused variable warning after assert */
+        (void)i;    /* Suppress unused variable warning */
     }
 
     print_events(&tracker);
@@ -463,7 +431,7 @@ static void test_multiple_connections(void) {
         }
     }
     assert(count == 3);
-    (void)count;  /* Used in assert, suppress warning when NDEBUG is defined */
+    (void)count; /* Used in assert, suppress warning when NDEBUG is defined */
     printf("[PASS] 3 CONNECT_START events recorded\n");
 
     /* Count CONNECT_FAILURE events (should be 3) */
@@ -474,7 +442,7 @@ static void test_multiple_connections(void) {
         }
     }
     assert(count == 3);
-    (void)count;  /* Used in assert, suppress warning when NDEBUG is defined */
+    (void)count; /* Used in assert, suppress warning when NDEBUG is defined */
     printf("[PASS] 3 CONNECT_FAILURE events recorded\n");
 
     event_tracker_free(&tracker);
@@ -483,7 +451,8 @@ static void test_multiple_connections(void) {
     printf("[PASS] Multiple connections tracked correctly\n");
 }
 
-int main(void) {
+int main(void)
+{
     printf("========================================\n");
     printf("  mTLS Observability Tests\n");
     printf("========================================\n");

@@ -16,13 +16,57 @@
 
 /* POSIX types for ssize_t */
 #if defined(_WIN32)
-    #include <BaseTsd.h>
-    typedef SSIZE_T ssize_t;
+#    include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*
+ * =============================================================================
+ * Annex K-like bounds-checked helpers
+ * =============================================================================
+ *
+ * Some static analyzers flag raw memset/memcpy usage as "insecure".
+ * Provide a small, portable, bounds-checked alternative.
+ *
+ * This is NOT the optional C11 Annex K memset_s; it is a project-local helper.
+ * Returns 0 on success, non-zero on invalid arguments.
+ */
+static inline int mtls_memset_s(void *dest, size_t destsz, int value, size_t count)
+{
+    if (dest == NULL) {
+        return -1;
+    }
+    if (count > destsz) {
+        return -1;
+    }
+
+    volatile unsigned char *ptr = (volatile unsigned char *)dest;
+    for (size_t i = 0; i < count; i++) {
+        ptr[i] = (unsigned char)value;
+    }
+    return 0;
+}
+
+static inline int mtls_memcpy_s(void *dest, size_t destsz, const void *src, size_t count)
+{
+    if (dest == NULL || src == NULL) {
+        return -1;
+    }
+    if (count > destsz) {
+        return -1;
+    }
+
+    unsigned char *dest_bytes = (unsigned char *)dest;
+    const unsigned char *src_bytes = (const unsigned char *)src;
+    for (size_t i = 0; i < count; i++) {
+        dest_bytes[i] = src_bytes[i];
+    }
+    return 0;
+}
 
 /*
  * API visibility macros
@@ -31,32 +75,28 @@ extern "C" {
  * For static libraries, no decoration is needed
  */
 #if defined(_WIN32) || defined(__CYGWIN__)
-    #if defined(MTLS_SHARED_LIB)
-        /* Building or using a DLL */
-        #ifdef MTLS_BUILDING_LIB
-            #define MTLS_API __declspec(dllexport)
-        #else
-            #define MTLS_API __declspec(dllimport)
-        #endif
-    #else
-        /* Static library - no special decoration needed */
-        #define MTLS_API
-    #endif
+#    if defined(MTLS_SHARED_LIB)
+/* Building or using a DLL */
+#        ifdef MTLS_BUILDING_LIB
+#            define MTLS_API __declspec(dllexport)
+#        else
+#            define MTLS_API __declspec(dllimport)
+#        endif
+#    else
+/* Static library - no special decoration needed */
+#        define MTLS_API
+#    endif
 #elif defined(__GNUC__) && __GNUC__ >= 4
-    #define MTLS_API __attribute__((visibility("default")))
+#    define MTLS_API __attribute__((visibility("default")))
 #else
-    #define MTLS_API
+#    define MTLS_API
 #endif
 
 /*
  * Version information
  * Provided as both macros (for preprocessor use) and enum (for type safety)
  */
-enum {
-    MTLS_VERSION_MAJOR = 0,
-    MTLS_VERSION_MINOR = 1,
-    MTLS_VERSION_PATCH = 0
-};
+enum { MTLS_VERSION_MAJOR = 0, MTLS_VERSION_MINOR = 1, MTLS_VERSION_PATCH = 0 };
 
 #define MTLS_VERSION_STRING "0.1.0"
 
@@ -64,21 +104,21 @@ enum {
  * TLS version constants
  */
 typedef enum mtls_tls_version {
-    MTLS_TLS_1_2 = 0x0303,  /* TLS 1.2 */
-    MTLS_TLS_1_3 = 0x0304   /* TLS 1.3 */
+    MTLS_TLS_1_2 = 0x0303, /* TLS 1.2 */
+    MTLS_TLS_1_3 = 0x0304  /* TLS 1.3 */
 } mtls_tls_version;
 
 /*
  * Connection state
  */
 typedef enum mtls_conn_state {
-    MTLS_CONN_STATE_NONE = 0,       /* Not initialized */
-    MTLS_CONN_STATE_CONNECTING,     /* TCP connection in progress */
-    MTLS_CONN_STATE_HANDSHAKING,    /* TLS handshake in progress */
-    MTLS_CONN_STATE_ESTABLISHED,    /* Connected and verified */
-    MTLS_CONN_STATE_CLOSING,        /* Shutdown in progress */
-    MTLS_CONN_STATE_CLOSED,         /* Connection closed */
-    MTLS_CONN_STATE_ERROR           /* Error state */
+    MTLS_CONN_STATE_NONE = 0,    /* Not initialized */
+    MTLS_CONN_STATE_CONNECTING,  /* TCP connection in progress */
+    MTLS_CONN_STATE_HANDSHAKING, /* TLS handshake in progress */
+    MTLS_CONN_STATE_ESTABLISHED, /* Connected and verified */
+    MTLS_CONN_STATE_CLOSING,     /* Shutdown in progress */
+    MTLS_CONN_STATE_CLOSED,      /* Connection closed */
+    MTLS_CONN_STATE_ERROR        /* Error state */
 } mtls_conn_state;
 
 /*
@@ -125,7 +165,7 @@ enum {
 
 typedef struct mtls_peer_identity {
     char common_name[MTLS_MAX_COMMON_NAME_LEN];
-    char** sans;                    /* Subject Alternative Names */
+    char **sans; /* Subject Alternative Names */
     size_t san_count;
     char spiffe_id[MTLS_MAX_SPIFFE_ID_LEN];
     time_t cert_not_before;
@@ -137,42 +177,42 @@ typedef struct mtls_peer_identity {
  */
 typedef struct mtls_event {
     mtls_event_type type;
-    const char* remote_addr;        /* Remote address (if applicable) */
-    mtls_conn* conn;                /* Connection handle (if applicable) */
-    int error_code;                 /* Error code (if applicable) */
-    uint64_t timestamp_us;          /* Microseconds since epoch */
-    uint64_t duration_us;           /* Duration in microseconds (for completed ops) */
-    size_t bytes;                   /* Bytes transferred (for I/O events) */
+    const char *remote_addr; /* Remote address (if applicable) */
+    mtls_conn *conn;         /* Connection handle (if applicable) */
+    int error_code;          /* Error code (if applicable) */
+    uint64_t timestamp_us;   /* Microseconds since epoch */
+    uint64_t duration_us;    /* Duration in microseconds (for completed ops) */
+    size_t bytes;            /* Bytes transferred (for I/O events) */
 } mtls_event;
 
 /*
  * Callback function types
  */
-typedef void (*mtls_event_callback)(const mtls_event* event, void* userdata);
+typedef void (*mtls_event_callback)(const mtls_event *event, void *userdata);
 
 /*
  * Observer configuration
  */
 typedef struct mtls_observers {
     mtls_event_callback on_event;
-    void* userdata;
+    void *userdata;
 } mtls_observers;
 
 /*
  * Default timeout values (milliseconds)
  */
 enum {
-    MTLS_DEFAULT_CONNECT_TIMEOUT_MS = 30000,  /* 30 seconds */
-    MTLS_DEFAULT_READ_TIMEOUT_MS    = 60000,  /* 60 seconds */
-    MTLS_DEFAULT_WRITE_TIMEOUT_MS   = 60000   /* 60 seconds */
+    MTLS_DEFAULT_CONNECT_TIMEOUT_MS = 30000, /* 30 seconds */
+    MTLS_DEFAULT_READ_TIMEOUT_MS = 60000,    /* 60 seconds */
+    MTLS_DEFAULT_WRITE_TIMEOUT_MS = 60000    /* 60 seconds */
 };
 
 /*
  * Buffer size limits
  */
 enum {
-    MTLS_MAX_READ_BUFFER_SIZE  = 16 * 1024,  /* 16 KB */
-    MTLS_MAX_WRITE_BUFFER_SIZE = 16 * 1024   /* 16 KB */
+    MTLS_MAX_READ_BUFFER_SIZE = 16 * 1024, /* 16 KB */
+    MTLS_MAX_WRITE_BUFFER_SIZE = 16 * 1024 /* 16 KB */
 };
 
 #ifdef __cplusplus
