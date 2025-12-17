@@ -211,6 +211,25 @@ mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err)
     return ctx;
 }
 
+/*
+ * THREAD SAFETY WARNING:
+ *
+ * This function is NOT thread-safe. Modifying observers while connections
+ * are active on this context results in undefined behavior (data race).
+ *
+ * SAFE USAGE:
+ *   - Call mtls_set_observers() BEFORE creating any connections, OR
+ *   - Close ALL connections on this context before calling this function
+ *
+ * The observers structure is read without locking during event emission
+ * (see mtls_emit_event in mtls_internal.h). Concurrent modification will
+ * cause a data race.
+ *
+ * If you need to change observers at runtime:
+ *   1. Create a new context with the new observers
+ *   2. Gradually migrate connections to the new context
+ *   3. Free the old context after all connections are closed
+ */
 int mtls_set_observers(mtls_ctx *ctx, const mtls_observers *observers)
 {
     if (!ctx) {

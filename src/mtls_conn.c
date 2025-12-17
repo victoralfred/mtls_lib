@@ -198,58 +198,44 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
     /* Hostname verification (client mode) - must be set before handshake */
     if (ctx->config.verify_hostname) {
-        /* Extract hostname from address string */
-        const char *colon = strrchr(addr, ':');
-        if (colon) {
-            size_t hostname_len = colon - addr;
-            char hostname[256];
-            /* Ensure space for null terminator */
-            if (hostname_len > 0 && hostname_len <= sizeof(hostname) - 1) {
-                memcpy(hostname, addr, hostname_len);
-                hostname[hostname_len] = '\0';
+        /* Extract hostname from address string.
+         * Handle both IPv4 (host:port) and IPv6 ([host]:port) formats. */
+        char hostname[256];
+        size_t hostname_len = 0;
+        const char *host_start = addr;
+        const char *host_end = NULL;
 
-                /* Validate hostname doesn't contain invalid characters */
-                bool valid = true;
-                for (size_t i = 0; i < hostname_len; i++) {
-                    if (hostname[i] == '\0' || hostname[i] == '\n' || hostname[i] == '\r') {
-                        valid = false;
-                        break;
-                    }
-                }
+        if (addr[0] == '[') {
+            /* IPv6 format: [::1]:8080 - extract content between brackets */
+            host_start = addr + 1;
+            host_end = strchr(host_start, ']');
+            if (host_end) {
+                hostname_len = host_end - host_start;
+            }
+        } else {
+            /* IPv4 format: 192.168.1.1:8080 - find last colon */
+            const char *colon = strrchr(addr, ':');
+            if (colon) {
+                hostname_len = colon - addr;
+            }
+        }
 
-                if (!valid) {
-                    MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid characters in hostname");
-                    /* Emit CONNECT_FAILURE event */
-                    event.type = MTLS_EVENT_CONNECT_FAILURE;
-                    event.error_code = MTLS_ERR_INVALID_ADDRESS;
-                    event.timestamp_us = platform_get_time_us();
-                    event.duration_us = event.timestamp_us - start_time;
-                    mtls_emit_event(ctx, &event);
-                    SSL_free(conn->ssl);
-                    platform_socket_close(conn->sock);
-                    free(conn);
-                    return NULL;
-                }
+        /* Ensure space for null terminator */
+        if (hostname_len > 0 && hostname_len <= sizeof(hostname) - 1) {
+            memcpy(hostname, host_start, hostname_len);
+            hostname[hostname_len] = '\0';
 
-/* Use SSL_set1_host for hostname verification (OpenSSL 1.0.2+) */
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-                if (SSL_set1_host(conn->ssl, hostname) == 0) {
-                    MTLS_ERR_SET(err, MTLS_ERR_HOSTNAME_MISMATCH,
-                                 "Failed to set hostname for verification: %s", hostname);
-                    /* Emit CONNECT_FAILURE event */
-                    event.type = MTLS_EVENT_CONNECT_FAILURE;
-                    event.error_code = MTLS_ERR_HOSTNAME_MISMATCH;
-                    event.timestamp_us = platform_get_time_us();
-                    event.duration_us = event.timestamp_us - start_time;
-                    mtls_emit_event(ctx, &event);
-                    SSL_free(conn->ssl);
-                    platform_socket_close(conn->sock);
-                    free(conn);
-                    return NULL;
+            /* Validate hostname doesn't contain invalid characters */
+            bool valid = true;
+            for (size_t i = 0; i < hostname_len; i++) {
+                if (hostname[i] == '\0' || hostname[i] == '\n' || hostname[i] == '\r') {
+                    valid = false;
+                    break;
                 }
-#endif
-            } else {
-                MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Hostname too long");
+            }
+
+            if (!valid) {
+                MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid characters in hostname");
                 /* Emit CONNECT_FAILURE event */
                 event.type = MTLS_EVENT_CONNECT_FAILURE;
                 event.error_code = MTLS_ERR_INVALID_ADDRESS;
@@ -261,6 +247,36 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
                 free(conn);
                 return NULL;
             }
+
+/* Use SSL_set1_host for hostname verification (OpenSSL 1.0.2+) */
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+            if (SSL_set1_host(conn->ssl, hostname) == 0) {
+                MTLS_ERR_SET(err, MTLS_ERR_HOSTNAME_MISMATCH,
+                             "Failed to set hostname for verification: %s", hostname);
+                /* Emit CONNECT_FAILURE event */
+                event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.error_code = MTLS_ERR_HOSTNAME_MISMATCH;
+                event.timestamp_us = platform_get_time_us();
+                event.duration_us = event.timestamp_us - start_time;
+                mtls_emit_event(ctx, &event);
+                SSL_free(conn->ssl);
+                platform_socket_close(conn->sock);
+                free(conn);
+                return NULL;
+            }
+#endif
+        } else {
+            MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Hostname too long");
+            /* Emit CONNECT_FAILURE event */
+            event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.error_code = MTLS_ERR_INVALID_ADDRESS;
+            event.timestamp_us = platform_get_time_us();
+            event.duration_us = event.timestamp_us - start_time;
+            mtls_emit_event(ctx, &event);
+            SSL_free(conn->ssl);
+            platform_socket_close(conn->sock);
+            free(conn);
+            return NULL;
         }
     }
 

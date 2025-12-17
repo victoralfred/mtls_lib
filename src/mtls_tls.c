@@ -24,6 +24,34 @@
 #include <openssl/pem.h>
 
 /*
+ * Maximum certificate chain verification depth.
+ * Prevents DoS attacks using excessively long certificate chains.
+ * 10 is a reasonable limit - typical chains are 2-4 certificates.
+ */
+// NOLINTNEXTLINE(cppcoreguidelines-macro-to-enum)
+#define MTLS_MAX_CERT_CHAIN_DEPTH 10
+
+/*
+ * Minimum PEM header length: "-----BEGIN " = 11 characters
+ */
+#define MTLS_PEM_HEADER_PREFIX "-----BEGIN "
+// NOLINTNEXTLINE(cppcoreguidelines-macro-to-enum)
+#define MTLS_PEM_HEADER_PREFIX_LEN 11
+
+/*
+ * Basic PEM format validation.
+ * Checks that the data starts with PEM header marker.
+ * Returns true if the data appears to be PEM-formatted.
+ */
+static bool is_valid_pem_format(const uint8_t *data, size_t len)
+{
+    if (!data || len < MTLS_PEM_HEADER_PREFIX_LEN) {
+        return false;
+    }
+    return memcmp(data, MTLS_PEM_HEADER_PREFIX, MTLS_PEM_HEADER_PREFIX_LEN) == 0;
+}
+
+/*
  * Internal TLS context structure
  */
 struct mtls_tls_ctx_internal {
@@ -90,6 +118,9 @@ static void set_ssl_error(mtls_err *err, mtls_error_code code, const char *msg)
 
 void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
 {
+    /* Clear any stale errors from previous OpenSSL operations */
+    ERR_clear_error();
+
     /* Initialize OpenSSL (deprecated functions are no-ops in OpenSSL 1.1.0+)
      * For BoringSSL, these may still be needed, but they're safe to call */
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -144,6 +175,14 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
             SSL_CTX_free(ssl_ctx);
             return NULL;
         }
+        /* Validate PEM format */
+        if (!is_valid_pem_format(config->ca_cert_pem, config->ca_cert_pem_len)) {
+            MTLS_ERR_SET(
+                err, MTLS_ERR_CA_CERT_PARSE_FAILED,
+                "CA certificate data is not valid PEM format"); // NOLINT(misc-include-cleaner)
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         BIO *bio = BIO_new_mem_buf(config->ca_cert_pem,
                                    (int)config->ca_cert_pem_len); // NOLINT(misc-include-cleaner)
         X509 *ca_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL); // NOLINT(misc-include-cleaner)
@@ -193,6 +232,14 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
             SSL_CTX_free(ssl_ctx);
             return NULL;
         }
+        /* Validate PEM format */
+        if (!is_valid_pem_format(config->cert_pem, config->cert_pem_len)) {
+            MTLS_ERR_SET(
+                err, MTLS_ERR_CERT_PARSE_FAILED,
+                "Certificate data is not valid PEM format"); // NOLINT(misc-include-cleaner)
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         BIO *cert_bio = BIO_new_mem_buf(config->cert_pem, (int)config->cert_pem_len);
         X509 *cert = PEM_read_bio_X509(cert_bio, NULL, NULL, NULL);
         BIO_free(cert_bio);
@@ -232,6 +279,14 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
             SSL_CTX_free(ssl_ctx);
             return NULL;
         }
+        /* Validate PEM format */
+        if (!is_valid_pem_format(config->key_pem, config->key_pem_len)) {
+            MTLS_ERR_SET(
+                err, MTLS_ERR_KEY_PARSE_FAILED,
+                "Private key data is not valid PEM format"); // NOLINT(misc-include-cleaner)
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         BIO *key_bio = BIO_new_mem_buf(config->key_pem, (int)config->key_pem_len);
         EVP_PKEY *key =
             PEM_read_bio_PrivateKey(key_bio, NULL, NULL, NULL); // NOLINT(misc-include-cleaner)
@@ -268,7 +323,7 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
     }
 
     /* Set certificate chain verification depth (prevent DoS from long chains) */
-    SSL_CTX_set_verify_depth(ssl_ctx, 10); /* Reasonable limit */
+    SSL_CTX_set_verify_depth(ssl_ctx, MTLS_MAX_CERT_CHAIN_DEPTH);
 
     /* Enable mutual TLS (require client certificates) */
     if (config->require_client_cert) {
@@ -326,6 +381,9 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
         return -1;
     }
 
+    /* Clear any stale errors from previous OpenSSL operations */
+    ERR_clear_error();
+
     struct mtls_tls_ctx_internal *tls_ctx = (struct mtls_tls_ctx_internal *)tls_ctx_ptr;
     SSL_CTX *ssl_ctx = tls_ctx->ssl_ctx;
 
@@ -351,6 +409,14 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
             if (config->ca_cert_pem_len > INT_MAX) {
                 MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG,
                              "CA certificate PEM too large"); // NOLINT(misc-include-cleaner)
+                X509_STORE_free(new_store);
+                return -1;
+            }
+            /* Validate PEM format */
+            if (!is_valid_pem_format(config->ca_cert_pem, config->ca_cert_pem_len)) {
+                MTLS_ERR_SET(
+                    err, MTLS_ERR_CA_CERT_PARSE_FAILED,
+                    "CA certificate data is not valid PEM format"); // NOLINT(misc-include-cleaner)
                 X509_STORE_free(new_store);
                 return -1;
             }
@@ -408,6 +474,13 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
                          "Certificate PEM too large"); // NOLINT(misc-include-cleaner)
             return -1;
         }
+        /* Validate PEM format */
+        if (!is_valid_pem_format(config->cert_pem, config->cert_pem_len)) {
+            MTLS_ERR_SET(
+                err, MTLS_ERR_CERT_PARSE_FAILED,
+                "Certificate data is not valid PEM format"); // NOLINT(misc-include-cleaner)
+            return -1;
+        }
 
         BIO *cert_bio = BIO_new_mem_buf(config->cert_pem, (int)config->cert_pem_len);
         X509 *cert = PEM_read_bio_X509(cert_bio, NULL, NULL, NULL);
@@ -443,6 +516,13 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
         if (config->key_pem_len > INT_MAX) {
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG,
                          "Private key PEM too large"); // NOLINT(misc-include-cleaner)
+            return -1;
+        }
+        /* Validate PEM format */
+        if (!is_valid_pem_format(config->key_pem, config->key_pem_len)) {
+            MTLS_ERR_SET(
+                err, MTLS_ERR_KEY_PARSE_FAILED,
+                "Private key data is not valid PEM format"); // NOLINT(misc-include-cleaner)
             return -1;
         }
 

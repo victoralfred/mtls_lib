@@ -16,6 +16,20 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+/* Helper function to validate that a string contains only digits.
+ * Only needed for older OpenSSL versions that lack ASN1_TIME_to_tm. */
+#if OPENSSL_VERSION_NUMBER < 0x10101000L
+static bool is_all_digits(const char *str, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        if (str[i] < '0' || str[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
 /* Helper function to convert ASN1_TIME to time_t */
 static time_t asn1_time_to_time_t(const ASN1_TIME *asn1_time)
 {
@@ -49,7 +63,7 @@ static time_t asn1_time_to_time_t(const ASN1_TIME *asn1_time)
 
     if (asn1_time->type == V_ASN1_UTCTIME) {
         /* YYMMDDHHMMSSZ format */
-        if (len >= 12) {
+        if (len >= 12 && is_all_digits(str, 12)) {
             tm_time.tm_year = (str[0] - '0') * 10 + (str[1] - '0');
             /* Adjust year: 00-49 -> 2000-2049, 50-99 -> 1950-1999 */
             tm_time.tm_year += (tm_time.tm_year < 50) ? 100 : 0;
@@ -58,10 +72,12 @@ static time_t asn1_time_to_time_t(const ASN1_TIME *asn1_time)
             tm_time.tm_hour = (str[6] - '0') * 10 + (str[7] - '0');
             tm_time.tm_min = (str[8] - '0') * 10 + (str[9] - '0');
             tm_time.tm_sec = (str[10] - '0') * 10 + (str[11] - '0');
+        } else {
+            return 0; /* Invalid format */
         }
     } else if (asn1_time->type == V_ASN1_GENERALIZEDTIME) {
         /* YYYYMMDDHHMMSSZ format */
-        if (len >= 14) {
+        if (len >= 14 && is_all_digits(str, 14)) {
             tm_time.tm_year = (str[0] - '0') * 1000 + (str[1] - '0') * 100 + (str[2] - '0') * 10 +
                               (str[3] - '0') - 1900;
             tm_time.tm_mon = (str[4] - '0') * 10 + (str[5] - '0') - 1;
@@ -69,6 +85,8 @@ static time_t asn1_time_to_time_t(const ASN1_TIME *asn1_time)
             tm_time.tm_hour = (str[8] - '0') * 10 + (str[9] - '0');
             tm_time.tm_min = (str[10] - '0') * 10 + (str[11] - '0');
             tm_time.tm_sec = (str[12] - '0') * 10 + (str[13] - '0');
+        } else {
+            return 0; /* Invalid format */
         }
     }
 

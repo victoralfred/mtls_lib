@@ -264,6 +264,12 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
                 return -1;
             }
 
+            /* Verify socket is actually ready (handle spurious wakeups) */
+            if (!FD_ISSET(sock, &write_fds)) {
+                MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Select returned but socket not writable");
+                return -1;
+            }
+
             /* Check for connection error */
             int sock_err = 0;
             socklen_t len = sizeof(sock_err);
@@ -288,8 +294,10 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
             }
         }
 
-        /* Set back to blocking */
-        platform_socket_set_nonblocking(sock, false, NULL);
+        /* Set back to blocking mode. Failure here is non-critical since
+         * the socket is already connected - I/O will still work but may
+         * behave unexpectedly with EAGAIN errors. */
+        (void)platform_socket_set_nonblocking(sock, false, NULL);
     } else {
         /* Blocking connect */
         ret = connect(sock, &addr->addr.sa, addr->len);
@@ -436,8 +444,9 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
 
     /* Validate port number */
     char *port_end = NULL;
+    errno = 0; /* Reset errno before strtoul to detect overflow */
     unsigned long port_num = strtoul(port, &port_end, 10);
-    if (*port_end != '\0' || port_num == 0 || port_num > 65535) {
+    if (errno == ERANGE || *port_end != '\0' || port_num == 0 || port_num > 65535) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
         return -1;
     }
@@ -453,6 +462,9 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
     int ret = getaddrinfo(host, port, &hints, &result);
     if (ret != 0) {
         MTLS_ERR_SET(err, MTLS_ERR_DNS_FAILED, "DNS resolution failed: %s", gai_strerror(ret));
+        if (err) {
+            err->os_errno = ret; /* Store gai error code for diagnostics */
+        }
         return -1;
     }
 
