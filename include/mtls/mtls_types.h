@@ -174,10 +174,16 @@ typedef struct mtls_peer_identity {
 
 /*
  * Event structure for observability callbacks
+ *
+ * IMPORTANT: All pointers in this structure (remote_addr, conn) are only
+ * valid for the duration of the callback. Do NOT store these pointers
+ * for later use - copy the data if persistence is needed. The remote_addr
+ * string is allocated on the stack and will be invalid after the callback
+ * returns.
  */
 typedef struct mtls_event {
     mtls_event_type type;
-    const char *remote_addr; /* Remote address (if applicable) */
+    const char *remote_addr; /* Remote address - valid only during callback */
     mtls_conn *conn;         /* Connection handle (if applicable) */
     int error_code;          /* Error code (if applicable) */
     uint64_t timestamp_us;   /* Microseconds since epoch */

@@ -124,8 +124,8 @@ int mtls_get_peer_identity(mtls_conn *conn, mtls_peer_identity *identity, mtls_e
         X509_get_ext_d2i(peer_cert, NID_subject_alt_name, NULL, NULL);
     if (san_list) {
         int san_count = sk_GENERAL_NAME_num(san_list);
-        /* Validate san_count to prevent integer overflow */
-        if (san_count > 0 && san_count <= 1024) { /* Reasonable upper limit */
+        /* Validate san_count to prevent DoS and integer overflow */
+        if (san_count > 0 && san_count <= MTLS_MAX_CERT_SANS) {
             /* Check for potential overflow in allocation */
             if ((size_t)san_count > SIZE_MAX / sizeof(char *)) {
                 MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Too many SANs");

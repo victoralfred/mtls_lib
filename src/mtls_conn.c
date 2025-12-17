@@ -155,6 +155,18 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
     /* Create SSL object */
     SSL_CTX *ssl_ctx = mtls_tls_get_ssl_ctx(ctx->tls_ctx);
+    if (!ssl_ctx) {
+        MTLS_ERR_SET(err, MTLS_ERR_CTX_NOT_INITIALIZED, "TLS context not initialized");
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_CTX_NOT_INITIALIZED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(ctx, &event);
+        platform_socket_close(conn->sock);
+        free(conn);
+        return NULL;
+    }
     conn->ssl = SSL_new(ssl_ctx);
     if (!conn->ssl) {
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to create SSL object");
@@ -557,9 +569,17 @@ void mtls_close(mtls_conn *conn)
     mtls_emit_event(conn->ctx, &event);
 
     if (conn->ssl) {
-        /* Attempt graceful shutdown, but don't fail if it doesn't work */
+        /* Perform bidirectional TLS shutdown for clean termination.
+         * SSL_shutdown returns:
+         *   0 = shutdown sent, need to call again for bidirectional
+         *   1 = shutdown complete
+         *  <0 = error */
         int shutdown_ret = SSL_shutdown(conn->ssl);
-        (void)shutdown_ret; /* Ignore return value - connection is closing anyway */
+        if (shutdown_ret == 0) {
+            /* First phase complete, call again for bidirectional shutdown.
+             * Don't block indefinitely - proceed with cleanup regardless. */
+            (void)SSL_shutdown(conn->ssl);
+        }
         SSL_free(conn->ssl);
         conn->ssl = NULL;
     }

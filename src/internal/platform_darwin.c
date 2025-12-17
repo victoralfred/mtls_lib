@@ -462,16 +462,26 @@ int platform_format_addr(const mtls_addr *addr, char *buf, size_t buf_len)
 {
     char host[INET6_ADDRSTRLEN];
     uint16_t port;
+    int written;
 
     if (addr->addr.sa.sa_family == AF_INET) {
-        inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
+        if (!inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host))) {
+            return -1;
+        }
         port = ntohs(addr->addr.sin.sin_port);
-        (void)snprintf(buf, buf_len, "%s:%u", host, port);
+        written = snprintf(buf, buf_len, "%s:%u", host, port);
     } else if (addr->addr.sa.sa_family == AF_INET6) {
-        inet_ntop(AF_INET6, &addr->addr.sin6.sin6_addr, host, sizeof(host));
+        if (!inet_ntop(AF_INET6, &addr->addr.sin6.sin6_addr, host, sizeof(host))) {
+            return -1;
+        }
         port = ntohs(addr->addr.sin6.sin6_port);
-        (void)snprintf(buf, buf_len, "[%s]:%u", host, port);
+        written = snprintf(buf, buf_len, "[%s]:%u", host, port);
     } else {
+        return -1;
+    }
+
+    /* Check for snprintf errors or truncation */
+    if (written < 0 || (size_t)written >= buf_len) {
         return -1;
     }
 
@@ -506,7 +516,10 @@ mtls_error_code platform_socket_error_to_mtls(int socket_err)
 uint64_t platform_get_time_us(void)
 {
     struct timespec time_spec;
-    (void)clock_gettime(CLOCK_MONOTONIC, &time_spec);
+    if (clock_gettime(CLOCK_MONOTONIC, &time_spec) != 0) {
+        /* Fallback: return 0 on failure to avoid using uninitialized data */
+        return 0;
+    }
     return ((uint64_t)time_spec.tv_sec * 1000000ULL) + ((uint64_t)time_spec.tv_nsec / 1000ULL);
 }
 
