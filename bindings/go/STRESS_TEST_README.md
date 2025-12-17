@@ -151,13 +151,15 @@ Target metrics for 5M connections:
 |------------|-------------|---------|--------------|------------|---------------|----------|
 | 10K        | 10,000      | 48      | 99.8%        | ~1,310/s   | 15.95ms       | ~7.6s    |
 | 100K       | 100,000     | 48      | 99.8%        | ~1,305/s   | 16.06ms       | ~76.5s   |
+| 1M         | 1,000,000   | 64      | 99.8%        | ~1,281/s   | 20.42ms       | ~779s    |
 
 ### Key Observations
 
-1. **Consistent Throughput**: The library maintains ~1,300 connections/second across different scales
-2. **Stable Handshake Time**: Average TLS handshake time stays consistent at ~16ms
-3. **High Reliability**: Success rate remains above 99.8% even at 100K connections
+1. **Consistent Throughput**: The library maintains ~1,280-1,310 connections/second across all scales (10K to 1M)
+2. **Stable Handshake Time**: Average TLS handshake time ranges from 16-20ms depending on load
+3. **High Reliability**: Success rate remains at 99.8% even at 1M connections
 4. **Connection Recycling**: Workers process connections sequentially, avoiding FD exhaustion
+5. **Linear Scaling**: Test duration scales linearly with connection count (no degradation)
 
 ### Notes
 - Results may vary based on system load and network conditions
