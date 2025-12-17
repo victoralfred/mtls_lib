@@ -21,13 +21,23 @@ extern "C" {
 #endif
 
 /*
- * Platform-specific socket handle type
+ * Platform-specific socket handle type and constants
  */
 #if defined(MTLS_PLATFORM_WINDOWS)
 #    include <winsock2.h>
 #    include <ws2tcpip.h>
 typedef SOCKET mtls_socket_t;
 #    define MTLS_INVALID_SOCKET INVALID_SOCKET
+/* Windows uses SD_* instead of SHUT_* constants */
+#    ifndef SHUT_RD
+#        define SHUT_RD SD_RECEIVE
+#    endif
+#    ifndef SHUT_WR
+#        define SHUT_WR SD_SEND
+#    endif
+#    ifndef SHUT_RDWR
+#        define SHUT_RDWR SD_BOTH
+#    endif
 #else
 #    include <sys/socket.h>
 #    include <netinet/in.h>
@@ -122,19 +132,39 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
                             mtls_err *err);
 
 /*
- * Read from socket
+ * Low-level I/O primitives - Pure POSIX semantics
+ *
+ * These functions are thin wrappers over syscalls. They:
+ * - Return standard POSIX values (-1 on error, 0 or positive on success)
+ * - Preserve errno on failure
+ * - Take no mtls_err parameter
+ *
+ * Callers who need enriched error information should:
+ * 1. Call platform_get_socket_error() to retrieve errno
+ * 2. Use platform_socket_error_to_mtls() to translate to mtls_error_code
+ * 3. Use platform_strerror() to get human-readable message
  */
-ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err *err);
+
+/*
+ * Read from socket
+ *
+ * @return Bytes read on success, -1 on error (check errno)
+ */
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len);
 
 /*
  * Write to socket
+ *
+ * @return Bytes written on success, -1 on error (check errno)
  */
-ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, mtls_err *err);
+ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len);
 
 /*
  * Shutdown socket (for graceful close)
+ *
+ * @return 0 on success, -1 on error (check errno)
  */
-int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err);
+int platform_socket_shutdown(mtls_socket_t sock, int how);
 
 /*
  * Parse address string (e.g., "host:port" or "[::1]:8080")

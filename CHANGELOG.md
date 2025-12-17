@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Go Bindings (2024-12-17)
+
+- **NEW:** Complete idiomatic Go bindings for the mTLS C library
+  - Full CGo integration with proper memory management
+  - Thread-safe context and connection handling
+  - Event observer pattern with channel-based API
+  - Comprehensive error types with category helpers
+  - [Commits: 0ff2ecb, a95ea92, 6d95d46]
+
+- **NEW:** Go binding features:
+  - `Context` - TLS context with connection pooling support
+  - `Conn` - Connection with `io.Reader`/`io.Writer` interface
+  - `Listener` - Server listener with `Accept()` and `Serve()` methods
+  - `Config` - Configuration with validation and secure defaults
+  - `PeerIdentity` - Certificate identity extraction and validation
+  - `Event` / `EventMetrics` - Real-time event tracking and metrics
+
+- **NEW:** Go binding security improvements (2024-12-17):
+  - Fixed CGo pointer passing rules (copy PEM data to C memory)
+  - Fixed race conditions by holding locks during CGo calls
+  - Added connection leak prevention in context cancellation
+  - Added goroutine leak prevention with channel draining
+  - Added `runtime.KeepAlive` to prevent GC during CGo calls
+  - Added `sync.Once` for idempotent close operations
+  - Added callback counter overflow detection
+  - Added SAN array bounds checking (max 128)
+  - [Commit: 6d95d46]
+
+- **NEW:** Go binding API enhancements:
+  - `Config.Validate()` - TLS version and certificate validation
+  - `Listener.Addr()` - Returns bind address
+  - `Error.HasTLSError()` / `TLSErrorInfo()` - OpenSSL error inspection
+  - `Error.HasOSError()` - OS error detection
+  - Optimized `ValidateSANs()` with O(1) exact match lookups
+  - Documented `AcceptContext()` destructive cancellation behavior
+
 ### Security
 
 #### Critical Buffer Overflow Fixes (2024-12-15)

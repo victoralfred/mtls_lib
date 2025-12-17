@@ -302,62 +302,19 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
     return 0;
 }
 
-ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err *err)
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len)
 {
-    ssize_t bytes_read = read(sock, buf, len);
-
-    if (bytes_read < 0) {
-        int saved_errno = errno;
-        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
-            MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
-        } else {
-            char errbuf[256];
-            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-            MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "Read failed: %s", errbuf);
-        }
-        if (err) {
-            err->os_errno = saved_errno;
-        }
-    }
-
-    return bytes_read;
+    return read(sock, buf, len);
 }
 
-ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, mtls_err *err)
+ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len)
 {
-    ssize_t bytes_written = write(sock, buf, len);
-
-    if (bytes_written < 0) {
-        int saved_errno = errno;
-        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
-        } else {
-            char errbuf[256];
-            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write failed: %s", errbuf);
-        }
-        if (err) {
-            err->os_errno = saved_errno;
-        }
-    }
-
-    return bytes_written;
+    return write(sock, buf, len);
 }
 
-int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err)
+int platform_socket_shutdown(mtls_socket_t sock, int how)
 {
-    if (shutdown(sock, how) < 0) {
-        char errbuf[256];
-        int saved_errno = errno;
-        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Shutdown failed: %s", errbuf);
-        if (err) {
-            err->os_errno = saved_errno;
-        }
-        return -1;
-    }
-
-    return 0;
+    return shutdown(sock, how);
 }
 
 int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)

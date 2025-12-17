@@ -49,6 +49,180 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestConfigValidate(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *Config
+		wantErr   bool
+		errCode   ErrorCode
+		errSubstr string
+	}{
+		{
+			name: "valid config with CA path",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				MinTLSVersion: TLS12,
+				MaxTLSVersion: TLS13,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with CA PEM",
+			config: &Config{
+				CACertPEM:     []byte("-----BEGIN CERTIFICATE-----\n..."),
+				MinTLSVersion: TLS12,
+				MaxTLSVersion: TLS13,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with TLS12 only",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				MinTLSVersion: TLS12,
+				MaxTLSVersion: TLS12,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with TLS13 only",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				MinTLSVersion: TLS13,
+				MaxTLSVersion: TLS13,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with zero TLS versions (use defaults)",
+			config: &Config{
+				CACertPath: "/path/to/ca.pem",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing CA certificate",
+			config: &Config{
+				MinTLSVersion: TLS12,
+				MaxTLSVersion: TLS13,
+			},
+			wantErr:   true,
+			errCode:   ErrInvalidConfig,
+			errSubstr: "CA certificate is required",
+		},
+		{
+			name: "invalid MinTLSVersion",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				MinTLSVersion: 0x0301, // TLS 1.0
+				MaxTLSVersion: TLS13,
+			},
+			wantErr:   true,
+			errCode:   ErrInvalidConfig,
+			errSubstr: "invalid MinTLSVersion",
+		},
+		{
+			name: "invalid MaxTLSVersion",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				MinTLSVersion: TLS12,
+				MaxTLSVersion: 0x0305, // Invalid version
+			},
+			wantErr:   true,
+			errCode:   ErrInvalidConfig,
+			errSubstr: "invalid MaxTLSVersion",
+		},
+		{
+			name: "MinTLSVersion greater than MaxTLSVersion",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				MinTLSVersion: TLS13,
+				MaxTLSVersion: TLS12,
+			},
+			wantErr:   true,
+			errCode:   ErrInvalidConfig,
+			errSubstr: "MinTLSVersion cannot be greater than MaxTLSVersion",
+		},
+		{
+			name: "both CA path and PEM provided (PEM takes precedence, should be valid)",
+			config: &Config{
+				CACertPath:    "/path/to/ca.pem",
+				CACertPEM:     []byte("-----BEGIN CERTIFICATE-----\n..."),
+				MinTLSVersion: TLS12,
+				MaxTLSVersion: TLS13,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Validate() expected error, got nil")
+					return
+				}
+
+				mtlsErr, ok := err.(*Error)
+				if !ok {
+					t.Errorf("Validate() error type = %T, want *Error", err)
+					return
+				}
+
+				if mtlsErr.Code != tt.errCode {
+					t.Errorf("Validate() error code = %v, want %v", mtlsErr.Code, tt.errCode)
+				}
+
+				if tt.errSubstr != "" && !contains(mtlsErr.Message, tt.errSubstr) {
+					t.Errorf("Validate() error message = %q, want to contain %q", mtlsErr.Message, tt.errSubstr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Validate() unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestConfigValidateDefaultConfig(t *testing.T) {
+	// DefaultConfig needs a CA cert to be valid
+	config := DefaultConfig()
+	config.CACertPath = "/path/to/ca.pem"
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("DefaultConfig with CA should validate: %v", err)
+	}
+}
+
+func TestConfigValidateDefaultConfigWithoutCA(t *testing.T) {
+	// DefaultConfig without CA cert should fail validation
+	config := DefaultConfig()
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("DefaultConfig without CA should fail validation")
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && searchSubstring(s, substr)))
+}
+
+func searchSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestErrorCodeString(t *testing.T) {
 	tests := []struct {
 		code ErrorCode

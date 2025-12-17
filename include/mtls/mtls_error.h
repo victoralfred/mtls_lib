@@ -158,50 +158,52 @@ MTLS_API int mtls_err_format(const mtls_err *err, char *buf, size_t buf_size);
 /*
  * Error category boundary constants
  */
-#define MTLS_ERR_CAT_CONFIG_MIN 100
-#define MTLS_ERR_CAT_CONFIG_MAX 200
-#define MTLS_ERR_CAT_NETWORK_MIN 200
-#define MTLS_ERR_CAT_NETWORK_MAX 300
-#define MTLS_ERR_CAT_TLS_MIN 300
-#define MTLS_ERR_CAT_TLS_MAX 400
-#define MTLS_ERR_CAT_IDENTITY_MIN 400
-#define MTLS_ERR_CAT_IDENTITY_MAX 500
-#define MTLS_ERR_CAT_POLICY_MIN 500
-#define MTLS_ERR_CAT_POLICY_MAX 600
-#define MTLS_ERR_CAT_IO_MIN 600
-#define MTLS_ERR_CAT_IO_MAX 700
+typedef enum mtls_error_category_boundary {
+    MTLS_ERR_CAT_CONFIG_MIN = 100,
+    MTLS_ERR_CAT_CONFIG_MAX = 200,
+    MTLS_ERR_CAT_NETWORK_MIN = 200,
+    MTLS_ERR_CAT_NETWORK_MAX = 300,
+    MTLS_ERR_CAT_TLS_MIN = 300,
+    MTLS_ERR_CAT_TLS_MAX = 400,
+    MTLS_ERR_CAT_IDENTITY_MIN = 400,
+    MTLS_ERR_CAT_IDENTITY_MAX = 500,
+    MTLS_ERR_CAT_POLICY_MIN = 500,
+    MTLS_ERR_CAT_POLICY_MAX = 600,
+    MTLS_ERR_CAT_IO_MIN = 600,
+    MTLS_ERR_CAT_IO_MAX = 700
+} mtls_error_category_boundary_t;
 
 /*
  * Check if error is a specific category
  */
 static inline bool mtls_err_is_config(mtls_error_code code)
 {
-    return code >= MTLS_ERR_CAT_CONFIG_MIN && code < MTLS_ERR_CAT_CONFIG_MAX;
+    return (int)code >= MTLS_ERR_CAT_CONFIG_MIN && (int)code < MTLS_ERR_CAT_CONFIG_MAX;
 }
 
 static inline bool mtls_err_is_network(mtls_error_code code)
 {
-    return code >= MTLS_ERR_CAT_NETWORK_MIN && code < MTLS_ERR_CAT_NETWORK_MAX;
+    return (int)code >= MTLS_ERR_CAT_NETWORK_MIN && (int)code < MTLS_ERR_CAT_NETWORK_MAX;
 }
 
 static inline bool mtls_err_is_tls(mtls_error_code code)
 {
-    return code >= MTLS_ERR_CAT_TLS_MIN && code < MTLS_ERR_CAT_TLS_MAX;
+    return (int)code >= MTLS_ERR_CAT_TLS_MIN && (int)code < MTLS_ERR_CAT_TLS_MAX;
 }
 
 static inline bool mtls_err_is_identity(mtls_error_code code)
 {
-    return code >= MTLS_ERR_CAT_IDENTITY_MIN && code < MTLS_ERR_CAT_IDENTITY_MAX;
+    return (int)code >= MTLS_ERR_CAT_IDENTITY_MIN && (int)code < MTLS_ERR_CAT_IDENTITY_MAX;
 }
 
 static inline bool mtls_err_is_policy(mtls_error_code code)
 {
-    return code >= MTLS_ERR_CAT_POLICY_MIN && code < MTLS_ERR_CAT_POLICY_MAX;
+    return (int)code >= MTLS_ERR_CAT_POLICY_MIN && (int)code < MTLS_ERR_CAT_POLICY_MAX;
 }
 
 static inline bool mtls_err_is_io(mtls_error_code code)
 {
-    return code >= MTLS_ERR_CAT_IO_MIN && code < MTLS_ERR_CAT_IO_MAX;
+    return (int)code >= MTLS_ERR_CAT_IO_MIN && (int)code < MTLS_ERR_CAT_IO_MAX;
 }
 
 static inline bool mtls_err_is_recoverable(mtls_error_code code)

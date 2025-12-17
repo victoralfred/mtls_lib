@@ -8,19 +8,28 @@ import "C"
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // Listener listens for incoming mTLS connections.
 //
-// Listener is NOT safe for concurrent use from multiple goroutines.
-// For concurrent access, use external synchronization.
+// Listener is safe for concurrent Accept() calls from multiple goroutines.
+// Close() will properly wait for all active Accept() calls to return.
 type Listener struct {
 	listener *C.mtls_listener
 	ctx      *Context
 	addr     string // bind address stored at creation time
 
-	// mu protects listener during close operations
-	mu sync.Mutex
+	// mu protects listener pointer during close operations
+	mu     sync.Mutex
+	closed bool
+
+	// activeAccepts tracks the number of goroutines currently in Accept()
+	// This is used to safely wait for all accepts to complete before freeing
+	activeAccepts sync.WaitGroup
+
+	// shutdown indicates the socket has been closed (accepts will return error)
+	shutdown atomic.Bool
 }
 
 // Accept waits for and returns the next connection to the listener.
@@ -28,20 +37,30 @@ type Listener struct {
 // Accept is a blocking call that performs TCP accept and TLS handshake
 // with mutual authentication.
 func (l *Listener) Accept() (*Conn, error) {
+	// Check if closed before calling blocking C function
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.listener == nil {
+	if l.closed || l.listener == nil {
+		l.mu.Unlock()
 		return nil, &Error{
 			Code:    ErrConnectionClosed,
 			Message: "listener is closed",
 		}
 	}
+	listener := l.listener
 
+	// Track this accept call so Close() can wait for us
+	l.activeAccepts.Add(1)
+	l.mu.Unlock()
+
+	// Ensure we decrement the counter when we return
+	defer l.activeAccepts.Done()
+
+	// Call blocking C function without holding the mutex
+	// This allows Close() to interrupt the accept by closing the socket
 	var cErr C.mtls_err
 	initErr(&cErr)
 
-	cConn := C.mtls_accept(l.listener, &cErr)
+	cConn := C.mtls_accept(listener, &cErr)
 	if cConn == nil {
 		return nil, convertError(&cErr)
 	}
@@ -99,16 +118,38 @@ func (l *Listener) AcceptContext(ctx context.Context) (*Conn, error) {
 // Close stops the listener from accepting new connections.
 //
 // Close does not affect connections that have already been accepted.
+// Close will interrupt any pending Accept() call by closing the underlying socket.
+// Close waits for all active Accept() calls to return before freeing resources.
 func (l *Listener) Close() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 
-	if l.listener == nil {
+	if l.closed || l.listener == nil {
+		l.mu.Unlock()
 		return nil
 	}
 
-	C.mtls_listener_close(l.listener)
+	// Mark as closed to prevent new Accept() calls
+	l.closed = true
+	listener := l.listener
+
+	// Shutdown the socket to interrupt blocking accept() calls
+	// This will cause all active Accept() calls to return with an error
+	l.shutdown.Store(true)
+	C.mtls_listener_shutdown(listener)
+
+	l.mu.Unlock()
+
+	// Wait for all active Accept() calls to complete
+	// This is safe because:
+	// 1. We've set closed=true so no new Accept() calls will start
+	// 2. We've shutdown the socket so active accepts will return with error
+	l.activeAccepts.Wait()
+
+	// Now safe to free the listener memory
+	l.mu.Lock()
+	C.mtls_listener_close(listener)
 	l.listener = nil
+	l.mu.Unlock()
 
 	return nil
 }
