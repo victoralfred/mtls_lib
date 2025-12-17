@@ -30,6 +30,7 @@ type StressTestConfig struct {
 	ConcurrentWorkers int
 	MessageSize       int
 	MessagesPerConn   int
+	ProgressInterval  time.Duration
 }
 
 // StressMetrics tracks stress test results
@@ -39,13 +40,16 @@ type StressMetrics struct {
 	ConnectionsFailed    int64
 	BytesSent            int64
 	BytesReceived        int64
-	TotalConnectTime     int64 // nanoseconds (includes TCP + TLS handshake)
+	TotalConnectTime     int64
 	MaxConcurrentConns   int64
 	CurrentConns         int64
-	Errors               sync.Map // error message -> count
+	Errors               sync.Map
 }
 
 func (m *StressMetrics) RecordError(err error) {
+	if err == nil {
+		return
+	}
 	key := err.Error()
 	if val, ok := m.Errors.Load(key); ok {
 		m.Errors.Store(key, val.(int)+1)
@@ -78,7 +82,6 @@ func (m *StressMetrics) PrintSummary() {
 	fmt.Printf("  Bytes Sent:            %d\n", atomic.LoadInt64(&m.BytesSent))
 	fmt.Printf("  Bytes Received:        %d\n", atomic.LoadInt64(&m.BytesReceived))
 
-	// Print errors
 	fmt.Printf("\nErrors:\n")
 	errorCount := 0
 	m.Errors.Range(func(key, value interface{}) bool {
@@ -92,11 +95,11 @@ func (m *StressMetrics) PrintSummary() {
 	fmt.Println(strings.Repeat("=", 60))
 }
 
-// checkSystemLimits checks and reports system limits
-func checkSystemLimits(t *testing.T, targetConns int, workers int) {
+// checkSystemLimits reports system limits and warns if insufficient
+func checkSystemLimits(t *testing.T, workers int) {
 	var rlimit syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlimit); err != nil {
-		t.Logf("Warning: Could not get file descriptor limit: %v", err)
+		t.Logf("Warning: Could not get FD limit: %v", err)
 		return
 	}
 
@@ -105,29 +108,22 @@ func checkSystemLimits(t *testing.T, targetConns int, workers int) {
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Printf("  File Descriptors (soft): %d\n", rlimit.Cur)
 	fmt.Printf("  File Descriptors (hard): %d\n", rlimit.Max)
-	fmt.Printf("  Target Connections:      %d\n", targetConns)
-	fmt.Printf("  Concurrent Workers:      %d\n", workers)
 	fmt.Printf("  GOMAXPROCS:              %d\n", runtime.GOMAXPROCS(0))
 	fmt.Printf("  Num CPU:                 %d\n", runtime.NumCPU())
 
-	// With connection recycling, we only need FDs for concurrent connections
-	// Each connection uses ~2 FDs (client + server side), plus overhead
-	neededFDs := workers*4 + 100
-	fmt.Printf("  Est. Max FDs in use:     %d\n", neededFDs)
-
-	if uint64(neededFDs) > rlimit.Cur {
-		fmt.Printf("\n  WARNING: May need more file descriptors!\n")
-		fmt.Printf("  Run: ulimit -n %d\n", neededFDs)
+	estimatedFDs := workers*4 + 100
+	fmt.Printf("  Est. Max FDs in use:     %d\n", estimatedFDs)
+	if uint64(estimatedFDs) > rlimit.Cur {
+		fmt.Printf("\n  WARNING: Increase FDs! Run: ulimit -n %d\n", estimatedFDs)
 	} else {
-		fmt.Printf("\n  ✓ FD limit sufficient for %d concurrent workers\n", workers)
+		fmt.Printf("\n  ✓ FD limit sufficient\n")
 	}
-
 	fmt.Println(strings.Repeat("=", 60))
 }
 
-// generateStressCerts generates certificates for stress testing
-func generateStressCerts(t *testing.T) (caCertPEM, serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM []byte) {
-	// Generate CA
+// generateCertificates creates CA, server, and client certs
+func generateCertificates(t *testing.T) (caCertPEM, serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM []byte) {
+	// CA
 	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
@@ -135,14 +131,14 @@ func generateStressCerts(t *testing.T) (caCertPEM, serverCertPEM, serverKeyPEM, 
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		IsCA:                  true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 	}
-	caCertDER, _ := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-	caCert, _ := x509.ParseCertificate(caCertDER)
-	caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCertDER})
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	caCert, _ := x509.ParseCertificate(caDER)
+	caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
 
-	// Generate server cert
+	// Server
 	serverKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	serverTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
@@ -154,12 +150,12 @@ func generateStressCerts(t *testing.T) (caCertPEM, serverCertPEM, serverKeyPEM, 
 		DNSNames:     []string{"localhost"},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 	}
-	serverCertDER, _ := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)
-	serverCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverCertDER})
+	serverDER, _ := x509.CreateCertificate(rand.Reader, serverTemplate, caCert, &serverKey.PublicKey, caKey)
+	serverCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER})
 	serverKeyDER, _ := x509.MarshalECPrivateKey(serverKey)
 	serverKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: serverKeyDER})
 
-	// Generate client cert
+	// Client
 	clientKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	clientTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(3),
@@ -169,87 +165,53 @@ func generateStressCerts(t *testing.T) (caCertPEM, serverCertPEM, serverKeyPEM, 
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	clientCertDER, _ := x509.CreateCertificate(rand.Reader, clientTemplate, caCert, &clientKey.PublicKey, caKey)
-	clientCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientCertDER})
+	clientDER, _ := x509.CreateCertificate(rand.Reader, clientTemplate, caCert, &clientKey.PublicKey, caKey)
+	clientCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientDER})
 	clientKeyDER, _ := x509.MarshalECPrivateKey(clientKey)
 	clientKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: clientKeyDER})
 
 	return
 }
 
-// findAvailablePortForStress finds an available port
-func findAvailablePortForStress() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+// findAvailablePort returns an unused local port
+func findAvailablePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	return port, nil
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-// TestStressConnections runs the stress test with connection recycling
-// Uses a fixed pool of workers that each process multiple connections sequentially
-func TestStressConnections(t *testing.T) {
-	if os.Getenv("MTLS_STRESS_TEST") == "" {
-		t.Skip("Skipping stress test. Set MTLS_STRESS_TEST=1 to run.")
-	}
+// runStressTest executes the MTLS stress test with connection recycling
+func runStressTest(t *testing.T, config StressTestConfig) {
+	checkSystemLimits(t, config.ConcurrentWorkers)
 
-	// Get target from environment or default
-	targetConns := 1000
-	if env := os.Getenv("MTLS_STRESS_CONNECTIONS"); env != "" {
-		if n, err := strconv.Atoi(env); err == nil {
-			targetConns = n
-		}
-	}
+	caPEM, serverPEM, serverKeyPEM, clientPEM, clientKeyPEM := generateCertificates(t)
 
-	// Use moderate worker count - each worker processes many connections sequentially
-	// This keeps FD usage low while maintaining high throughput
-	workers := 48
-	if env := os.Getenv("MTLS_STRESS_WORKERS"); env != "" {
-		if n, err := strconv.Atoi(env); err == nil {
-			workers = n
-		}
-	}
-
-	config := StressTestConfig{
-		TotalConnections:  targetConns,
-		ConcurrentWorkers: workers,
-		MessageSize:       64,
-		MessagesPerConn:   1,
-	}
-
-	checkSystemLimits(t, targetConns, workers)
-
-	// Generate certificates
-	caCertPEM, serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM := generateStressCerts(t)
-
-	// Create server context
-	serverConfig := DefaultConfig()
-	serverConfig.CACertPEM = caCertPEM
-	serverConfig.CertPEM = serverCertPEM
-	serverConfig.KeyPEM = serverKeyPEM
-
-	serverCtx, err := NewContext(serverConfig)
+	// Server context
+	serverCfg := DefaultConfig()
+	serverCfg.CACertPEM = caPEM
+	serverCfg.CertPEM = serverPEM
+	serverCfg.KeyPEM = serverKeyPEM
+	serverCtx, err := NewContext(serverCfg)
 	if err != nil {
 		t.Fatalf("Failed to create server context: %v", err)
 	}
 	defer serverCtx.Close()
 
-	// Create client context
-	clientConfig := DefaultConfig()
-	clientConfig.CACertPEM = caCertPEM
-	clientConfig.CertPEM = clientCertPEM
-	clientConfig.KeyPEM = clientKeyPEM
-
-	clientCtx, err := NewContext(clientConfig)
+	// Client context
+	clientCfg := DefaultConfig()
+	clientCfg.CACertPEM = caPEM
+	clientCfg.CertPEM = clientPEM
+	clientCfg.KeyPEM = clientKeyPEM
+	clientCtx, err := NewContext(clientCfg)
 	if err != nil {
 		t.Fatalf("Failed to create client context: %v", err)
 	}
 	defer clientCtx.Close()
 
-	// Start server
-	port, err := findAvailablePortForStress()
+	port, err := findAvailablePort()
 	if err != nil {
 		t.Fatalf("Failed to find port: %v", err)
 	}
@@ -260,17 +222,13 @@ func TestStressConnections(t *testing.T) {
 		t.Fatalf("Failed to listen: %v", err)
 	}
 
-	// Metrics
 	metrics := &StressMetrics{}
-
-	// Server handlers - simple echo with immediate cleanup
-	// No tracking of connections - let them be GC'd after handler exits
-	serverWg := sync.WaitGroup{}
 	stopServer := make(chan struct{})
-	activeHandlers := int64(0)
+	var activeHandlers int64
+	serverWg := sync.WaitGroup{}
 
 	// Start server acceptors
-	for i := 0; i < workers; i++ {
+	for i := 0; i < config.ConcurrentWorkers; i++ {
 		serverWg.Add(1)
 		go func() {
 			defer serverWg.Done()
@@ -280,33 +238,24 @@ func TestStressConnections(t *testing.T) {
 					return
 				default:
 				}
-
 				conn, err := listener.Accept()
 				if err != nil {
-					// Check if we're shutting down
 					select {
 					case <-stopServer:
 						return
 					default:
-						// Accept error during normal operation
 						return
 					}
 				}
-
-				// Handle connection in goroutine - closes when done
 				atomic.AddInt64(&activeHandlers, 1)
 				go func(c *Conn) {
 					defer atomic.AddInt64(&activeHandlers, -1)
 					defer c.Close()
-
 					buf := make([]byte, 1024)
-					// Single read-write cycle (matching client behavior)
 					n, err := c.Read(buf)
-					if err != nil {
-						return
+					if err == nil {
+						_, _ = c.Write(buf[:n])
 					}
-					_, _ = c.Write(buf[:n])
-					// Connection closes immediately after response
 				}(conn)
 			}
 		}()
@@ -315,7 +264,7 @@ func TestStressConnections(t *testing.T) {
 	// Progress reporting
 	progressDone := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(config.ProgressInterval)
 		defer ticker.Stop()
 		startTime := time.Now()
 		for {
@@ -330,21 +279,19 @@ func TestStressConnections(t *testing.T) {
 				handlers := atomic.LoadInt64(&activeHandlers)
 				elapsed := time.Since(startTime).Seconds()
 				rate := float64(succeeded) / elapsed
-
 				fmt.Printf("\r[%5.1fs] Attempted: %6d | Succeeded: %6d | Failed: %4d | Active: %3d/%3d | Rate: %.0f/s    ",
 					elapsed, attempted, succeeded, failed, current, handlers, rate)
 			}
 		}
 	}()
 
-	// Client workers - each worker processes multiple connections sequentially
-	fmt.Printf("\nStarting stress test: %d connections with %d workers\n\n", targetConns, workers)
+	// Client workers
+	fmt.Printf("\nStarting stress test: %d connections with %d workers\n\n", config.TotalConnections, config.ConcurrentWorkers)
 	startTime := time.Now()
 
 	clientWg := sync.WaitGroup{}
-	connChan := make(chan int, workers*2) // Small buffer to prevent blocking
+	connChan := make(chan int, config.ConcurrentWorkers*2)
 
-	// Producer: feed connection IDs to workers
 	go func() {
 		for i := 0; i < config.TotalConnections; i++ {
 			connChan <- i
@@ -352,24 +299,19 @@ func TestStressConnections(t *testing.T) {
 		close(connChan)
 	}()
 
-	// Start client workers
-	for w := 0; w < workers; w++ {
+	for w := 0; w < config.ConcurrentWorkers; w++ {
 		clientWg.Add(1)
 		go func() {
 			defer clientWg.Done()
-
 			message := make([]byte, config.MessageSize)
 			for i := range message {
 				message[i] = byte('A' + (i % 26))
 			}
 			buf := make([]byte, 1024)
-
-			// Process connections sequentially - one at a time per worker
 			for range connChan {
 				atomic.AddInt64(&metrics.ConnectionsAttempted, 1)
 				current := atomic.AddInt64(&metrics.CurrentConns, 1)
 
-				// Update max concurrent
 				for {
 					max := atomic.LoadInt64(&metrics.MaxConcurrentConns)
 					if current <= max || atomic.CompareAndSwapInt64(&metrics.MaxConcurrentConns, max, current) {
@@ -377,7 +319,6 @@ func TestStressConnections(t *testing.T) {
 					}
 				}
 
-				// Connect
 				connectStart := time.Now()
 				conn, err := clientCtx.Connect(serverAddr)
 				connectDuration := time.Since(connectStart)
@@ -389,7 +330,6 @@ func TestStressConnections(t *testing.T) {
 					continue
 				}
 
-				// Send message
 				n, err := conn.Write(message)
 				if err != nil {
 					conn.Close()
@@ -400,7 +340,6 @@ func TestStressConnections(t *testing.T) {
 				}
 				atomic.AddInt64(&metrics.BytesSent, int64(n))
 
-				// Receive response
 				n, err = conn.Read(buf)
 				if err != nil {
 					conn.Close()
@@ -411,9 +350,7 @@ func TestStressConnections(t *testing.T) {
 				}
 				atomic.AddInt64(&metrics.BytesReceived, int64(n))
 
-				// Close connection immediately - releases FDs
 				conn.Close()
-
 				atomic.AddInt64(&metrics.ConnectionsSucceeded, 1)
 				atomic.AddInt64(&metrics.TotalConnectTime, connectDuration.Nanoseconds())
 				atomic.AddInt64(&metrics.CurrentConns, -1)
@@ -421,82 +358,85 @@ func TestStressConnections(t *testing.T) {
 		}()
 	}
 
-	// Wait for all client connections to complete
 	clientWg.Wait()
 	totalDuration := time.Since(startTime)
-
-	// Stop progress reporting
 	close(progressDone)
 
-	// Graceful server shutdown
+	// Server shutdown
 	close(stopServer)
 	listener.Close()
-
-	// Wait for server to finish (with timeout)
 	serverDone := make(chan struct{})
 	go func() {
 		serverWg.Wait()
-		// Wait for handlers to drain
 		for atomic.LoadInt64(&activeHandlers) > 0 {
 			time.Sleep(10 * time.Millisecond)
 		}
 		close(serverDone)
 	}()
-
 	select {
 	case <-serverDone:
-		// Clean shutdown
 	case <-time.After(5 * time.Second):
-		t.Log("Server shutdown timeout - continuing")
+		t.Log("Server shutdown timeout")
 	}
 
-	// Print results
 	fmt.Printf("\n\nTest completed in %.2f seconds\n", totalDuration.Seconds())
-
 	succeeded := atomic.LoadInt64(&metrics.ConnectionsSucceeded)
 	fmt.Printf("Throughput: %.0f connections/second\n", float64(succeeded)/totalDuration.Seconds())
-
 	metrics.PrintSummary()
 
-	// Fail if too many failures
 	failRate := float64(atomic.LoadInt64(&metrics.ConnectionsFailed)) / float64(atomic.LoadInt64(&metrics.ConnectionsAttempted))
-	if failRate > 0.01 { // 1% failure threshold
+	if failRate > 0.01 {
 		t.Errorf("Failure rate too high: %.2f%%", failRate*100)
 	}
 }
 
-// TestStress1K runs 1,000 connection stress test
-func TestStress1K(t *testing.T) {
-	os.Setenv("MTLS_STRESS_TEST", "1")
-	os.Setenv("MTLS_STRESS_CONNECTIONS", "1000")
-	defer os.Unsetenv("MTLS_STRESS_TEST")
-	defer os.Unsetenv("MTLS_STRESS_CONNECTIONS")
-	TestStressConnections(t)
+// TestStressConnections is the main configurable stress test entry point.
+// Configure via environment variables:
+//   - MTLS_STRESS_TEST=1 (required to run)
+//   - MTLS_STRESS_CONNECTIONS=10000 (default: 1000)
+//   - MTLS_STRESS_WORKERS=48 (default: 48)
+func TestStressConnections(t *testing.T) {
+	if os.Getenv("MTLS_STRESS_TEST") == "" {
+		t.Skip("Skipping stress test. Set MTLS_STRESS_TEST=1 to run.")
+	}
+
+	conns := 1000
+	if env := os.Getenv("MTLS_STRESS_CONNECTIONS"); env != "" {
+		if n, err := strconv.Atoi(env); err == nil {
+			conns = n
+		}
+	}
+
+	workers := 48
+	if env := os.Getenv("MTLS_STRESS_WORKERS"); env != "" {
+		if n, err := strconv.Atoi(env); err == nil {
+			workers = n
+		}
+	}
+
+	config := StressTestConfig{
+		TotalConnections:  conns,
+		ConcurrentWorkers: workers,
+		MessageSize:       64,
+		MessagesPerConn:   1,
+		ProgressInterval:  time.Second,
+	}
+	runStressTest(t, config)
 }
 
-// TestStress10K runs 10,000 connection stress test
-func TestStress10K(t *testing.T) {
-	os.Setenv("MTLS_STRESS_TEST", "1")
-	os.Setenv("MTLS_STRESS_CONNECTIONS", "10000")
-	defer os.Unsetenv("MTLS_STRESS_TEST")
-	defer os.Unsetenv("MTLS_STRESS_CONNECTIONS")
-	TestStressConnections(t)
-}
+// Preset stress test runners
+func TestStress1K(t *testing.T)   { runPreset(t, 1000, 24) }
+func TestStress10K(t *testing.T)  { runPreset(t, 10000, 48) }
+func TestStress100K(t *testing.T) { runPreset(t, 100000, 48) }
+func TestStress1M(t *testing.T)   { runPreset(t, 1000000, 64) }
 
-// TestStress100K runs 100,000 connection stress test
-func TestStress100K(t *testing.T) {
-	os.Setenv("MTLS_STRESS_TEST", "1")
-	os.Setenv("MTLS_STRESS_CONNECTIONS", "100000")
-	defer os.Unsetenv("MTLS_STRESS_TEST")
-	defer os.Unsetenv("MTLS_STRESS_CONNECTIONS")
-	TestStressConnections(t)
-}
-
-// TestStress1M runs 1,000,000 connection stress test
-func TestStress1M(t *testing.T) {
-	os.Setenv("MTLS_STRESS_TEST", "1")
-	os.Setenv("MTLS_STRESS_CONNECTIONS", "1000000")
-	defer os.Unsetenv("MTLS_STRESS_TEST")
-	defer os.Unsetenv("MTLS_STRESS_CONNECTIONS")
-	TestStressConnections(t)
+func runPreset(t *testing.T, conns, workers int) {
+	config := StressTestConfig{
+		TotalConnections:  conns,
+		ConcurrentWorkers: workers,
+		MessageSize:       64,
+		MessagesPerConn:   1,
+		ProgressInterval:  2 * time.Second,
+	}
+	runStressTest(t, config)
 }
