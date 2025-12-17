@@ -598,6 +598,14 @@ void mtls_close(mtls_conn *conn)
     mtls_emit_event(conn->ctx, &event);
 
     if (conn->ssl) {
+        /* Set a short timeout for TLS shutdown to avoid blocking.
+         * The second SSL_shutdown() waits for peer's close_notify, which
+         * can block for the full socket timeout (e.g., 60 seconds) if the
+         * peer is slow or unresponsive. Use 2 second timeout for shutdown. */
+        if (conn->sock != MTLS_INVALID_SOCKET) {
+            (void)platform_socket_set_recv_timeout(conn->sock, 2000, NULL);
+        }
+
         /* Perform bidirectional TLS shutdown for clean termination.
          * SSL_shutdown returns:
          *   0 = shutdown sent, need to call again for bidirectional
@@ -606,7 +614,7 @@ void mtls_close(mtls_conn *conn)
         int shutdown_ret = SSL_shutdown(conn->ssl);
         if (shutdown_ret == 0) {
             /* First phase complete, call again for bidirectional shutdown.
-             * Don't block indefinitely - proceed with cleanup regardless. */
+             * With 2 second timeout, this won't block indefinitely. */
             (void)SSL_shutdown(conn->ssl);
         }
         SSL_free(conn->ssl);
