@@ -3,6 +3,15 @@
  * @brief Tests for security fixes: buffer overflows, input validation, thread safety, etc.
  */
 
+/* Enable POSIX features for nanosleep */
+// NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#if !defined(_WIN32)
+#    ifndef _POSIX_C_SOURCE
+#        define _POSIX_C_SOURCE 200809L
+#    endif
+#endif
+// NOLINTEND(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+
 #include "mtls/mtls.h"
 #include "mtls/mtls_types.h"
 #include "mtls/mtls_error.h"
@@ -15,9 +24,54 @@
 #include <stdint.h>
 #if !defined(_WIN32)
 #    include <sys/types.h>
+#    include <pthread.h>
+#else
+#    include <windows.h>
 #endif
-#include <threads.h>
 #include <time.h>
+
+/* Cross-platform threading abstraction */
+#if !defined(_WIN32)
+typedef pthread_t mtls_thread_t; // NOLINT(misc-include-cleaner)
+#    define MTLS_THREAD_SUCCESS 0
+
+static inline int mtls_thread_create(mtls_thread_t *thread, void *(*func)(void *), void *arg)
+{
+    return pthread_create(thread, NULL, func, arg) == 0 ? MTLS_THREAD_SUCCESS : -1;
+}
+
+static inline int mtls_thread_join(mtls_thread_t thread)
+{
+    return pthread_join(thread, NULL) == 0 ? MTLS_THREAD_SUCCESS : -1;
+}
+
+static inline void mtls_thread_sleep_ns(long nanoseconds)
+{
+    struct timespec sleep_time = {0, nanoseconds};
+    nanosleep(&sleep_time, NULL);
+}
+#else
+typedef HANDLE mtls_thread_t;
+#    define MTLS_THREAD_SUCCESS 0
+
+static inline int mtls_thread_create(mtls_thread_t *thread, void *(*func)(void *), void *arg)
+{
+    *thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL);
+    return *thread != NULL ? MTLS_THREAD_SUCCESS : -1;
+}
+
+static inline int mtls_thread_join(mtls_thread_t thread)
+{
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+    return MTLS_THREAD_SUCCESS;
+}
+
+static inline void mtls_thread_sleep_ns(long nanoseconds)
+{
+    Sleep((DWORD)(nanoseconds / 1000000));
+}
+#endif
 
 /* Test framework macros */
 #define TEST_ASSERT(condition, msg)                                        \
@@ -295,7 +349,7 @@ static mtls_ctx *g_test_ctx = NULL;
 static mtls_conn *g_test_conn = NULL;
 static volatile bool g_thread_test_done = false;
 
-static int thread_read_state(void *arg)
+static void *thread_read_state(void *arg)
 {
     (void)arg;
     int iterations = 1000;
@@ -306,22 +360,16 @@ static int thread_read_state(void *arg)
             /* Should not crash, even if connection is being closed */
             (void)state;
         }
-        {
-            struct timespec time_spec = {0, 1000};
-            (void)thrd_sleep(&time_spec, NULL);
-        } /* Small delay */
+        mtls_thread_sleep_ns(1000); /* Small delay */
     }
 
-    return 0;
+    return NULL;
 }
 
-static int thread_close_connection(void *arg)
+static void *thread_close_connection(void *arg)
 {
     (void)arg;
-    {
-        struct timespec time_spec = {0, 100000};
-        (void)thrd_sleep(&time_spec, NULL);
-    } /* Let other thread start first */
+    mtls_thread_sleep_ns(100000); /* Let other thread start first */
 
     if (g_test_conn) {
         mtls_close(g_test_conn);
@@ -329,7 +377,7 @@ static int thread_close_connection(void *arg)
     }
 
     g_thread_test_done = true;
-    return 0;
+    return NULL;
 }
 
 static bool test_thread_safety_connection_state(void)
@@ -357,24 +405,24 @@ static bool test_thread_safety_connection_state(void)
     /* Create a dummy connection structure to test state operations */
     /* Note: This is a simplified test - in real scenario, connection would be established */
 
-    thrd_t thread1 = 0;
-    thrd_t thread2 = 0;
+    mtls_thread_t thread1 = 0;
+    mtls_thread_t thread2 = 0;
     g_thread_test_done = false;
 
     /* Start threads that will access connection state concurrently */
-    if (thrd_create(&thread1, thread_read_state, NULL) != thrd_success) {
+    if (mtls_thread_create(&thread1, thread_read_state, NULL) != MTLS_THREAD_SUCCESS) {
         mtls_ctx_free(g_test_ctx);
         return false;
     }
 
-    if (thrd_create(&thread2, thread_close_connection, NULL) != thrd_success) {
-        (void)thrd_join(thread1, NULL);
+    if (mtls_thread_create(&thread2, thread_close_connection, NULL) != MTLS_THREAD_SUCCESS) {
+        (void)mtls_thread_join(thread1);
         mtls_ctx_free(g_test_ctx);
         return false;
     }
 
-    (void)thrd_join(thread1, NULL);
-    (void)thrd_join(thread2, NULL);
+    (void)mtls_thread_join(thread1);
+    (void)mtls_thread_join(thread2);
 
     mtls_ctx_free(g_test_ctx);
     g_test_ctx = NULL;
@@ -385,7 +433,7 @@ static bool test_thread_safety_connection_state(void)
 /* ============================================================================
  * Test 8: Thread Safety - Kill Switch
  * ============================================================================ */
-static int thread_toggle_kill_switch(void *arg)
+static void *thread_toggle_kill_switch(void *arg)
 {
     (void)arg;
     int iterations = 1000;
@@ -396,13 +444,10 @@ static int thread_toggle_kill_switch(void *arg)
             bool enabled = mtls_ctx_is_kill_switch_enabled(g_test_ctx);
             (void)enabled; /* Should not crash */
         }
-        {
-            struct timespec time_spec = {0, 1000};
-            (void)thrd_sleep(&time_spec, NULL);
-        }
+        mtls_thread_sleep_ns(1000);
     }
 
-    return 0;
+    return NULL;
 }
 
 static bool test_thread_safety_kill_switch(void)
@@ -424,13 +469,14 @@ static bool test_thread_safety_kill_switch(void)
         return true; /* Test passes if validation works */
     }
 
-    thrd_t threads[4] = {0};
+    mtls_thread_t threads[4];
 
     /* Start multiple threads that toggle kill switch concurrently */
     for (int i = 0; i < 4; i++) {
-        if (thrd_create(&threads[i], thread_toggle_kill_switch, NULL) != thrd_success) {
+        if (mtls_thread_create(&threads[i], thread_toggle_kill_switch, NULL) !=
+            MTLS_THREAD_SUCCESS) {
             for (int j = 0; j < i; j++) {
-                (void)thrd_join(threads[j], NULL);
+                (void)mtls_thread_join(threads[j]);
             }
             mtls_ctx_free(g_test_ctx);
             return false;
@@ -439,7 +485,7 @@ static bool test_thread_safety_kill_switch(void)
 
     /* Wait for all threads */
     for (int i = 0; i < 4; i++) {
-        (void)thrd_join(threads[i], NULL);
+        (void)mtls_thread_join(threads[i]);
     }
 
     mtls_ctx_free(g_test_ctx);
@@ -1075,7 +1121,7 @@ static bool test_edge_case_special_characters(void)
 static volatile int g_concurrent_state_changes = 0;
 static mtls_ctx *g_edge_test_ctx = NULL;
 
-static int thread_rapid_state_change(void *arg)
+static void *thread_rapid_state_change(void *arg)
 {
     (void)arg;
     int iterations = 100;
@@ -1088,13 +1134,10 @@ static int thread_rapid_state_change(void *arg)
             mtls_ctx_is_kill_switch_enabled(g_edge_test_ctx);
             g_concurrent_state_changes++;
         }
-        {
-            struct timespec time_spec = {0, 10000};
-            (void)thrd_sleep(&time_spec, NULL);
-        }
+        mtls_thread_sleep_ns(10000);
     }
 
-    return 0;
+    return NULL;
 }
 
 static bool test_edge_case_concurrent_state_changes(void)
@@ -1116,14 +1159,15 @@ static bool test_edge_case_concurrent_state_changes(void)
         return true; /* Test passes if validation works */
     }
 
-    thrd_t threads[10] = {0};
+    mtls_thread_t threads[10];
     g_concurrent_state_changes = 0;
 
     /* Start many threads rapidly changing state */
     for (int i = 0; i < 10; i++) {
-        if (thrd_create(&threads[i], thread_rapid_state_change, NULL) != thrd_success) {
+        if (mtls_thread_create(&threads[i], thread_rapid_state_change, NULL) !=
+            MTLS_THREAD_SUCCESS) {
             for (int j = 0; j < i; j++) {
-                (void)thrd_join(threads[j], NULL);
+                (void)mtls_thread_join(threads[j]);
             }
             mtls_ctx_free(g_edge_test_ctx);
             return false;
@@ -1132,7 +1176,7 @@ static bool test_edge_case_concurrent_state_changes(void)
 
     /* Wait for all threads */
     for (int i = 0; i < 10; i++) {
-        (void)thrd_join(threads[i], NULL);
+        (void)mtls_thread_join(threads[i]);
     }
 
     /* Verify no crashes occurred */
