@@ -28,8 +28,11 @@
 #include <string.h>
 #include <time.h>
 
-// magic numbers and string lengths
-const int ERROR_BUFFER_SIZE = 256;
+/*
+ * Error buffer size - matches MTLS_ERROR_BUF_SIZE from platform.h
+ * This local constant is used for strerror_r buffer allocation.
+ */
+const int ERROR_BUFFER_SIZE = MTLS_ERROR_BUF_SIZE;
 
 int platform_init(void)
 {
@@ -383,7 +386,7 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
 
     /* Validate input length to prevent DoS */
     size_t addr_str_len = strlen(addr_str);
-    if (addr_str_len == 0 || addr_str_len > 512) {
+    if (addr_str_len == 0 || addr_str_len > MTLS_ADDR_INPUT_MAX_LEN) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Address string too long");
         return -1;
     }
@@ -446,7 +449,7 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
     char *port_end = NULL;
     errno = 0; /* Reset errno before strtoul to detect overflow */
     unsigned long port_num = strtoul(port, &port_end, 10);
-    if (errno == ERANGE || *port_end != '\0' || port_num == 0 || port_num > 65535) {
+    if (errno == ERANGE || *port_end != '\0' || port_num == 0 || port_num > MTLS_MAX_PORT) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
         return -1;
     }

@@ -74,7 +74,7 @@ mtls_listener *mtls_listen(mtls_ctx *ctx, const char *bind_addr, mtls_err *err)
     }
 
     /* Listen */
-    if (platform_socket_listen(listener->sock, 128, err) < 0) {
+    if (platform_socket_listen(listener->sock, MTLS_LISTEN_BACKLOG, err) < 0) {
         platform_socket_close(listener->sock);
         free(listener);
         return NULL;
@@ -152,7 +152,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
     }
 
     /* Format remote address for events */
-    char remote_addr_str[128];
+    char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
     event.remote_addr = remote_addr_str;
     event.conn = conn;

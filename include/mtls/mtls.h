@@ -4,6 +4,25 @@
  *
  * This is the primary header file that applications should include.
  * It provides a minimal, secure, and auditable mTLS transport layer.
+ *
+ * THREAD SAFETY:
+ *
+ * - mtls_ctx: Thread-safe for concurrent use after creation. The context
+ *   is effectively immutable once created, except for:
+ *   - mtls_ctx_set_kill_switch(): Uses atomic operations, thread-safe
+ *   - mtls_ctx_reload_certs(): Should not be called concurrently with itself
+ *   - mtls_set_observers(): NOT thread-safe; must be called before connections
+ *
+ * - mtls_conn: NOT thread-safe. Each connection should be used from a single
+ *   thread at a time. However, different connections can be used concurrently
+ *   from different threads.
+ *
+ * - mtls_listener: NOT thread-safe. Use one listener per thread or protect
+ *   with external synchronization.
+ *
+ * - Event callbacks: May be invoked concurrently from multiple threads if
+ *   multiple connections are active. Callback implementations must be
+ *   thread-safe. See mtls_internal.h for detailed requirements.
  */
 
 #ifndef MTLS_H
@@ -11,9 +30,9 @@
 
 #include <stdint.h>
 #if defined(_WIN32)
-    #include <BaseTsd.h>
+#    include <BaseTsd.h>
 #else
-    #include <sys/types.h>
+#    include <sys/types.h>
 #endif
 
 #include "mtls_types.h"
@@ -40,7 +59,7 @@ extern "C" {
  * @param err Error structure to populate on failure
  * @return Context handle on success, NULL on failure
  */
-MTLS_API mtls_ctx* mtls_ctx_create(const mtls_config* config, mtls_err* err);
+MTLS_API mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err);
 
 /**
  * Free an mTLS context
@@ -50,7 +69,7 @@ MTLS_API mtls_ctx* mtls_ctx_create(const mtls_config* config, mtls_err* err);
  *
  * @param ctx Context to free
  */
-MTLS_API void mtls_ctx_free(mtls_ctx* ctx);
+MTLS_API void mtls_ctx_free(mtls_ctx *ctx);
 
 /**
  * Reload certificates in a context
@@ -62,7 +81,7 @@ MTLS_API void mtls_ctx_free(mtls_ctx* ctx);
  * @param err Error structure to populate on failure
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_ctx_reload_certs(mtls_ctx* ctx, mtls_err* err);
+MTLS_API int mtls_ctx_reload_certs(mtls_ctx *ctx, mtls_err *err);
 
 /**
  * Enable or disable kill-switch
@@ -73,7 +92,7 @@ MTLS_API int mtls_ctx_reload_certs(mtls_ctx* ctx, mtls_err* err);
  * @param ctx Context
  * @param enabled true to enable, false to disable
  */
-MTLS_API void mtls_ctx_set_kill_switch(mtls_ctx* ctx, bool enabled);
+MTLS_API void mtls_ctx_set_kill_switch(mtls_ctx *ctx, bool enabled);
 
 /**
  * Check if kill-switch is enabled
@@ -81,7 +100,7 @@ MTLS_API void mtls_ctx_set_kill_switch(mtls_ctx* ctx, bool enabled);
  * @param ctx Context
  * @return true if enabled, false otherwise
  */
-MTLS_API bool mtls_ctx_is_kill_switch_enabled(const mtls_ctx* ctx);
+MTLS_API bool mtls_ctx_is_kill_switch_enabled(const mtls_ctx *ctx);
 
 /*
  * =============================================================================
@@ -100,7 +119,7 @@ MTLS_API bool mtls_ctx_is_kill_switch_enabled(const mtls_ctx* ctx);
  * @param err Error structure to populate on failure
  * @return Connection handle on success, NULL on failure
  */
-MTLS_API mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err);
+MTLS_API mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err);
 
 /*
  * =============================================================================
@@ -118,7 +137,7 @@ MTLS_API mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err)
  * @param err Error structure to populate on failure
  * @return Listener handle on success, NULL on failure
  */
-MTLS_API mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_err* err);
+MTLS_API mtls_listener *mtls_listen(mtls_ctx *ctx, const char *bind_addr, mtls_err *err);
 
 /**
  * Accept an incoming connection
@@ -130,7 +149,7 @@ MTLS_API mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_e
  * @param err Error structure to populate on failure
  * @return Connection handle on success, NULL on failure
  */
-MTLS_API mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err);
+MTLS_API mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err);
 
 /**
  * Close a listener
@@ -139,7 +158,7 @@ MTLS_API mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err);
  *
  * @param listener Listener to close
  */
-MTLS_API void mtls_listener_close(mtls_listener* listener);
+MTLS_API void mtls_listener_close(mtls_listener *listener);
 
 /*
  * =============================================================================
@@ -158,7 +177,7 @@ MTLS_API void mtls_listener_close(mtls_listener* listener);
  * @param err Error structure to populate on failure
  * @return Number of bytes read on success, -1 on failure, 0 on EOF
  */
-MTLS_API ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err);
+MTLS_API ssize_t mtls_read(mtls_conn *conn, void *buffer, size_t len, mtls_err *err);
 
 /**
  * Write data to a connection
@@ -171,7 +190,7 @@ MTLS_API ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* 
  * @param err Error structure to populate on failure
  * @return Number of bytes written on success, -1 on failure
  */
-MTLS_API ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* err);
+MTLS_API ssize_t mtls_write(mtls_conn *conn, const void *buffer, size_t len, mtls_err *err);
 
 /**
  * Close a connection
@@ -181,7 +200,7 @@ MTLS_API ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtl
  *
  * @param conn Connection to close
  */
-MTLS_API void mtls_close(mtls_conn* conn);
+MTLS_API void mtls_close(mtls_conn *conn);
 
 /*
  * =============================================================================
@@ -195,7 +214,7 @@ MTLS_API void mtls_close(mtls_conn* conn);
  * @param conn Connection
  * @return Current connection state
  */
-MTLS_API mtls_conn_state mtls_get_state(const mtls_conn* conn);
+MTLS_API mtls_conn_state mtls_get_state(const mtls_conn *conn);
 
 /**
  * Get peer identity information
@@ -209,9 +228,7 @@ MTLS_API mtls_conn_state mtls_get_state(const mtls_conn* conn);
  * @param err Error structure to populate on failure
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_get_peer_identity(mtls_conn* conn,
-                                     mtls_peer_identity* identity,
-                                     mtls_err* err);
+MTLS_API int mtls_get_peer_identity(mtls_conn *conn, mtls_peer_identity *identity, mtls_err *err);
 
 /**
  * Free peer identity resources
@@ -220,7 +237,7 @@ MTLS_API int mtls_get_peer_identity(mtls_conn* conn,
  *
  * @param identity Identity structure to free
  */
-MTLS_API void mtls_free_peer_identity(mtls_peer_identity* identity);
+MTLS_API void mtls_free_peer_identity(mtls_peer_identity *identity);
 
 /**
  * Check if peer certificate is currently valid
@@ -230,7 +247,7 @@ MTLS_API void mtls_free_peer_identity(mtls_peer_identity* identity);
  * @param identity Peer identity
  * @return true if certificate is valid, false if expired or not yet valid
  */
-MTLS_API bool mtls_is_peer_cert_valid(const mtls_peer_identity* identity);
+MTLS_API bool mtls_is_peer_cert_valid(const mtls_peer_identity *identity);
 
 /**
  * Get time until certificate expiration
@@ -238,7 +255,7 @@ MTLS_API bool mtls_is_peer_cert_valid(const mtls_peer_identity* identity);
  * @param identity Peer identity
  * @return Seconds until expiration, or -1 if already expired
  */
-MTLS_API int64_t mtls_get_cert_ttl_seconds(const mtls_peer_identity* identity);
+MTLS_API int64_t mtls_get_cert_ttl_seconds(const mtls_peer_identity *identity);
 
 /**
  * Check if identity has a SPIFFE ID
@@ -246,7 +263,7 @@ MTLS_API int64_t mtls_get_cert_ttl_seconds(const mtls_peer_identity* identity);
  * @param identity Peer identity
  * @return true if SPIFFE ID is present, false otherwise
  */
-MTLS_API bool mtls_has_spiffe_id(const mtls_peer_identity* identity);
+MTLS_API bool mtls_has_spiffe_id(const mtls_peer_identity *identity);
 
 /**
  * Validate peer SANs against an allowed list
@@ -264,9 +281,8 @@ MTLS_API bool mtls_has_spiffe_id(const mtls_peer_identity* identity);
  * @param allowed_sans_count Number of allowed SANs
  * @return true if at least one SAN matches, false otherwise
  */
-MTLS_API bool mtls_validate_peer_sans(const mtls_peer_identity* identity,
-                                       const char** allowed_sans,
-                                       size_t allowed_sans_count);
+MTLS_API bool mtls_validate_peer_sans(const mtls_peer_identity *identity, const char **allowed_sans,
+                                      size_t allowed_sans_count);
 
 /**
  * Extract organization from peer certificate
@@ -278,9 +294,7 @@ MTLS_API bool mtls_validate_peer_sans(const mtls_peer_identity* identity,
  * @param org_buf_len Length of organization buffer
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_get_peer_organization(mtls_conn* conn,
-                                         char* org_buf,
-                                         size_t org_buf_len);
+MTLS_API int mtls_get_peer_organization(mtls_conn *conn, char *org_buf, size_t org_buf_len);
 
 /**
  * Extract organizational unit from peer certificate
@@ -292,9 +306,7 @@ MTLS_API int mtls_get_peer_organization(mtls_conn* conn,
  * @param ou_buf_len Length of organizational unit buffer
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_get_peer_org_unit(mtls_conn* conn,
-                                     char* ou_buf,
-                                     size_t ou_buf_len);
+MTLS_API int mtls_get_peer_org_unit(mtls_conn *conn, char *ou_buf, size_t ou_buf_len);
 
 /**
  * Get remote address
@@ -304,9 +316,7 @@ MTLS_API int mtls_get_peer_org_unit(mtls_conn* conn,
  * @param addr_buf_len Length of address buffer
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_get_remote_addr(const mtls_conn* conn,
-                                   char* addr_buf,
-                                   size_t addr_buf_len);
+MTLS_API int mtls_get_remote_addr(const mtls_conn *conn, char *addr_buf, size_t addr_buf_len);
 
 /**
  * Get local address
@@ -316,9 +326,7 @@ MTLS_API int mtls_get_remote_addr(const mtls_conn* conn,
  * @param addr_buf_len Length of address buffer
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_get_local_addr(const mtls_conn* conn,
-                                  char* addr_buf,
-                                  size_t addr_buf_len);
+MTLS_API int mtls_get_local_addr(const mtls_conn *conn, char *addr_buf, size_t addr_buf_len);
 
 /*
  * =============================================================================
@@ -349,7 +357,7 @@ MTLS_API int mtls_get_local_addr(const mtls_conn* conn,
  * @param observers Observer configuration (copied internally), or NULL to disable
  * @return 0 on success, -1 on failure
  */
-MTLS_API int mtls_set_observers(mtls_ctx* ctx, const mtls_observers* observers);
+MTLS_API int mtls_set_observers(mtls_ctx *ctx, const mtls_observers *observers);
 
 /* ============================================================================
  * Utility Functions
@@ -361,7 +369,7 @@ MTLS_API int mtls_set_observers(mtls_ctx* ctx, const mtls_observers* observers);
  *
  * @return Version string (e.g., "0.1.0")
  */
-MTLS_API const char* mtls_version(void);
+MTLS_API const char *mtls_version(void);
 
 /**
  * Get library version components
@@ -370,7 +378,7 @@ MTLS_API const char* mtls_version(void);
  * @param minor Output for minor version
  * @param patch Output for patch version
  */
-MTLS_API void mtls_version_components(int* major, int* minor, int* patch);
+MTLS_API void mtls_version_components(int *major, int *minor, int *patch);
 
 #ifdef __cplusplus
 }

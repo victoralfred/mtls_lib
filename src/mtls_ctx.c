@@ -98,7 +98,7 @@ int mtls_config_validate(const mtls_config *config, mtls_err *err)
                 return -1;
             }
             size_t san_len = strlen(config->allowed_sans[i]);
-            if (san_len == 0 || san_len > 512) {
+            if (san_len == 0 || san_len > MTLS_SAN_MAX_LEN) {
                 MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG,
                              "Allowed SAN at index %zu has invalid length", i);
                 return -1;

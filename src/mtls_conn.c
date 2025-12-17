@@ -133,7 +133,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
     /* Connect */
     if (platform_socket_connect(conn->sock, &conn->remote_addr, timeout, err) < 0) {
         /* Emit CONNECT_FAILURE event */
-        char remote_addr_str[128];
+        char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
         platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
         event.type = MTLS_EVENT_CONNECT_FAILURE;
         event.remote_addr = remote_addr_str;
@@ -148,7 +148,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
     }
 
     /* Format remote address for events */
-    char remote_addr_str[128];
+    char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
     event.remote_addr = remote_addr_str;
     event.conn = conn;
@@ -200,7 +200,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
     if (ctx->config.verify_hostname) {
         /* Extract hostname from address string.
          * Handle both IPv4 (host:port) and IPv6 ([host]:port) formats. */
-        char hostname[256];
+        char hostname[MTLS_HOSTNAME_MAX_LEN];
         size_t hostname_len = 0;
         const char *host_start = addr;
         const char *host_end = NULL;
@@ -451,7 +451,7 @@ ssize_t mtls_read(mtls_conn *conn, void *buffer, size_t len, mtls_err *err)
     }
 
     /* Emit READ event */
-    char remote_addr_str[128];
+    char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
     mtls_event event = {.type = MTLS_EVENT_READ,
                         .remote_addr = remote_addr_str,
@@ -534,7 +534,7 @@ ssize_t mtls_write(mtls_conn *conn, const void *buffer, size_t len, mtls_err *er
     }
 
     /* Emit WRITE event */
-    char remote_addr_str[128];
+    char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
     mtls_event event = {.type = MTLS_EVENT_WRITE,
                         .remote_addr = remote_addr_str,
@@ -573,7 +573,7 @@ void mtls_close(mtls_conn *conn)
     }
 
     /* Emit CLOSE event */
-    char remote_addr_str[128];
+    char remote_addr_str[MTLS_ADDR_STR_MAX_LEN];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
     mtls_event event = {.type = MTLS_EVENT_CLOSE,
                         .remote_addr = remote_addr_str,

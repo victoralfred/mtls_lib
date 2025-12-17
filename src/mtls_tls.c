@@ -161,7 +161,7 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
     /* Load CA certificate */
     if (config->ca_cert_pem) {
         /* Validate PEM data length */
-        if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > 1024UL * 1024) {
+        if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > MTLS_MAX_PEM_SIZE) {
             MTLS_ERR_SET(
                 err, MTLS_ERR_INVALID_CONFIG,
                 "CA certificate PEM length invalid (max 1MB)"); // NOLINT(misc-include-cleaner)
@@ -185,6 +185,13 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
         }
         BIO *bio = BIO_new_mem_buf(config->ca_cert_pem,
                                    (int)config->ca_cert_pem_len); // NOLINT(misc-include-cleaner)
+        if (!bio) {
+            MTLS_ERR_SET(
+                err, MTLS_ERR_OUT_OF_MEMORY,
+                "Failed to allocate BIO for CA certificate"); // NOLINT(misc-include-cleaner)
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         X509 *ca_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL); // NOLINT(misc-include-cleaner)
         BIO_free(bio);                                            // NOLINT(misc-include-cleaner)
 
@@ -218,7 +225,7 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
     /* Load client/server certificate and key if provided */
     if (config->cert_pem) {
         /* Validate PEM data length */
-        if (config->cert_pem_len == 0 || config->cert_pem_len > 1024UL * 1024) {
+        if (config->cert_pem_len == 0 || config->cert_pem_len > MTLS_MAX_PEM_SIZE) {
             MTLS_ERR_SET(
                 err, MTLS_ERR_INVALID_CONFIG,
                 "Certificate PEM length invalid (max 1MB)"); // NOLINT(misc-include-cleaner)
@@ -241,6 +248,12 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
             return NULL;
         }
         BIO *cert_bio = BIO_new_mem_buf(config->cert_pem, (int)config->cert_pem_len);
+        if (!cert_bio) {
+            MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY,
+                         "Failed to allocate BIO for certificate"); // NOLINT(misc-include-cleaner)
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         X509 *cert = PEM_read_bio_X509(cert_bio, NULL, NULL, NULL);
         BIO_free(cert_bio);
 
@@ -265,7 +278,7 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
 
     if (config->key_pem) {
         /* Validate PEM data length */
-        if (config->key_pem_len == 0 || config->key_pem_len > 1024UL * 1024) {
+        if (config->key_pem_len == 0 || config->key_pem_len > MTLS_MAX_PEM_SIZE) {
             MTLS_ERR_SET(
                 err, MTLS_ERR_INVALID_CONFIG,
                 "Private key PEM length invalid (max 1MB)"); // NOLINT(misc-include-cleaner)
@@ -288,6 +301,12 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
             return NULL;
         }
         BIO *key_bio = BIO_new_mem_buf(config->key_pem, (int)config->key_pem_len);
+        if (!key_bio) {
+            MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY,
+                         "Failed to allocate BIO for private key"); // NOLINT(misc-include-cleaner)
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
         EVP_PKEY *key =
             PEM_read_bio_PrivateKey(key_bio, NULL, NULL, NULL); // NOLINT(misc-include-cleaner)
         BIO_free(key_bio);
@@ -399,7 +418,7 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
 
         if (config->ca_cert_pem) {
             /* Validate PEM data length */
-            if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > (size_t)(1024 * 1024)) {
+            if (config->ca_cert_pem_len == 0 || config->ca_cert_pem_len > MTLS_MAX_PEM_SIZE) {
                 MTLS_ERR_SET(
                     err, MTLS_ERR_INVALID_CONFIG,
                     "CA certificate PEM length invalid (max 1MB)"); // NOLINT(misc-include-cleaner)
@@ -422,6 +441,13 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
             }
 
             BIO *bio = BIO_new_mem_buf(config->ca_cert_pem, (int)config->ca_cert_pem_len);
+            if (!bio) {
+                MTLS_ERR_SET(
+                    err, MTLS_ERR_OUT_OF_MEMORY,
+                    "Failed to allocate BIO for CA certificate"); // NOLINT(misc-include-cleaner)
+                X509_STORE_free(new_store);
+                return -1;
+            }
             X509 *ca_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
             BIO_free(bio);
 
@@ -463,7 +489,7 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
     /* Reload client/server certificate if provided */
     if (config->cert_pem) {
         /* Validate PEM data length */
-        if (config->cert_pem_len == 0 || config->cert_pem_len > (size_t)(1024 * 1024)) {
+        if (config->cert_pem_len == 0 || config->cert_pem_len > MTLS_MAX_PEM_SIZE) {
             MTLS_ERR_SET(
                 err, MTLS_ERR_INVALID_CONFIG,
                 "Certificate PEM length invalid (max 1MB)"); // NOLINT(misc-include-cleaner)
@@ -483,6 +509,11 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
         }
 
         BIO *cert_bio = BIO_new_mem_buf(config->cert_pem, (int)config->cert_pem_len);
+        if (!cert_bio) {
+            MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY,
+                         "Failed to allocate BIO for certificate"); // NOLINT(misc-include-cleaner)
+            return -1;
+        }
         X509 *cert = PEM_read_bio_X509(cert_bio, NULL, NULL, NULL);
         BIO_free(cert_bio);
 
@@ -507,7 +538,7 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
     /* Reload private key if provided */
     if (config->key_pem) {
         /* Validate PEM data length */
-        if (config->key_pem_len == 0 || config->key_pem_len > (size_t)(1024 * 1024)) {
+        if (config->key_pem_len == 0 || config->key_pem_len > MTLS_MAX_PEM_SIZE) {
             MTLS_ERR_SET(
                 err, MTLS_ERR_INVALID_CONFIG,
                 "Private key PEM length invalid (max 1MB)"); // NOLINT(misc-include-cleaner)
@@ -527,6 +558,11 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
         }
 
         BIO *key_bio = BIO_new_mem_buf(config->key_pem, (int)config->key_pem_len);
+        if (!key_bio) {
+            MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY,
+                         "Failed to allocate BIO for private key"); // NOLINT(misc-include-cleaner)
+            return -1;
+        }
         EVP_PKEY *key = PEM_read_bio_PrivateKey(key_bio, NULL, NULL, NULL);
         BIO_free(key_bio);
 

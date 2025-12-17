@@ -36,6 +36,18 @@ typedef int mtls_socket_t;
 #endif
 
 /*
+ * Buffer size constants
+ */
+#define MTLS_ADDR_STR_MAX_LEN 128         /* Maximum address string buffer size */
+#define MTLS_HOSTNAME_MAX_LEN 256         /* Maximum hostname buffer size */
+#define MTLS_ERROR_BUF_SIZE 256           /* Error message buffer size */
+#define MTLS_ADDR_INPUT_MAX_LEN 512       /* Maximum input address string length */
+#define MTLS_SAN_MAX_LEN 512              /* Maximum SAN string length */
+#define MTLS_MAX_PORT 65535               /* Maximum valid port number */
+#define MTLS_LISTEN_BACKLOG 128           /* Default listen backlog */
+#define MTLS_MAX_PEM_SIZE (1024UL * 1024) /* Maximum PEM data size (1MB) */
+
+/*
  * Address structure (platform-independent)
  */
 typedef struct mtls_addr {
