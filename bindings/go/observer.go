@@ -9,6 +9,7 @@ extern void mtlsEventGateway(mtls_event *event, void *userdata);
 import "C"
 
 import (
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -94,10 +95,13 @@ func (c *Context) Events(bufferSize int) (<-chan *Event, func()) {
 
 	c.SetObserver(callback)
 
+	var once sync.Once
 	cancel := func() {
-		close(done)
-		c.SetObserver(nil)
-		close(ch)
+		once.Do(func() {
+			close(done)
+			c.SetObserver(nil)
+			close(ch)
+		})
 	}
 
 	return ch, cancel
@@ -127,10 +131,13 @@ func (c *Context) FilteredEvents(bufferSize int, filter EventFilter) (<-chan *Ev
 
 	c.SetObserver(callback)
 
+	var once sync.Once
 	cancel := func() {
-		close(done)
-		c.SetObserver(nil)
-		close(ch)
+		once.Do(func() {
+			close(done)
+			c.SetObserver(nil)
+			close(ch)
+		})
 	}
 
 	return ch, cancel

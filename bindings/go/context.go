@@ -87,16 +87,19 @@ func (c *Context) finalizer() {
 //
 // The addr parameter should be in "host:port" format (e.g., "example.com:443").
 // This is a blocking call that performs TCP connection and TLS handshake.
+//
+// Note: The context read lock is held for the duration of the connect call
+// to prevent use-after-free if Close() is called concurrently.
 func (c *Context) Connect(addr string) (*Conn, error) {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.ctx == nil {
-		c.mu.RUnlock()
 		return nil, &Error{
 			Code:    ErrCtxNotInitialized,
 			Message: "context is closed",
 		}
 	}
-	c.mu.RUnlock()
 
 	cAddr := C.CString(addr)
 	defer freeString(cAddr)
@@ -118,16 +121,19 @@ func (c *Context) Connect(addr string) (*Conn, error) {
 // Listen creates a listener for incoming connections on the specified address.
 //
 // The addr parameter should be in "host:port" format (e.g., "0.0.0.0:8443").
+//
+// Note: The context read lock is held for the duration of the listen call
+// to prevent use-after-free if Close() is called concurrently.
 func (c *Context) Listen(addr string) (*Listener, error) {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.ctx == nil {
-		c.mu.RUnlock()
 		return nil, &Error{
 			Code:    ErrCtxNotInitialized,
 			Message: "context is closed",
 		}
 	}
-	c.mu.RUnlock()
 
 	cAddr := C.CString(addr)
 	defer freeString(cAddr)
@@ -150,16 +156,17 @@ func (c *Context) Listen(addr string) (*Listener, error) {
 // configuration. This is useful for certificate rotation without restart.
 //
 // Note: This should not be called concurrently with itself.
+// The context read lock is held for the duration of the reload call.
 func (c *Context) ReloadCerts() error {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.ctx == nil {
-		c.mu.RUnlock()
 		return &Error{
 			Code:    ErrCtxNotInitialized,
 			Message: "context is closed",
 		}
 	}
-	c.mu.RUnlock()
 
 	var cErr C.mtls_err
 	initErr(&cErr)
