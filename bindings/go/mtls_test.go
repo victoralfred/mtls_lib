@@ -448,6 +448,29 @@ func TestValidateSANsWithSPIFFEWildcard(t *testing.T) {
 	if !ValidateSANs(identity, allowed3) {
 		t.Error("ValidateSANs should match exact SPIFFE ID")
 	}
+
+	// Test that wildcard does NOT match base SPIFFE ID without path
+	identity2 := &PeerIdentity{
+		CommonName: "test",
+		SANs:       []string{},
+		SPIFFEID:   "spiffe://example.com", // No path component
+		NotBefore:  time.Now().Add(-24 * time.Hour),
+		NotAfter:   time.Now().Add(24 * time.Hour),
+	}
+	allowed4 := []string{
+		"spiffe://example.com/*", // Wildcard should NOT match base ID
+	}
+	if ValidateSANs(identity2, allowed4) {
+		t.Error("SPIFFE wildcard pattern should not match base SPIFFE ID without path")
+	}
+
+	// Test that exact match still works for base SPIFFE ID
+	allowed5 := []string{
+		"spiffe://example.com", // Exact match should work
+	}
+	if !ValidateSANs(identity2, allowed5) {
+		t.Error("Exact match should work for base SPIFFE ID")
+	}
 }
 
 func TestEventMetrics(t *testing.T) {

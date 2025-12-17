@@ -346,8 +346,9 @@ func matchSPIFFEWildcard(san, pattern string) bool {
 	// (starts with / and contains no wildcards)
 	remaining := san[len(prefix):]
 	if len(remaining) == 0 {
-		// Exact match (no path component)
-		return true
+		// Wildcard pattern requires a path component
+		// Exact match (no path) should be handled by exact match logic, not wildcard
+		return false
 	}
 	if remaining[0] != '/' {
 		return false
