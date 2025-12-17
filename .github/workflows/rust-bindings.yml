@@ -1,0 +1,317 @@
+name: Rust Bindings CI
+
+on:
+  push:
+    branches: [ main, develop, master ]
+    paths:
+      - 'bindings/rust/**'
+      - 'src/**'
+      - 'include/**'
+      - '.github/workflows/rust-bindings.yml'
+  pull_request:
+    branches: [ main, develop, master ]
+    paths:
+      - 'bindings/rust/**'
+      - 'src/**'
+      - 'include/**'
+      - '.github/workflows/rust-bindings.yml'
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-rust-bindings:
+    name: Test Rust Bindings
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust-version: ['stable', '1.70', '1.75']
+        include:
+          - os: ubuntu-latest
+            rust-version: stable
+          - os: macos-latest
+            rust-version: stable
+          - os: windows-latest
+            rust-version: stable
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            bindings/rust/target/
+          key: ${{ runner.os }}-cargo-${{ matrix.rust-version }}-${{ hashFiles('bindings/rust/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust-version }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake openssl@3 pkg-config
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install openssl -y
+          Start-Sleep -Seconds 5
+
+          # Find OpenSSL installation
+          $possiblePaths = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\OpenSSL-Win64",
+            "C:\OpenSSL"
+          )
+
+          $opensslRoot = $null
+          foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+              Write-Host "Found OpenSSL at: $path"
+              $opensslRoot = $path
+              break
+            }
+          }
+
+          if (-not $opensslRoot) {
+            Write-Error "OpenSSL not found in any expected location"
+            exit 1
+          }
+
+          # Find library files
+          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if ($cryptoLib) {
+            echo "OPENSSL_CRYPTO_LIBRARY=$($cryptoLib.FullName)" >> $env:GITHUB_ENV
+          }
+          if ($sslLib) {
+            echo "OPENSSL_SSL_LIBRARY=$($sslLib.FullName)" >> $env:GITHUB_ENV
+          }
+
+          echo "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$opensslRoot\include" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Setup MSBuild (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build C library (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=OFF \
+            -DMTLS_BUILD_EXAMPLES=OFF
+          cmake --build . --parallel $(if [ "${{ matrix.os }}" = "macos-latest" ]; then sysctl -n hw.ncpu; else nproc; fi)
+
+      - name: Build C library (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Set-Location build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} `
+            -DMTLS_BUILD_TESTS=OFF `
+            -DMTLS_BUILD_EXAMPLES=OFF `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR" `
+            -DOPENSSL_CRYPTO_LIBRARY="$env:OPENSSL_CRYPTO_LIBRARY" `
+            -DOPENSSL_SSL_LIBRARY="$env:OPENSSL_SSL_LIBRARY"
+          cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+        shell: pwsh
+
+      - name: Set library path (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
+
+      - name: Set library path (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
+
+      - name: Set library path (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "PATH=${{ github.workspace }}\build\${{ env.CMAKE_BUILD_TYPE }};$env:PATH" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Set build.rs environment variables
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            echo "MTLS_LIB_DIR=${{ github.workspace }}\build\${{ env.CMAKE_BUILD_TYPE }}" >> $env:GITHUB_ENV
+            echo "MTLS_INCLUDE_DIR=${{ github.workspace }}\include" >> $env:GITHUB_ENV
+          else
+            echo "MTLS_LIB_DIR=${{ github.workspace }}/build" >> $GITHUB_ENV
+            echo "MTLS_INCLUDE_DIR=${{ github.workspace }}/include" >> $GITHUB_ENV
+          fi
+
+      - name: Check Rust formatting
+        working-directory: bindings/rust
+        run: |
+          cargo fmt --all -- --check
+
+      - name: Run Clippy
+        if: matrix.rust-version == 'stable'
+        working-directory: bindings/rust
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build Rust bindings
+        working-directory: bindings/rust
+        run: |
+          cargo build --verbose --all-features
+
+      - name: Run Rust tests
+        working-directory: bindings/rust
+        run: |
+          cargo test --verbose --all-features
+
+      - name: Build Rust examples
+        working-directory: bindings/rust
+        run: |
+          cargo build --verbose --examples --all-features
+
+      - name: Run doc tests
+        working-directory: bindings/rust
+        run: |
+          cargo test --doc --all-features
+
+      - name: Generate documentation
+        if: matrix.os == 'ubuntu-latest' && matrix.rust-version == 'stable'
+        working-directory: bindings/rust
+        run: |
+          cargo doc --no-deps --all-features
+        continue-on-error: true
+
+      - name: Upload documentation
+        if: matrix.os == 'ubuntu-latest' && matrix.rust-version == 'stable'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-docs-${{ github.sha }}
+          path: bindings/rust/target/doc/
+          retention-days: 7
+
+  test-rust-bindings-sys:
+    name: Test Rust sys crate
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config \
+            clang \
+            libclang-dev
+
+      - name: Build C library
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=OFF \
+            -DMTLS_BUILD_EXAMPLES=OFF
+          cmake --build . --parallel $(nproc)
+
+      - name: Set library path
+        run: |
+          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
+
+      - name: Set build.rs environment variables
+        run: |
+          echo "MTLS_LIB_DIR=${{ github.workspace }}/build" >> $GITHUB_ENV
+          echo "MTLS_INCLUDE_DIR=${{ github.workspace }}/include" >> $GITHUB_ENV
+
+      - name: Test sys crate
+        working-directory: bindings/rust/mtls-sys
+        run: |
+          cargo test --verbose
+
+  audit-rust:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: |
+          cargo install cargo-audit --locked
+
+      - name: Run security audit
+        working-directory: bindings/rust
+        run: |
+          cargo audit --deny warnings
+        continue-on-error: true
+
+  summary:
+    name: Rust Bindings Summary
+    runs-on: ubuntu-latest
+    needs: [test-rust-bindings, test-rust-bindings-sys, audit-rust]
+    if: always()
+    
+    steps:
+      - name: Create summary
+        run: |
+          echo "## Rust Bindings Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test-rust-bindings.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sys Crate Tests | ${{ needs.test-rust-bindings-sys.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Audit | ${{ needs.audit-rust.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Matrix" >> $GITHUB_STEP_SUMMARY
+          echo "- OS: ubuntu-latest, macos-latest, windows-latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust Versions: stable, 1.70, 1.75" >> $GITHUB_STEP_SUMMARY
