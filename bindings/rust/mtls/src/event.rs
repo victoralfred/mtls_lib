@@ -57,10 +57,7 @@ impl EventType {
 
     /// Check if this is an error-related event.
     pub fn is_error(&self) -> bool {
-        matches!(
-            self,
-            EventType::ConnectFailure | EventType::HandshakeFailed
-        )
+        matches!(self, EventType::ConnectFailure | EventType::HandshakeFailed)
     }
 
     /// Check if this is a connection lifecycle event.

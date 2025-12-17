@@ -68,7 +68,10 @@ impl Context {
         }
 
         let ptr = NonNull::new(ptr).ok_or_else(|| {
-            Error::new(ErrorCode::ContextCreationFailed, "context creation returned null")
+            Error::new(
+                ErrorCode::ContextCreationFailed,
+                "context creation returned null",
+            )
         })?;
 
         Ok(Context {
@@ -89,17 +92,15 @@ impl Context {
         let c_addr = to_c_string(addr)?;
         let mut err = init_c_err();
 
-        let conn_ptr = unsafe {
-            mtls_sys::mtls_connect(self.inner.ptr.as_ptr(), c_addr.as_ptr(), &mut err)
-        };
+        let conn_ptr =
+            unsafe { mtls_sys::mtls_connect(self.inner.ptr.as_ptr(), c_addr.as_ptr(), &mut err) };
 
         if conn_ptr.is_null() || !is_c_err_ok(&err) {
             return Err(Error::from_c_err(&err));
         }
 
-        let conn_ptr = NonNull::new(conn_ptr).ok_or_else(|| {
-            Error::new(ErrorCode::ConnectionFailed, "connect returned null")
-        })?;
+        let conn_ptr = NonNull::new(conn_ptr)
+            .ok_or_else(|| Error::new(ErrorCode::ConnectionFailed, "connect returned null"))?;
 
         Ok(Conn::from_raw(conn_ptr))
     }
@@ -117,17 +118,15 @@ impl Context {
         let c_addr = to_c_string(addr)?;
         let mut err = init_c_err();
 
-        let listener_ptr = unsafe {
-            mtls_sys::mtls_listen(self.inner.ptr.as_ptr(), c_addr.as_ptr(), &mut err)
-        };
+        let listener_ptr =
+            unsafe { mtls_sys::mtls_listen(self.inner.ptr.as_ptr(), c_addr.as_ptr(), &mut err) };
 
         if listener_ptr.is_null() || !is_c_err_ok(&err) {
             return Err(Error::from_c_err(&err));
         }
 
-        let listener_ptr = NonNull::new(listener_ptr).ok_or_else(|| {
-            Error::new(ErrorCode::ListenerFailed, "listen returned null")
-        })?;
+        let listener_ptr = NonNull::new(listener_ptr)
+            .ok_or_else(|| Error::new(ErrorCode::ListenerFailed, "listen returned null"))?;
 
         Ok(Listener::from_raw(listener_ptr, addr.to_string()))
     }

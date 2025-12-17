@@ -202,7 +202,8 @@ impl Config {
 
         // Timeouts - clamp to u32::MAX to prevent overflow
         // Duration::as_millis() returns u128, which can exceed u32::MAX
-        guard.config.connect_timeout_ms = self.connect_timeout.as_millis().min(u32::MAX as u128) as u32;
+        guard.config.connect_timeout_ms =
+            self.connect_timeout.as_millis().min(u32::MAX as u128) as u32;
         guard.config.read_timeout_ms = self.read_timeout.as_millis().min(u32::MAX as u128) as u32;
         guard.config.write_timeout_ms = self.write_timeout.as_millis().min(u32::MAX as u128) as u32;
 

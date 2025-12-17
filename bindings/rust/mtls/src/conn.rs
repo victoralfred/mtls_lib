@@ -77,16 +77,14 @@ impl Conn {
         let mut identity: mtls_sys::mtls_peer_identity = unsafe { std::mem::zeroed() };
         let mut err = init_c_err();
 
-        let result = unsafe {
-            mtls_sys::mtls_get_peer_identity(ptr, &mut identity, &mut err)
-        };
+        let result = unsafe { mtls_sys::mtls_get_peer_identity(ptr, &mut identity, &mut err) };
 
         if result != 0 || !is_c_err_ok(&err) {
             return None;
         }
 
         let rust_identity = unsafe { PeerIdentity::from_c(&identity) };
-        
+
         // Free the C library's allocated memory for SANs
         unsafe {
             mtls_sys::mtls_free_peer_identity(&mut identity);
@@ -101,9 +99,8 @@ impl Conn {
 
         let mut org = [0i8; 256];
 
-        let result = unsafe {
-            mtls_sys::mtls_get_peer_organization(ptr, org.as_mut_ptr(), org.len())
-        };
+        let result =
+            unsafe { mtls_sys::mtls_get_peer_organization(ptr, org.as_mut_ptr(), org.len()) };
 
         if result != 0 {
             return None;
@@ -123,9 +120,7 @@ impl Conn {
 
         let mut ou = [0i8; 256];
 
-        let result = unsafe {
-            mtls_sys::mtls_get_peer_org_unit(ptr, ou.as_mut_ptr(), ou.len())
-        };
+        let result = unsafe { mtls_sys::mtls_get_peer_org_unit(ptr, ou.as_mut_ptr(), ou.len()) };
 
         if result != 0 {
             return None;
@@ -145,9 +140,7 @@ impl Conn {
 
         let mut addr = [0i8; 128];
 
-        let result = unsafe {
-            mtls_sys::mtls_get_remote_addr(ptr, addr.as_mut_ptr(), addr.len())
-        };
+        let result = unsafe { mtls_sys::mtls_get_remote_addr(ptr, addr.as_mut_ptr(), addr.len()) };
 
         if result != 0 {
             return None;
@@ -167,9 +160,7 @@ impl Conn {
 
         let mut addr = [0i8; 128];
 
-        let result = unsafe {
-            mtls_sys::mtls_get_local_addr(ptr, addr.as_mut_ptr(), addr.len())
-        };
+        let result = unsafe { mtls_sys::mtls_get_local_addr(ptr, addr.as_mut_ptr(), addr.len()) };
 
         if result != 0 {
             return None;
@@ -229,9 +220,8 @@ impl Read for Conn {
 
         let mut err = init_c_err();
 
-        let result = unsafe {
-            mtls_sys::mtls_read(ptr, buf.as_mut_ptr() as *mut _, buf.len(), &mut err)
-        };
+        let result =
+            unsafe { mtls_sys::mtls_read(ptr, buf.as_mut_ptr() as *mut _, buf.len(), &mut err) };
 
         if result < 0 {
             let error = Error::from_c_err(&err);
@@ -260,9 +250,8 @@ impl Write for Conn {
 
         let mut err = init_c_err();
 
-        let result = unsafe {
-            mtls_sys::mtls_write(ptr, buf.as_ptr() as *const _, buf.len(), &mut err)
-        };
+        let result =
+            unsafe { mtls_sys::mtls_write(ptr, buf.as_ptr() as *const _, buf.len(), &mut err) };
 
         if result < 0 {
             let error = Error::from_c_err(&err);

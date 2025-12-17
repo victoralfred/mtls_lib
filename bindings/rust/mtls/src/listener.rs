@@ -53,12 +53,7 @@ impl Listener {
     pub fn accept(&self) -> Result<Conn> {
         let ptr = match self.ptr {
             Some(p) => p.as_ptr(),
-            None => {
-                return Err(Error::new(
-                    ErrorCode::ListenerClosed,
-                    "listener is closed",
-                ))
-            }
+            None => return Err(Error::new(ErrorCode::ListenerClosed, "listener is closed")),
         };
 
         let mut err = init_c_err();
@@ -69,9 +64,8 @@ impl Listener {
             return Err(Error::from_c_err(&err));
         }
 
-        let conn_ptr = NonNull::new(conn_ptr).ok_or_else(|| {
-            Error::new(ErrorCode::AcceptFailed, "accept returned null")
-        })?;
+        let conn_ptr = NonNull::new(conn_ptr)
+            .ok_or_else(|| Error::new(ErrorCode::AcceptFailed, "accept returned null"))?;
 
         Ok(Conn::from_raw(conn_ptr))
     }
