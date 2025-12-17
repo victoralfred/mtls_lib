@@ -381,55 +381,12 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
     let server_addr = format!("127.0.0.1:{}", port);
 
     // Start listener
-    let listener = server_ctx.listen(&server_addr).expect("Failed to listen");
-    let listener = Arc::new(Mutex::new(listener));
+    // Note: Since Listener is not Send, we can't spawn it in a separate task.
+    // We'll run the acceptor loop directly in this function.
+    let mut listener = server_ctx.listen(&server_addr).expect("Failed to listen");
 
     let metrics = Arc::new(AsyncStressMetrics::new());
     let stop_server = Arc::new(AtomicBool::new(false));
-
-    // Start server acceptor task
-    let listener_acceptor = listener.clone();
-    let metrics_acceptor = metrics.clone();
-    let stop_acceptor = stop_server.clone();
-    let acceptor_handle = tokio::spawn(async move {
-        loop {
-            if stop_acceptor.load(Ordering::SeqCst) {
-                break;
-            }
-
-            let accept_result = {
-                let guard = listener_acceptor.lock().await;
-                if guard.is_closed() {
-                    break;
-                }
-                // accept_async can be called while holding the lock since it's async
-                guard.accept_async().await
-            };
-
-            match accept_result {
-                Ok(conn) => {
-                    let metrics = metrics_acceptor.clone();
-                    // Spawn task to handle connection
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_server_connection(conn, metrics.clone()).await {
-                            metrics.record_error(&format!("handler: {}", e)).await;
-                        }
-                    });
-                }
-                Err(e) => {
-                    // Check if we're shutting down
-                    if stop_acceptor.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    metrics_acceptor
-                        .record_error(&format!("accept: {}", e))
-                        .await;
-                    // Brief delay before retrying
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            }
-        }
-    });
 
     // Progress reporting task
     let progress_metrics = metrics.clone();
@@ -570,22 +527,88 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
         client_handles.push(handle);
     }
 
-    // Wait for all client workers
-    for handle in client_handles {
-        handle.await.expect("Client worker panicked");
+    // Run acceptor loop concurrently with clients
+    // Since Listener is not Send, we run the acceptor loop directly in this function.
+    // Clients are spawned tasks, so they run concurrently with the acceptor loop.
+    let metrics_acceptor = metrics.clone();
+    let stop_acceptor = stop_server.clone();
+
+    // Run acceptor loop concurrently with clients
+    // Since Listener is not Send, we can't spawn it, so we run it directly
+    // Clients are spawned tasks, so they run concurrently automatically
+    let metrics_acceptor = metrics.clone();
+    let stop_acceptor = stop_server.clone();
+
+    // Spawn clients - they run concurrently with the acceptor loop below
+    let clients_handle = tokio::spawn(async move {
+        for handle in client_handles {
+            handle.await.expect("Client worker panicked");
+        }
+        // Signal shutdown when clients finish
+        stop_server.store(true, Ordering::SeqCst);
+    });
+
+    // Run acceptor loop directly (not spawned, since Listener is not Send)
+    // Use futures::select! to coordinate with clients
+    use futures::future::{select, Either};
+    let acceptor_future = async {
+        loop {
+            if stop_acceptor.load(Ordering::SeqCst) {
+                break;
+            }
+
+            if listener.is_closed() {
+                break;
+            }
+
+            let accept_result = listener.accept_async().await;
+
+            match accept_result {
+                Ok(conn) => {
+                    let metrics = metrics_acceptor.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_server_connection(conn, metrics.clone()).await {
+                            metrics.record_error(&format!("handler: {}", e)).await;
+                        }
+                    });
+                }
+                Err(e) => {
+                    if stop_acceptor.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    metrics_acceptor
+                        .record_error(&format!("accept: {}", e))
+                        .await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        }
+    };
+
+    // Use futures::select! to run both concurrently (it doesn't require Send)
+    let mut acceptor_pinned = Box::pin(acceptor_future);
+    let mut clients_pinned = Box::pin(clients_handle);
+
+    match select(acceptor_pinned.as_mut(), clients_pinned.as_mut()).await {
+        Either::Left((_, _)) => {
+            // Acceptor finished first (shouldn't happen normally)
+        }
+        Either::Right((_, _)) => {
+            // Clients finished - stop flag is already set, acceptor should exit
+        }
     }
+
+    // Drop pinned futures to release borrows
+    drop(acceptor_pinned);
+    drop(clients_pinned);
+
+    // Now we can shutdown the listener
+    listener.shutdown();
 
     let total_duration = start_time.elapsed();
 
-    // Stop server
-    stop_server.store(true, Ordering::SeqCst);
-    {
-        let mut guard = listener_acceptor.lock().await;
-        guard.shutdown();
-    }
-
-    // Wait for acceptor and progress tasks
-    let _ = tokio::try_join!(acceptor_handle, progress_handle);
+    // Wait for progress task
+    progress_handle.await.expect("Progress task panicked");
 
     // Give a moment for any remaining connections to close
     tokio::time::sleep(Duration::from_secs(2)).await;

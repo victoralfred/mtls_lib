@@ -30,6 +30,11 @@ name = "async_stress"
 path = "tests/async_stress_test.rs"
 required-features = ["stress", "async-tokio"]
 
+[[test]]
+name = "async_api"
+path = "tests/async_api_test.rs"
+required-features = ["async-tokio"]
+
 [features]
 default = []
 stress = []

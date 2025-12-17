@@ -351,10 +351,17 @@ mod async_impl {
                     }
                     Poll::Ready(result)
                 }
-                Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
-                    "blocking task panicked: {}",
-                    e
-                )))),
+                Poll::Ready(Err(e)) => {
+                    // Task panicked - connection is lost, restore a closed connection
+                    // to prevent uninitialized memory in self
+                    unsafe {
+                        std::ptr::write(&mut *self, Conn { ptr: None });
+                    }
+                    Poll::Ready(Err(io::Error::other(format!(
+                        "blocking task panicked: {}",
+                        e
+                    ))))
+                }
                 Poll::Pending => Poll::Pending,
             }
         }
@@ -415,10 +422,17 @@ mod async_impl {
                     }
                     Poll::Ready(result)
                 }
-                Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
-                    "blocking task panicked: {}",
-                    e
-                )))),
+                Poll::Ready(Err(e)) => {
+                    // Task panicked - connection is lost, restore a closed connection
+                    // to prevent uninitialized memory in self
+                    unsafe {
+                        std::ptr::write(&mut *self, Conn { ptr: None });
+                    }
+                    Poll::Ready(Err(io::Error::other(format!(
+                        "blocking task panicked: {}",
+                        e
+                    ))))
+                }
                 Poll::Pending => Poll::Pending,
             }
         }
