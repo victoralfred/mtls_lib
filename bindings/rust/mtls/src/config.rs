@@ -114,7 +114,7 @@ impl Config {
 
     /// Convert to a C config structure with RAII cleanup.
     pub(crate) fn to_c(&self) -> Result<CConfigGuard> {
-        let mut config: mtls_sys::mtls_config = unsafe { std::mem::zeroed() };
+        let mut config: mtls_sys::mtls_config = mtls_sys::mtls_config::default();
         unsafe {
             mtls_sys::mtls_config_init(&mut config);
         }
