@@ -138,6 +138,20 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
     atomic_init(&conn->state, MTLS_CONN_STATE_NONE);
     conn->is_server = true;
 
+    /* Check if listener socket is still valid before accepting.
+     * This prevents calling accept() on a closed socket after shutdown. */
+    if (listener->sock == MTLS_INVALID_SOCKET) {
+        MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Listener socket is closed");
+        /* Emit CONNECT_FAILURE event */
+        event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_CONNECTION_CLOSED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
+        mtls_emit_event(listener->ctx, &event);
+        free(conn);
+        return NULL;
+    }
+
     /* Accept connection */
     conn->sock = platform_socket_accept(listener->sock, &conn->remote_addr, err);
     if (conn->sock == MTLS_INVALID_SOCKET) {
@@ -331,16 +345,30 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
     return conn;
 }
 
-void mtls_listener_close(mtls_listener *listener)
+void mtls_listener_shutdown(mtls_listener *listener)
 {
     if (!listener) {
         return;
     }
 
     if (listener->sock != MTLS_INVALID_SOCKET) {
+        /* Shutdown the socket first to interrupt any blocking accept() calls.
+         * This ensures that all threads blocked in accept() will wake up immediately. */
+        (void)platform_socket_shutdown(listener->sock, SHUT_RDWR);
+        /* Then close the socket to free the file descriptor */
         platform_socket_close(listener->sock);
         listener->sock = MTLS_INVALID_SOCKET;
     }
+}
+
+void mtls_listener_close(mtls_listener *listener)
+{
+    if (!listener) {
+        return;
+    }
+
+    /* Shutdown socket if not already done */
+    mtls_listener_shutdown(listener);
 
     platform_secure_zero(listener, sizeof(*listener));
     free(listener);
