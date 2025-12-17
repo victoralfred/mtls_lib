@@ -14,7 +14,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <threads.h>
+
+/* Cross-platform threading - use pthreads on POSIX, Win32 API on Windows */
+#if !defined(_WIN32)
+#    include <pthread.h>
+typedef pthread_mutex_t mtls_mutex_t;
+#    define mtls_mutex_init(m) pthread_mutex_init((m), NULL)
+#    define mtls_mutex_destroy(m) pthread_mutex_destroy(m)
+#    define mtls_mutex_lock(m) pthread_mutex_lock(m)
+#    define mtls_mutex_unlock(m) pthread_mutex_unlock(m)
+#else
+#    define WIN32_LEAN_AND_MEAN
+#    include <windows.h>
+typedef CRITICAL_SECTION mtls_mutex_t;
+#    define mtls_mutex_init(m) InitializeCriticalSection(m)
+#    define mtls_mutex_destroy(m) DeleteCriticalSection(m)
+#    define mtls_mutex_lock(m) EnterCriticalSection(m)
+#    define mtls_mutex_unlock(m) LeaveCriticalSection(m)
+#endif
 
 /* Test certificate paths */
 #define CA_CERT "../certs/ca-cert.pem"
@@ -38,25 +55,25 @@ enum { MAX_TRACKED_EVENTS = 100 };
 typedef struct {
     tracked_event events[MAX_TRACKED_EVENTS];
     size_t event_count;
-    mtx_t lock;
+    mtls_mutex_t lock;
 } event_tracker;
 
 static void event_tracker_init(event_tracker *tracker)
 {
     (void)mtls_memset_s(tracker, sizeof(*tracker), 0, sizeof(*tracker));
-    (void)mtx_init(&tracker->lock, mtx_plain);
+    mtls_mutex_init(&tracker->lock);
 }
 
 static void event_tracker_free(event_tracker *tracker)
 {
-    mtx_destroy(&tracker->lock);
+    mtls_mutex_destroy(&tracker->lock);
 }
 
 static void event_callback(const mtls_event *event, void *userdata)
 {
     event_tracker *tracker = (event_tracker *)userdata;
 
-    (void)mtx_lock(&tracker->lock);
+    mtls_mutex_lock(&tracker->lock);
 
     if (tracker->event_count < MAX_TRACKED_EVENTS) {
         tracked_event *tracked = &tracker->events[tracker->event_count++];
@@ -74,7 +91,7 @@ static void event_callback(const mtls_event *event, void *userdata)
         }
     }
 
-    (void)mtx_unlock(&tracker->lock);
+    mtls_mutex_unlock(&tracker->lock);
 }
 
 static const char *event_type_str(mtls_event_type type)
