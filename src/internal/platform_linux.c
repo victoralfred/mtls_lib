@@ -28,6 +28,9 @@
 #include <string.h>
 #include <time.h>
 
+// magic numbers and string lengths
+const int ERROR_BUFFER_SIZE = 256;
+
 int platform_init(void)
 {
     /* No initialization needed on Linux */
@@ -43,16 +46,20 @@ mtls_socket_t platform_socket_create(int domain, int type, int protocol, mtls_er
 {
     mtls_socket_t sock = socket(domain, type, protocol);
     if (sock == MTLS_INVALID_SOCKET) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
+
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_SOCKET_CREATE_FAILED, "Failed to create socket: %s", errbuf);
+
         if (err) {
             err->os_errno = saved_errno;
         }
     }
+
     return sock;
 }
+
 
 void platform_socket_close(mtls_socket_t sock)
 {
@@ -63,8 +70,8 @@ void platform_socket_close(mtls_socket_t sock)
 
 int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_err *err)
 {
-    char errbuf[256];
-    int saved_errno = 0; // cppcheck-suppress unreadVariable
+    char errbuf[ERROR_BUFFER_SIZE];
+    int saved_errno;
 
     int flags = fcntl(sock, F_GETFL, 0);
     if (flags == -1) {
@@ -103,7 +110,7 @@ int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
     time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &time_val, sizeof(time_val)) < 0) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set recv timeout: %s", errbuf);
@@ -123,7 +130,7 @@ int platform_socket_set_send_timeout(mtls_socket_t sock, uint32_t timeout_ms, mt
     time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
 
     if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &time_val, sizeof(time_val)) < 0) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set send timeout: %s", errbuf);
@@ -140,7 +147,7 @@ int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err *err
 {
     int opt = enable ? 1 : 0;
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to set SO_REUSEADDR: %s", errbuf);
@@ -156,7 +163,7 @@ int platform_socket_set_reuseaddr(mtls_socket_t sock, bool enable, mtls_err *err
 int platform_socket_bind(mtls_socket_t sock, const mtls_addr *addr, mtls_err *err)
 {
     if (bind(sock, &addr->addr.sa, addr->len) < 0) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, platform_socket_error_to_mtls(saved_errno), "Failed to bind socket: %s",
@@ -173,7 +180,7 @@ int platform_socket_bind(mtls_socket_t sock, const mtls_addr *addr, mtls_err *er
 int platform_socket_listen(mtls_socket_t sock, int backlog, mtls_err *err)
 {
     if (listen(sock, backlog) < 0) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_SOCKET_LISTEN_FAILED, "Failed to listen on socket: %s", errbuf);
@@ -192,7 +199,7 @@ mtls_socket_t platform_socket_accept(mtls_socket_t sock, mtls_addr *addr, mtls_e
     mtls_socket_t client = accept(sock, &addr->addr.sa, &addr->len);
 
     if (client == MTLS_INVALID_SOCKET) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_ACCEPT_FAILED, "Failed to accept connection: %s", errbuf);
@@ -208,8 +215,8 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
                             mtls_err *err)
 {
     int ret = 0;
-    char errbuf[256];
-    int saved_errno = 0; // cppcheck-suppress unreadVariable
+    char errbuf[ERROR_BUFFER_SIZE];
+    int saved_errno;
 
     if (timeout_ms > 0) {
         /* Set non-blocking for timeout */
@@ -310,7 +317,7 @@ ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err
         if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
         } else {
-            char errbuf[256];
+            char errbuf[ERROR_BUFFER_SIZE];
             platform_strerror(saved_errno, errbuf, sizeof(errbuf));
             MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "Read failed: %s", errbuf);
         }
@@ -331,7 +338,7 @@ ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, m
         if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
         } else {
-            char errbuf[256];
+            char errbuf[ERROR_BUFFER_SIZE];
             platform_strerror(saved_errno, errbuf, sizeof(errbuf));
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write failed: %s", errbuf);
         }
@@ -346,7 +353,7 @@ ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, m
 int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err)
 {
     if (shutdown(sock, how) < 0) {
-        char errbuf[256];
+        char errbuf[ERROR_BUFFER_SIZE];
         int saved_errno = errno;
         platform_strerror(saved_errno, errbuf, sizeof(errbuf));
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Shutdown failed: %s", errbuf);
@@ -373,7 +380,7 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
         return -1;
     }
 
-    char host[256];
+    char host[ERROR_BUFFER_SIZE];
     char port[16];
     const char *colon = NULL;
 
@@ -460,7 +467,7 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
 int platform_format_addr(const mtls_addr *addr, char *buf, size_t buf_len)
 {
     char host[INET6_ADDRSTRLEN];
-    uint16_t port = 0; // cppcheck-suppress unreadVariable
+    uint16_t port;
 
     if (addr->addr.sa.sa_family == AF_INET) {
         inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));

@@ -399,7 +399,7 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
 int platform_format_addr(const mtls_addr *addr, char *buf, size_t buf_len)
 {
     char host[INET6_ADDRSTRLEN];
-    uint16_t port = 0; // cppcheck-suppress unreadVariable
+    uint16_t port;
 
     if (addr->addr.sa.sa_family == AF_INET) {
         InetNtopA(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
