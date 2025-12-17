@@ -175,9 +175,10 @@ config.KeyPEM = keyBytes
 ```go
 // Restrict connections to specific SANs
 config.AllowedSANs = []string{
-    "spiffe://example.com/service/api",
-    "*.example.com",  // Wildcard matching
-    "service.example.com",
+    "spiffe://example.com/service/api",     // Exact SPIFFE ID match
+    "spiffe://example.com/client/*",        // SPIFFE ID wildcard (matches all paths under /client)
+    "*.example.com",                       // DNS wildcard (matches subdomains)
+    "service.example.com",                  // Exact DNS match
 }
 ```
 
@@ -345,7 +346,11 @@ fmt.Printf("TTL: %v\n", identity.TTL())
 
 ```go
 // Check if peer SANs match allowed list
-allowed := []string{"*.example.com", "spiffe://example.com/service"}
+allowed := []string{
+    "*.example.com",                        // DNS wildcard
+    "spiffe://example.com/service",         // Exact SPIFFE ID
+    "spiffe://example.com/client/*",        // SPIFFE ID wildcard
+}
 valid, err := conn.ValidatePeerSANs(allowed)
 if err != nil {
     log.Fatalf("Validation error: %v", err)
