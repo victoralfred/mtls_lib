@@ -26,13 +26,10 @@ import (
 
 // StressTestConfig holds configuration for stress testing
 type StressTestConfig struct {
-	TotalConnections    int
-	ConcurrentWorkers   int
-	ConnectionsPerBatch int
-	RampUpDuration      time.Duration
-	HoldDuration        time.Duration
-	MessageSize         int
-	MessagesPerConn     int
+	TotalConnections  int
+	ConcurrentWorkers int
+	MessageSize       int
+	MessagesPerConn   int
 }
 
 // StressMetrics tracks stress test results
@@ -40,7 +37,6 @@ type StressMetrics struct {
 	ConnectionsAttempted int64
 	ConnectionsSucceeded int64
 	ConnectionsFailed    int64
-	HandshakesFailed     int64
 	BytesSent            int64
 	BytesReceived        int64
 	TotalConnectTime     int64 // nanoseconds (includes TCP + TLS handshake)
@@ -97,7 +93,7 @@ func (m *StressMetrics) PrintSummary() {
 }
 
 // checkSystemLimits checks and reports system limits
-func checkSystemLimits(t *testing.T, targetConns int) {
+func checkSystemLimits(t *testing.T, targetConns int, workers int) {
 	var rlimit syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlimit); err != nil {
 		t.Logf("Warning: Could not get file descriptor limit: %v", err)
@@ -110,21 +106,22 @@ func checkSystemLimits(t *testing.T, targetConns int) {
 	fmt.Printf("  File Descriptors (soft): %d\n", rlimit.Cur)
 	fmt.Printf("  File Descriptors (hard): %d\n", rlimit.Max)
 	fmt.Printf("  Target Connections:      %d\n", targetConns)
+	fmt.Printf("  Concurrent Workers:      %d\n", workers)
 	fmt.Printf("  GOMAXPROCS:              %d\n", runtime.GOMAXPROCS(0))
 	fmt.Printf("  Num CPU:                 %d\n", runtime.NumCPU())
 
-	// Each connection needs ~3 file descriptors (client, server accept, listener)
-	// Plus some for the process itself
-	neededFDs := targetConns*3 + 100
+	// With connection recycling, we only need FDs for concurrent connections
+	// Each connection uses ~2 FDs (client + server side), plus overhead
+	neededFDs := workers*4 + 100
+	fmt.Printf("  Est. Max FDs in use:     %d\n", neededFDs)
 
 	if uint64(neededFDs) > rlimit.Cur {
 		fmt.Printf("\n  WARNING: May need more file descriptors!\n")
 		fmt.Printf("  Run: ulimit -n %d\n", neededFDs)
+	} else {
+		fmt.Printf("\n  ✓ FD limit sufficient for %d concurrent workers\n", workers)
 	}
 
-	// Memory estimate: ~20KB per TLS connection
-	memNeeded := targetConns * 20 * 1024
-	fmt.Printf("\n  Estimated Memory Needed: %.1f MB\n", float64(memNeeded)/1024/1024)
 	fmt.Println(strings.Repeat("=", 60))
 }
 
@@ -191,7 +188,8 @@ func findAvailablePortForStress() (int, error) {
 	return port, nil
 }
 
-// TestStressConnections runs the stress test
+// TestStressConnections runs the stress test with connection recycling
+// Uses a fixed pool of workers that each process multiple connections sequentially
 func TestStressConnections(t *testing.T) {
 	if os.Getenv("MTLS_STRESS_TEST") == "" {
 		t.Skip("Skipping stress test. Set MTLS_STRESS_TEST=1 to run.")
@@ -205,13 +203,9 @@ func TestStressConnections(t *testing.T) {
 		}
 	}
 
-	// Limit workers to avoid FD_SETSIZE (1024) limit in select()
-	// Each connection uses ~3 FDs (client, server accept, listener overhead)
-	// Stay safely under 1024 concurrent connections
-	workers := 32
-	if runtime.NumCPU() < 8 {
-		workers = runtime.NumCPU() * 2
-	}
+	// Use moderate worker count - each worker processes many connections sequentially
+	// This keeps FD usage low while maintaining high throughput
+	workers := 48
 	if env := os.Getenv("MTLS_STRESS_WORKERS"); env != "" {
 		if n, err := strconv.Atoi(env); err == nil {
 			workers = n
@@ -219,15 +213,13 @@ func TestStressConnections(t *testing.T) {
 	}
 
 	config := StressTestConfig{
-		TotalConnections:    targetConns,
-		ConcurrentWorkers:   workers,
-		ConnectionsPerBatch: 100,
-		HoldDuration:        0, // No hold - pure throughput test
-		MessageSize:         64,
-		MessagesPerConn:     1,
+		TotalConnections:  targetConns,
+		ConcurrentWorkers: workers,
+		MessageSize:       64,
+		MessagesPerConn:   1,
 	}
 
-	checkSystemLimits(t, targetConns)
+	checkSystemLimits(t, targetConns, workers)
 
 	// Generate certificates
 	caCertPEM, serverCertPEM, serverKeyPEM, clientCertPEM, clientKeyPEM := generateStressCerts(t)
@@ -267,21 +259,17 @@ func TestStressConnections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to listen: %v", err)
 	}
-	defer listener.Close()
 
 	// Metrics
 	metrics := &StressMetrics{}
 
-	// Server connection tracking to prevent goroutine leaks
-	var serverConns []*Conn
-	var serverConnsMu sync.Mutex
-	serverHandlerWg := sync.WaitGroup{}
-
-	// Server acceptor
+	// Server handlers - simple echo with immediate cleanup
+	// No tracking of connections - let them be GC'd after handler exits
 	serverWg := sync.WaitGroup{}
 	stopServer := make(chan struct{})
+	activeHandlers := int64(0)
 
-	// Start multiple server acceptors
+	// Start server acceptors
 	for i := 0; i < workers; i++ {
 		serverWg.Add(1)
 		go func() {
@@ -295,28 +283,30 @@ func TestStressConnections(t *testing.T) {
 
 				conn, err := listener.Accept()
 				if err != nil {
-					return
+					// Check if we're shutting down
+					select {
+					case <-stopServer:
+						return
+					default:
+						// Accept error during normal operation
+						return
+					}
 				}
 
-				// Track connection for cleanup
-				serverConnsMu.Lock()
-				serverConns = append(serverConns, conn)
-				serverConnsMu.Unlock()
-
-				serverHandlerWg.Add(1)
+				// Handle connection in goroutine - closes when done
+				atomic.AddInt64(&activeHandlers, 1)
 				go func(c *Conn) {
-					defer serverHandlerWg.Done()
+					defer atomic.AddInt64(&activeHandlers, -1)
 					defer c.Close()
+
 					buf := make([]byte, 1024)
-					for {
-						n, err := c.Read(buf)
-						if err != nil {
-							return
-						}
-						if _, err := c.Write(buf[:n]); err != nil {
-							return
-						}
+					// Single read-write cycle (matching client behavior)
+					n, err := c.Read(buf)
+					if err != nil {
+						return
 					}
+					_, _ = c.Write(buf[:n])
+					// Connection closes immediately after response
 				}(conn)
 			}
 		}()
@@ -337,29 +327,32 @@ func TestStressConnections(t *testing.T) {
 				succeeded := atomic.LoadInt64(&metrics.ConnectionsSucceeded)
 				failed := atomic.LoadInt64(&metrics.ConnectionsFailed)
 				current := atomic.LoadInt64(&metrics.CurrentConns)
+				handlers := atomic.LoadInt64(&activeHandlers)
 				elapsed := time.Since(startTime).Seconds()
 				rate := float64(succeeded) / elapsed
 
-				fmt.Printf("\r[%5.1fs] Attempted: %6d | Succeeded: %6d | Failed: %4d | Current: %5d | Rate: %.0f/s    ",
-					elapsed, attempted, succeeded, failed, current, rate)
+				fmt.Printf("\r[%5.1fs] Attempted: %6d | Succeeded: %6d | Failed: %4d | Active: %3d/%3d | Rate: %.0f/s    ",
+					elapsed, attempted, succeeded, failed, current, handlers, rate)
 			}
 		}
 	}()
 
-	// Client workers
+	// Client workers - each worker processes multiple connections sequentially
 	fmt.Printf("\nStarting stress test: %d connections with %d workers\n\n", targetConns, workers)
 	startTime := time.Now()
 
 	clientWg := sync.WaitGroup{}
-	connChan := make(chan int, config.TotalConnections)
+	connChan := make(chan int, workers*2) // Small buffer to prevent blocking
 
-	// Fill the channel with connection IDs
-	for i := 0; i < config.TotalConnections; i++ {
-		connChan <- i
-	}
-	close(connChan)
+	// Producer: feed connection IDs to workers
+	go func() {
+		for i := 0; i < config.TotalConnections; i++ {
+			connChan <- i
+		}
+		close(connChan)
+	}()
 
-	// Start workers
+	// Start client workers
 	for w := 0; w < workers; w++ {
 		clientWg.Add(1)
 		go func() {
@@ -369,23 +362,11 @@ func TestStressConnections(t *testing.T) {
 			for i := range message {
 				message[i] = byte('A' + (i % 26))
 			}
+			buf := make([]byte, 1024)
 
+			// Process connections sequentially - one at a time per worker
 			for range connChan {
 				atomic.AddInt64(&metrics.ConnectionsAttempted, 1)
-
-				connectStart := time.Now()
-				conn, err := clientCtx.Connect(serverAddr)
-				connectDuration := time.Since(connectStart)
-
-				if err != nil {
-					atomic.AddInt64(&metrics.ConnectionsFailed, 1)
-					metrics.RecordError(err)
-					continue
-				}
-
-				atomic.AddInt64(&metrics.ConnectionsSucceeded, 1)
-				atomic.AddInt64(&metrics.TotalConnectTime, connectDuration.Nanoseconds())
-
 				current := atomic.AddInt64(&metrics.CurrentConns, 1)
 
 				// Update max concurrent
@@ -396,78 +377,77 @@ func TestStressConnections(t *testing.T) {
 					}
 				}
 
-				// Send/receive messages
-				for m := 0; m < config.MessagesPerConn; m++ {
-					n, err := conn.Write(message)
-					if err != nil {
-						metrics.RecordError(err)
-						break
-					}
-					atomic.AddInt64(&metrics.BytesSent, int64(n))
+				// Connect
+				connectStart := time.Now()
+				conn, err := clientCtx.Connect(serverAddr)
+				connectDuration := time.Since(connectStart)
 
-					buf := make([]byte, 1024)
-					n, err = conn.Read(buf)
-					if err != nil {
-						metrics.RecordError(err)
-						break
-					}
-					atomic.AddInt64(&metrics.BytesReceived, int64(n))
+				if err != nil {
+					atomic.AddInt64(&metrics.ConnectionsFailed, 1)
+					atomic.AddInt64(&metrics.CurrentConns, -1)
+					metrics.RecordError(err)
+					continue
 				}
 
-				// Hold connection briefly
-				if config.HoldDuration > 0 {
-					time.Sleep(config.HoldDuration)
+				// Send message
+				n, err := conn.Write(message)
+				if err != nil {
+					conn.Close()
+					atomic.AddInt64(&metrics.ConnectionsFailed, 1)
+					atomic.AddInt64(&metrics.CurrentConns, -1)
+					metrics.RecordError(err)
+					continue
 				}
+				atomic.AddInt64(&metrics.BytesSent, int64(n))
 
+				// Receive response
+				n, err = conn.Read(buf)
+				if err != nil {
+					conn.Close()
+					atomic.AddInt64(&metrics.ConnectionsFailed, 1)
+					atomic.AddInt64(&metrics.CurrentConns, -1)
+					metrics.RecordError(err)
+					continue
+				}
+				atomic.AddInt64(&metrics.BytesReceived, int64(n))
+
+				// Close connection immediately - releases FDs
 				conn.Close()
+
+				atomic.AddInt64(&metrics.ConnectionsSucceeded, 1)
+				atomic.AddInt64(&metrics.TotalConnectTime, connectDuration.Nanoseconds())
 				atomic.AddInt64(&metrics.CurrentConns, -1)
 			}
 		}()
 	}
 
-	// Wait for clients
+	// Wait for all client connections to complete
 	clientWg.Wait()
 	totalDuration := time.Since(startTime)
 
 	// Stop progress reporting
 	close(progressDone)
 
-	// Graceful server shutdown:
-	// 1. Signal acceptors to stop
+	// Graceful server shutdown
 	close(stopServer)
-
-	// 2. Close listener to unblock Accept() calls
 	listener.Close()
 
-	// 3. Close all tracked server connections in parallel to unblock Read() calls
-	serverConnsMu.Lock()
-	closeWg := sync.WaitGroup{}
-	for _, c := range serverConns {
-		closeWg.Add(1)
-		go func(conn *Conn) {
-			defer closeWg.Done()
-			conn.Close()
-		}(c)
-	}
-	serverConnsMu.Unlock()
-	closeWg.Wait()
-
-	// 4. Wait for server acceptor goroutines (these exit quickly)
-	serverWg.Wait()
-
-	// 5. Wait briefly for handler goroutines (non-blocking for test speed)
-	//    Handlers will clean up via deferred Close() when their Read() returns error
-	handlersDone := make(chan struct{})
+	// Wait for server to finish (with timeout)
+	serverDone := make(chan struct{})
 	go func() {
-		serverHandlerWg.Wait()
-		close(handlersDone)
+		serverWg.Wait()
+		// Wait for handlers to drain
+		for atomic.LoadInt64(&activeHandlers) > 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		close(serverDone)
 	}()
+
 	select {
-	case <-handlersDone:
-		// All handlers cleaned up
-	case <-time.After(500 * time.Millisecond):
-		// Handlers still running - they'll clean up eventually via defer
-		// This is acceptable as the test has completed its measurements
+	case <-serverDone:
+		// Clean shutdown
+	case <-time.After(5 * time.Second):
+		t.Log("Server shutdown timeout - continuing")
 	}
 
 	// Print results
@@ -480,8 +460,8 @@ func TestStressConnections(t *testing.T) {
 
 	// Fail if too many failures
 	failRate := float64(atomic.LoadInt64(&metrics.ConnectionsFailed)) / float64(atomic.LoadInt64(&metrics.ConnectionsAttempted))
-	if failRate > 0.1 {
-		t.Errorf("Failure rate too high: %.1f%%", failRate*100)
+	if failRate > 0.01 { // 1% failure threshold
+		t.Errorf("Failure rate too high: %.2f%%", failRate*100)
 	}
 }
 
