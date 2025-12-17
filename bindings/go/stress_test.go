@@ -430,6 +430,9 @@ func TestStress10K(t *testing.T)  { runPreset(t, 10000, 48) }
 func TestStress100K(t *testing.T) { runPreset(t, 100000, 48) }
 func TestStress1M(t *testing.T)   { runPreset(t, 1000000, 64) }
 
+// TestStress5M uses the optimized implementation - see stress_test_optimized.go
+// For 5M connections, use: MTLS_STRESS_TEST=1 go test -v -tags stress -run TestStress5M -timeout 3600s
+
 func runPreset(t *testing.T, conns, workers int) {
 	config := StressTestConfig{
 		TotalConnections:  conns,
