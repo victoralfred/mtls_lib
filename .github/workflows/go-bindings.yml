@@ -57,7 +57,8 @@ jobs:
         run: |
           brew install cmake openssl@3 pkg-config
 
-      - name: Build C library
+      - name: Build C library (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p build
           cd build
@@ -65,7 +66,23 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
             -DMTLS_BUILD_TESTS=OFF \
             -DMTLS_BUILD_EXAMPLES=OFF
-          cmake --build . --parallel $(if [ "${{ matrix.os }}" = "macos-latest" ]; then sysctl -n hw.ncpu; else nproc; fi)
+          cmake --build . --parallel $(nproc)
+
+      - name: Build C library (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p build
+          cd build
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=OFF \
+            -DMTLS_BUILD_EXAMPLES=OFF \
+            -DOPENSSL_ROOT_DIR="${OPENSSL_PREFIX}" \
+            -DOPENSSL_INCLUDE_DIR="${OPENSSL_PREFIX}/include" \
+            -DOPENSSL_CRYPTO_LIBRARY="${OPENSSL_PREFIX}/lib/libcrypto.dylib" \
+            -DOPENSSL_SSL_LIBRARY="${OPENSSL_PREFIX}/lib/libssl.dylib"
+          cmake --build . --parallel $(sysctl -n hw.ncpu)
 
       - name: Set library path (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -75,14 +92,27 @@ jobs:
       - name: Set library path (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/build:${OPENSSL_PREFIX}/lib" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build:${OPENSSL_PREFIX}/lib" >> $GITHUB_ENV
 
-      - name: Set CGO environment variables
+      - name: Set CGO environment variables (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           echo "CGO_CFLAGS=-I${{ github.workspace }}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${{ github.workspace }}/build" >> $GITHUB_ENV
           echo "CGO_ENABLED=1" >> $GITHUB_ENV
+
+      - name: Set CGO environment variables (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Get OpenSSL paths from Homebrew
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          echo "CGO_CFLAGS=-I${{ github.workspace }}/include -I${OPENSSL_PREFIX}/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${{ github.workspace }}/build -L${OPENSSL_PREFIX}/lib -lmtls -lssl -lcrypto" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+          # Also set PKG_CONFIG_PATH for cmake
+          echo "PKG_CONFIG_PATH=${OPENSSL_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Run Go tests
         working-directory: bindings/go
