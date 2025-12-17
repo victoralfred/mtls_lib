@@ -41,15 +41,18 @@ var (
 // Read implements io.Reader. It returns the number of bytes read and any error.
 // At end of file, Read returns 0, io.EOF.
 func (c *Conn) Read(p []byte) (int, error) {
+	// Check if closed and get conn pointer while holding mutex
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.conn == nil {
+		c.mu.Unlock()
 		return 0, &Error{
 			Code:    ErrConnectionClosed,
 			Message: "connection is closed",
 		}
 	}
+	conn := c.conn
+	ctx := c.ctx
+	c.mu.Unlock()
 
 	if p == nil || len(p) == 0 {
 		return 0, nil
@@ -58,8 +61,10 @@ func (c *Conn) Read(p []byte) (int, error) {
 	var cErr C.mtls_err
 	initErr(&cErr)
 
-	n := C.mtls_read(c.conn, unsafe.Pointer(&p[0]), C.size_t(len(p)), &cErr)
-	runtime.KeepAlive(c.ctx) // Ensure context stays alive during CGo call
+	// Call blocking C function without holding the mutex
+	// This allows Close() to interrupt the read by closing the socket
+	n := C.mtls_read(conn, unsafe.Pointer(&p[0]), C.size_t(len(p)), &cErr)
+	runtime.KeepAlive(ctx) // Ensure context stays alive during CGo call
 	if n < 0 {
 		return 0, convertError(&cErr)
 	}
@@ -74,15 +79,18 @@ func (c *Conn) Read(p []byte) (int, error) {
 //
 // Write implements io.Writer. It returns the number of bytes written and any error.
 func (c *Conn) Write(p []byte) (int, error) {
+	// Check if closed and get conn pointer while holding mutex
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.conn == nil {
+		c.mu.Unlock()
 		return 0, &Error{
 			Code:    ErrConnectionClosed,
 			Message: "connection is closed",
 		}
 	}
+	conn := c.conn
+	ctx := c.ctx
+	c.mu.Unlock()
 
 	if p == nil || len(p) == 0 {
 		return 0, nil
@@ -91,8 +99,10 @@ func (c *Conn) Write(p []byte) (int, error) {
 	var cErr C.mtls_err
 	initErr(&cErr)
 
-	n := C.mtls_write(c.conn, unsafe.Pointer(&p[0]), C.size_t(len(p)), &cErr)
-	runtime.KeepAlive(c.ctx) // Ensure context stays alive during CGo call
+	// Call blocking C function without holding the mutex
+	// This allows Close() to interrupt the write by closing the socket
+	n := C.mtls_write(conn, unsafe.Pointer(&p[0]), C.size_t(len(p)), &cErr)
+	runtime.KeepAlive(ctx) // Ensure context stays alive during CGo call
 	if n < 0 {
 		return 0, convertError(&cErr)
 	}

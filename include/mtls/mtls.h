@@ -152,9 +152,29 @@ MTLS_API mtls_listener *mtls_listen(mtls_ctx *ctx, const char *bind_addr, mtls_e
 MTLS_API mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err);
 
 /**
+ * Shutdown a listener
+ *
+ * Closes the listening socket to interrupt any pending Accept() calls.
+ * Does not free the listener memory. Call mtls_listener_close() after
+ * all Accept() calls have returned to free the listener.
+ *
+ * This function is safe to call from a different thread while Accept()
+ * is blocking. The Accept() call will return with an error.
+ *
+ * @param listener Listener to shutdown
+ */
+MTLS_API void mtls_listener_shutdown(mtls_listener *listener);
+
+/**
  * Close a listener
  *
- * Stops accepting new connections. Does not affect existing connections.
+ * Stops accepting new connections and frees the listener memory.
+ * Does not affect existing connections.
+ *
+ * For safe shutdown with concurrent Accept() calls:
+ * 1. Call mtls_listener_shutdown() to close the socket
+ * 2. Wait for all Accept() calls to return
+ * 3. Call mtls_listener_close() to free the listener
  *
  * @param listener Listener to close
  */
