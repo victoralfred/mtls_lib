@@ -291,10 +291,15 @@ ctx.SetObserver(mtls.MetricsCallback(metrics))
 
 // ... perform operations ...
 
-// Read metrics (thread-safe)
+// Read metrics (thread-safe methods)
 fmt.Printf("Connection success rate: %.2f%%\n", metrics.ConnectionSuccessRate()*100)
 fmt.Printf("Average connect time: %v\n", metrics.AverageConnectDuration())
 fmt.Printf("Average handshake time: %v\n", metrics.AverageHandshakeDuration())
+
+// Note: Direct field access (metrics.BytesRead, metrics.BytesWritten) is not
+// thread-safe if Record() is being called concurrently. For thread-safe access,
+// access these fields only when Record() is not being called, or use the Record()
+// method's mutex protection.
 fmt.Printf("Bytes read: %d\n", metrics.BytesRead)
 fmt.Printf("Bytes written: %d\n", metrics.BytesWritten)
 ```
@@ -419,7 +424,8 @@ if err != nil {
 - `Context` is safe for concurrent use after creation
 - `Conn` and `Listener` are NOT safe for concurrent use
 - Use separate `Conn` instances for different goroutines
-- `EventMetrics` is thread-safe for concurrent reads and writes
+- `EventMetrics` methods (ConnectionSuccessRate, AverageConnectDuration, etc.) are thread-safe
+- Direct field access to `EventMetrics` fields should only be done when `Record()` is not being called concurrently
 
 ## Examples
 
