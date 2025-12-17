@@ -51,7 +51,7 @@ func (c *Conn) Read(p []byte) (int, error) {
 		}
 	}
 
-	if len(p) == 0 {
+	if p == nil || len(p) == 0 {
 		return 0, nil
 	}
 
@@ -59,6 +59,7 @@ func (c *Conn) Read(p []byte) (int, error) {
 	initErr(&cErr)
 
 	n := C.mtls_read(c.conn, unsafe.Pointer(&p[0]), C.size_t(len(p)), &cErr)
+	runtime.KeepAlive(c.ctx) // Ensure context stays alive during CGo call
 	if n < 0 {
 		return 0, convertError(&cErr)
 	}
@@ -83,7 +84,7 @@ func (c *Conn) Write(p []byte) (int, error) {
 		}
 	}
 
-	if len(p) == 0 {
+	if p == nil || len(p) == 0 {
 		return 0, nil
 	}
 
@@ -91,6 +92,7 @@ func (c *Conn) Write(p []byte) (int, error) {
 	initErr(&cErr)
 
 	n := C.mtls_write(c.conn, unsafe.Pointer(&p[0]), C.size_t(len(p)), &cErr)
+	runtime.KeepAlive(c.ctx) // Ensure context stays alive during CGo call
 	if n < 0 {
 		return 0, convertError(&cErr)
 	}
@@ -183,8 +185,8 @@ func (c *Conn) LocalAddr() (string, error) {
 
 // ReadContext reads data from the connection with context cancellation support.
 //
-// If the context is cancelled, the connection will be closed to interrupt
-// the blocking read operation.
+// WARNING: If the context is cancelled, the connection will be closed to interrupt
+// the blocking read operation. The connection cannot be reused after cancellation.
 func (c *Conn) ReadContext(ctx context.Context, p []byte) (int, error) {
 	if ctx == nil {
 		return c.Read(p)
@@ -213,6 +215,8 @@ func (c *Conn) ReadContext(ctx context.Context, p []byte) (int, error) {
 	case <-ctx.Done():
 		// Context cancelled - close connection to interrupt read
 		c.Close()
+		// Drain the result channel to prevent goroutine leak
+		<-resultCh
 		return 0, ctx.Err()
 	case result := <-resultCh:
 		return result.n, result.err
@@ -221,8 +225,8 @@ func (c *Conn) ReadContext(ctx context.Context, p []byte) (int, error) {
 
 // WriteContext writes data to the connection with context cancellation support.
 //
-// If the context is cancelled, the connection will be closed to interrupt
-// the blocking write operation.
+// WARNING: If the context is cancelled, the connection will be closed to interrupt
+// the blocking write operation. The connection cannot be reused after cancellation.
 func (c *Conn) WriteContext(ctx context.Context, p []byte) (int, error) {
 	if ctx == nil {
 		return c.Write(p)
@@ -251,6 +255,8 @@ func (c *Conn) WriteContext(ctx context.Context, p []byte) (int, error) {
 	case <-ctx.Done():
 		// Context cancelled - close connection to interrupt write
 		c.Close()
+		// Drain the result channel to prevent goroutine leak
+		<-resultCh
 		return 0, ctx.Err()
 	case result := <-resultCh:
 		return result.n, result.err
@@ -260,7 +266,7 @@ func (c *Conn) WriteContext(ctx context.Context, p []byte) (int, error) {
 // ConnectContext connects with context cancellation support.
 //
 // If the context is cancelled during connection, the connection attempt
-// will be aborted.
+// will be aborted. Any successfully established connection is properly closed.
 func (ctx *Context) ConnectContext(c context.Context, addr string) (*Conn, error) {
 	if c == nil {
 		return ctx.Connect(addr)
@@ -287,9 +293,14 @@ func (ctx *Context) ConnectContext(c context.Context, addr string) (*Conn, error
 
 	select {
 	case <-c.Done():
-		// Context cancelled - we can't interrupt the C call,
-		// but we can return the error and let the connection
-		// be cleaned up by its finalizer
+		// Context cancelled - wait for the connection attempt to complete
+		// and properly clean up any established connection
+		go func() {
+			result := <-resultCh
+			if result.conn != nil {
+				result.conn.Close()
+			}
+		}()
 		return nil, c.Err()
 	case result := <-resultCh:
 		return result.conn, result.err

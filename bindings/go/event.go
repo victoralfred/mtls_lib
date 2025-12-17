@@ -1,6 +1,7 @@
 package mtls
 
 import (
+	"sync"
 	"time"
 )
 
@@ -163,7 +164,10 @@ func AnyFilter(filters ...EventFilter) EventFilter {
 }
 
 // EventMetrics tracks aggregate metrics from events.
+// EventMetrics is thread-safe and can be used from multiple goroutines.
 type EventMetrics struct {
+	mu sync.Mutex
+
 	// Connection metrics
 	ConnectionAttempts  uint64
 	ConnectionSuccesses uint64
@@ -199,7 +203,11 @@ func NewEventMetrics() *EventMetrics {
 }
 
 // Record updates metrics based on an event.
+// Record is thread-safe.
 func (m *EventMetrics) Record(e *Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	switch e.Type {
 	case EventConnectStart:
 		m.ConnectionAttempts++
@@ -208,7 +216,7 @@ func (m *EventMetrics) Record(e *Event) {
 		m.TotalConnectDuration += e.Duration
 	case EventConnectFailure:
 		m.ConnectionFailures++
-		m.recordError(e.ErrorCode)
+		m.recordErrorLocked(e.ErrorCode)
 	case EventHandshakeStart:
 		m.HandshakeAttempts++
 	case EventHandshakeSuccess:
@@ -216,7 +224,7 @@ func (m *EventMetrics) Record(e *Event) {
 		m.TotalHandshakeDuration += e.Duration
 	case EventHandshakeFailure:
 		m.HandshakeFailures++
-		m.recordError(e.ErrorCode)
+		m.recordErrorLocked(e.ErrorCode)
 	case EventRead:
 		m.ReadOps++
 		m.BytesRead += e.Bytes
@@ -226,7 +234,8 @@ func (m *EventMetrics) Record(e *Event) {
 	}
 }
 
-func (m *EventMetrics) recordError(code ErrorCode) {
+// recordErrorLocked updates error counts. Caller must hold mu.
+func (m *EventMetrics) recordErrorLocked(code ErrorCode) {
 	switch {
 	case code >= 100 && code < 200:
 		m.ConfigErrors++
@@ -244,7 +253,11 @@ func (m *EventMetrics) recordError(code ErrorCode) {
 }
 
 // ConnectionSuccessRate returns the connection success rate (0.0 to 1.0).
+// ConnectionSuccessRate is thread-safe.
 func (m *EventMetrics) ConnectionSuccessRate() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.ConnectionAttempts == 0 {
 		return 0
 	}
@@ -252,7 +265,11 @@ func (m *EventMetrics) ConnectionSuccessRate() float64 {
 }
 
 // HandshakeSuccessRate returns the handshake success rate (0.0 to 1.0).
+// HandshakeSuccessRate is thread-safe.
 func (m *EventMetrics) HandshakeSuccessRate() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.HandshakeAttempts == 0 {
 		return 0
 	}
@@ -260,7 +277,11 @@ func (m *EventMetrics) HandshakeSuccessRate() float64 {
 }
 
 // AverageConnectDuration returns the average connection duration.
+// AverageConnectDuration is thread-safe.
 func (m *EventMetrics) AverageConnectDuration() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.ConnectionSuccesses == 0 {
 		return 0
 	}
@@ -268,7 +289,11 @@ func (m *EventMetrics) AverageConnectDuration() time.Duration {
 }
 
 // AverageHandshakeDuration returns the average handshake duration.
+// AverageHandshakeDuration is thread-safe.
 func (m *EventMetrics) AverageHandshakeDuration() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.HandshakeSuccesses == 0 {
 		return 0
 	}

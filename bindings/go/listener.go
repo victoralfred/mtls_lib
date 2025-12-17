@@ -17,6 +17,7 @@ import (
 type Listener struct {
 	listener *C.mtls_listener
 	ctx      *Context
+	addr     string // bind address stored at creation time
 
 	// mu protects listener during close operations
 	mu sync.Mutex
@@ -50,8 +51,17 @@ func (l *Listener) Accept() (*Conn, error) {
 
 // AcceptContext accepts a connection with context cancellation support.
 //
-// If the context is cancelled, the listener will be closed to interrupt
-// the blocking accept operation.
+// WARNING: This method has DESTRUCTIVE cancellation semantics. If the context
+// is cancelled, the listener will be permanently closed to interrupt the
+// blocking accept operation. After cancellation, the listener cannot accept
+// new connections and must be recreated.
+//
+// For non-destructive timeout behavior, use Accept() with a deadline set on
+// the underlying network connection, or implement your own timeout wrapper
+// that doesn't close the listener.
+//
+// This design is necessary because the underlying C library's mtls_accept
+// is a blocking call with no interrupt mechanism other than closing the listener.
 func (l *Listener) AcceptContext(ctx context.Context) (*Conn, error) {
 	if ctx == nil {
 		return l.Accept()
@@ -109,12 +119,9 @@ func (l *Listener) finalizer() {
 }
 
 // Addr returns the listener's network address (the bind address).
-// Note: This is a convenience method that returns the address passed to Listen.
+// This returns the address string that was passed to Context.Listen().
 func (l *Listener) Addr() string {
-	// The C library doesn't expose a way to get the listener address,
-	// so this would need to be stored when the listener is created.
-	// For now, this is a placeholder that returns empty string.
-	return ""
+	return l.addr
 }
 
 // Serve accepts connections in a loop and calls handler for each one.

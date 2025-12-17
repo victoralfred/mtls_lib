@@ -58,6 +58,53 @@ type Config struct {
 	EnableOCSP bool // Enable OCSP stapling
 }
 
+// Validate checks the configuration for errors.
+//
+// Returns an error if:
+//   - MinTLSVersion is greater than MaxTLSVersion
+//   - TLS versions are invalid (not TLS12 or TLS13)
+//   - No certificate source is provided (neither path nor PEM)
+func (c *Config) Validate() error {
+	// Validate TLS versions if explicitly set
+	if c.MinTLSVersion != 0 {
+		if c.MinTLSVersion != TLS12 && c.MinTLSVersion != TLS13 {
+			return &Error{
+				Code:    ErrInvalidConfig,
+				Message: "invalid MinTLSVersion: must be TLS12 (0x0303) or TLS13 (0x0304)",
+			}
+		}
+	}
+
+	if c.MaxTLSVersion != 0 {
+		if c.MaxTLSVersion != TLS12 && c.MaxTLSVersion != TLS13 {
+			return &Error{
+				Code:    ErrInvalidConfig,
+				Message: "invalid MaxTLSVersion: must be TLS12 (0x0303) or TLS13 (0x0304)",
+			}
+		}
+	}
+
+	// Check version ordering (only if both are set)
+	if c.MinTLSVersion != 0 && c.MaxTLSVersion != 0 {
+		if c.MinTLSVersion > c.MaxTLSVersion {
+			return &Error{
+				Code:    ErrInvalidConfig,
+				Message: "MinTLSVersion cannot be greater than MaxTLSVersion",
+			}
+		}
+	}
+
+	// Validate that at least one certificate source is provided
+	if c.CACertPath == "" && len(c.CACertPEM) == 0 {
+		return &Error{
+			Code:    ErrInvalidConfig,
+			Message: "CA certificate is required: provide CACertPath or CACertPEM",
+		}
+	}
+
+	return nil
+}
+
 // DefaultConfig returns a Config with secure default values.
 //
 // Defaults:
@@ -89,9 +136,12 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	// Track allocated memory for cleanup
 	var allocations []unsafe.Pointer
 
-	// CA certificate
+	// CA certificate - copy PEM data to C memory to avoid CGo pointer rule violation
 	if len(c.CACertPEM) > 0 {
-		cConfig.ca_cert_pem = (*C.uint8_t)(unsafe.Pointer(&c.CACertPEM[0]))
+		caCertCopy := C.malloc(C.size_t(len(c.CACertPEM)))
+		allocations = append(allocations, caCertCopy)
+		C.memcpy(caCertCopy, unsafe.Pointer(&c.CACertPEM[0]), C.size_t(len(c.CACertPEM)))
+		cConfig.ca_cert_pem = (*C.uint8_t)(caCertCopy)
 		cConfig.ca_cert_pem_len = C.size_t(len(c.CACertPEM))
 	} else if c.CACertPath != "" {
 		cStr := C.CString(c.CACertPath)
@@ -99,9 +149,12 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		cConfig.ca_cert_path = cStr
 	}
 
-	// Client certificate
+	// Client certificate - copy PEM data to C memory
 	if len(c.CertPEM) > 0 {
-		cConfig.cert_pem = (*C.uint8_t)(unsafe.Pointer(&c.CertPEM[0]))
+		certCopy := C.malloc(C.size_t(len(c.CertPEM)))
+		allocations = append(allocations, certCopy)
+		C.memcpy(certCopy, unsafe.Pointer(&c.CertPEM[0]), C.size_t(len(c.CertPEM)))
+		cConfig.cert_pem = (*C.uint8_t)(certCopy)
 		cConfig.cert_pem_len = C.size_t(len(c.CertPEM))
 	} else if c.CertPath != "" {
 		cStr := C.CString(c.CertPath)
@@ -109,9 +162,12 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		cConfig.cert_path = cStr
 	}
 
-	// Private key
+	// Private key - copy PEM data to C memory
 	if len(c.KeyPEM) > 0 {
-		cConfig.key_pem = (*C.uint8_t)(unsafe.Pointer(&c.KeyPEM[0]))
+		keyCopy := C.malloc(C.size_t(len(c.KeyPEM)))
+		allocations = append(allocations, keyCopy)
+		C.memcpy(keyCopy, unsafe.Pointer(&c.KeyPEM[0]), C.size_t(len(c.KeyPEM)))
+		cConfig.key_pem = (*C.uint8_t)(keyCopy)
 		cConfig.key_pem_len = C.size_t(len(c.KeyPEM))
 	} else if c.KeyPath != "" {
 		cStr := C.CString(c.KeyPath)

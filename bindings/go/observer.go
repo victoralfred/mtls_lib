@@ -9,6 +9,7 @@ extern void mtlsEventGateway(mtls_event *event, void *userdata);
 import "C"
 
 import (
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -51,6 +52,11 @@ func (c *Context) SetObserver(callback EventCallback) error {
 
 	var observers C.mtls_observers
 	observers.on_event = (C.mtls_event_callback)(C.mtlsEventGateway)
+	// Note: observerID is a uintptr (integer), not a Go pointer.
+	// Converting it to unsafe.Pointer for C userdata is safe because:
+	// 1. It's not a Go pointer, so GC won't move it
+	// 2. We manage the ID lifecycle explicitly via register/unregister
+	// 3. The C code only stores and passes back this value, never dereferences it
 	observers.userdata = unsafe.Pointer(c.observerID)
 
 	C.mtls_set_observers(c.ctx, &observers)
@@ -94,10 +100,13 @@ func (c *Context) Events(bufferSize int) (<-chan *Event, func()) {
 
 	c.SetObserver(callback)
 
+	var once sync.Once
 	cancel := func() {
-		close(done)
-		c.SetObserver(nil)
-		close(ch)
+		once.Do(func() {
+			close(done)
+			c.SetObserver(nil)
+			close(ch)
+		})
 	}
 
 	return ch, cancel
@@ -127,10 +136,13 @@ func (c *Context) FilteredEvents(bufferSize int, filter EventFilter) (<-chan *Ev
 
 	c.SetObserver(callback)
 
+	var once sync.Once
 	cancel := func() {
-		close(done)
-		c.SetObserver(nil)
-		close(ch)
+		once.Do(func() {
+			close(done)
+			c.SetObserver(nil)
+			close(ch)
+		})
 	}
 
 	return ch, cancel

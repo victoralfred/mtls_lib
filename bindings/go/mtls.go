@@ -50,7 +50,6 @@ package mtls
 import "C"
 
 import (
-	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -129,11 +128,26 @@ var (
 )
 
 // registerCallback stores a Go callback and returns an ID for use as C userdata.
+// The ID is a non-zero uintptr that can be safely passed to C as userdata.
 func registerCallback(cb EventCallback) uintptr {
 	callbackMu.Lock()
 	defer callbackMu.Unlock()
+
+	// Increment counter with overflow handling
 	callbackCounter++
+	if callbackCounter == 0 {
+		callbackCounter = 1 // Skip 0 as it's used as "no callback"
+	}
+
+	// Handle collision (extremely unlikely but theoretically possible after overflow)
 	id := callbackCounter
+	for callbacks[id] != nil {
+		id++
+		if id == 0 {
+			id = 1
+		}
+	}
+
 	callbacks[id] = cb
 	return id
 }
@@ -157,10 +171,4 @@ func freeString(s *C.char) {
 	if s != nil {
 		C.free(unsafe.Pointer(s))
 	}
-}
-
-// keepAlive ensures the object is not garbage collected before this point.
-// This is a wrapper around runtime.KeepAlive for documentation purposes.
-func keepAlive(x interface{}) {
-	runtime.KeepAlive(x)
 }

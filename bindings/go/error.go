@@ -109,14 +109,23 @@ func (c ErrorCode) Category() string {
 }
 
 // Error represents an mTLS library error with full context.
+//
+// The error may contain multiple underlying causes:
+//   - OSError: Set for syscall/OS-level failures (e.g., ECONNREFUSED)
+//   - TLSError: Set for OpenSSL-level failures (contains packed OpenSSL error)
+//
+// Use Unwrap() with errors.Is/As to check for OS errors.
+// Use HasTLSError() and TLSErrorInfo() to inspect OpenSSL errors.
 type Error struct {
 	// Code is the primary error code.
 	Code ErrorCode
 	// Message is a human-readable error message.
 	Message string
-	// OSError is the underlying OS error (if any).
+	// OSError is the underlying OS error (if any). This is set for syscall failures
+	// and can be unwrapped using errors.Is/As.
 	OSError error
-	// TLSError is the OpenSSL error code (if any).
+	// TLSError is the OpenSSL error code (if any). This is a packed OpenSSL error
+	// that can be inspected using HasTLSError() and TLSErrorInfo().
 	TLSError uint64
 	// File is the source file where the error occurred (debug info).
 	File string
@@ -171,6 +180,29 @@ func (e *Error) IsRecoverable() bool {
 		e.Code == ErrReadTimeout ||
 		e.Code == ErrWriteTimeout ||
 		e.Code == ErrWouldBlock
+}
+
+// HasTLSError returns true if this error contains OpenSSL error information.
+func (e *Error) HasTLSError() bool {
+	return e.TLSError != 0
+}
+
+// TLSErrorInfo returns a human-readable description of the OpenSSL error.
+// Returns an empty string if no TLS error is present.
+func (e *Error) TLSErrorInfo() string {
+	if e.TLSError == 0 {
+		return ""
+	}
+	// OpenSSL error format: library (8 bits), reason (12 bits)
+	// The library and reason can be extracted, but without OpenSSL headers
+	// we can only provide the raw code. The Message field typically contains
+	// the human-readable OpenSSL error string from the C library.
+	return fmt.Sprintf("OpenSSL error 0x%x", e.TLSError)
+}
+
+// HasOSError returns true if this error contains an underlying OS error.
+func (e *Error) HasOSError() bool {
+	return e.OSError != nil
 }
 
 // convertError converts a C mtls_err to a Go Error.
