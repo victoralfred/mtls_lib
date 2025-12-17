@@ -598,34 +598,35 @@ void mtls_close(mtls_conn *conn)
     mtls_emit_event(conn->ctx, &event);
 
     if (conn->ssl) {
-        /* Set a short timeout for TLS shutdown to avoid blocking.
-         * The second SSL_shutdown() waits for peer's close_notify, which
-         * can block for the full socket timeout (e.g., 60 seconds) if the
-         * peer is slow or unresponsive. Use 2 second timeout for shutdown. */
+        /* Non-blocking TLS shutdown for low latency.
+         *
+         * Strategy: Send our close_notify but don't wait for peer's response.
+         * Waiting for peer's close_notify can block up to the socket timeout
+         * if peer is slow, unresponsive, or has already closed. For high-
+         * throughput scenarios, this latency is unacceptable.
+         *
+         * Security note: Sending close_notify is sufficient for clean TLS
+         * termination. The peer's response is an acknowledgment, not a
+         * security requirement. The session keys are already invalidated.
+         *
+         * SSL_shutdown returns:
+         *   1 = bidirectional shutdown complete
+         *   0 = close_notify sent, peer's not yet received (normal)
+         *  <0 = error (often SSL_ERROR_WANT_READ/WRITE or already closed)
+         */
         if (conn->sock != MTLS_INVALID_SOCKET) {
-            (void)platform_socket_set_recv_timeout(conn->sock, 2000, NULL);
+            /* Set non-blocking to prevent SSL_shutdown from blocking */
+            (void)platform_socket_set_nonblocking(conn->sock, true, NULL);
         }
 
-        /* Perform bidirectional TLS shutdown for clean termination.
-         * SSL_shutdown returns:
-         *   0 = shutdown sent, need to call again for bidirectional
-         *   1 = shutdown complete
-         *  <0 = error */
-        int shutdown_ret = SSL_shutdown(conn->ssl);
-        if (shutdown_ret == 0) {
-            /* First phase complete, call again for bidirectional shutdown.
-             * With 2 second timeout, this won't block indefinitely. */
-            (void)SSL_shutdown(conn->ssl);
-        }
+        /* Send close_notify. Don't retry on WANT_READ/WRITE - we're closing. */
+        (void)SSL_shutdown(conn->ssl);
+
         SSL_free(conn->ssl);
         conn->ssl = NULL;
     }
 
     if (conn->sock != MTLS_INVALID_SOCKET) {
-        /* Graceful socket shutdown before close.
-         * SHUT_WR (1) signals EOF to peer, allowing graceful TCP teardown.
-         * Ignore errors - we're closing anyway. */
-        (void)platform_socket_shutdown(conn->sock, 1 /* SHUT_WR */, NULL);
         platform_socket_close(conn->sock);
         conn->sock = MTLS_INVALID_SOCKET;
     }

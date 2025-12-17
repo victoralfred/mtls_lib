@@ -15,6 +15,8 @@
 #if !defined(_WIN32)
 #    include <sys/types.h>
 #    include <sys/socket.h>
+#else
+#    include <winsock2.h>
 #endif
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -353,8 +355,13 @@ void mtls_listener_shutdown(mtls_listener *listener)
 
     if (listener->sock != MTLS_INVALID_SOCKET) {
         /* Shutdown the socket first to interrupt any blocking accept() calls.
-         * This ensures that all threads blocked in accept() will wake up immediately. */
-        (void)platform_socket_shutdown(listener->sock, SHUT_RDWR);
+         * This ensures that all threads blocked in accept() will wake up immediately.
+         * Use shutdown() directly since we're in a cleanup path and don't need error handling. */
+#if !defined(_WIN32)
+        (void)shutdown((int)listener->sock, SHUT_RDWR);
+#else
+        (void)shutdown(listener->sock, SD_BOTH);
+#endif
         /* Then close the socket to free the file descriptor */
         platform_socket_close(listener->sock);
         listener->sock = MTLS_INVALID_SOCKET;

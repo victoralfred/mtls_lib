@@ -248,57 +248,29 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
     return 0;
 }
 
-ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err *err)
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len)
 {
     // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions)
     int bytes_read = recv(sock, (char *)buf, (int)len, 0);
-    /* Narrowing conversion is safe: ssize_t can hold int values on Windows */
-
     if (bytes_read == SOCKET_ERROR) {
-        int wsa_err = WSAGetLastError();
-        if (wsa_err == WSAETIMEDOUT || wsa_err == WSAEWOULDBLOCK) {
-            MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
-        } else {
-            MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "Read failed: %d", wsa_err);
-        }
-        if (err) {
-            err->os_errno = wsa_err;
-        }
         return -1;
     }
-
     return (ssize_t)bytes_read; // NOLINT(cppcoreguidelines-narrowing-conversions)
 }
 
-ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, mtls_err *err)
+ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len)
 {
     // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions)
     int bytes_sent = send(sock, (const char *)buf, (int)len, 0);
-    /* Narrowing conversion is safe: ssize_t can hold int values on Windows */
-
     if (bytes_sent == SOCKET_ERROR) {
-        int wsa_err = WSAGetLastError();
-        if (wsa_err == WSAETIMEDOUT || wsa_err == WSAEWOULDBLOCK) {
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
-        } else {
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write failed: %d", wsa_err);
-        }
-        if (err) {
-            err->os_errno = wsa_err;
-        }
         return -1;
     }
-
     return (ssize_t)bytes_sent; // NOLINT(cppcoreguidelines-narrowing-conversions)
 }
 
-int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err)
+int platform_socket_shutdown(mtls_socket_t sock, int how)
 {
     if (shutdown(sock, how) == SOCKET_ERROR) {
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Shutdown failed: %d", WSAGetLastError());
-        if (err) {
-            err->os_errno = WSAGetLastError();
-        }
         return -1;
     }
     return 0;

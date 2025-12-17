@@ -16,8 +16,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
-#include <sys/select.h>
 #include <sys/time.h>
+#include <poll.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -241,17 +241,13 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
         }
 
         if (ret < 0) {
-            /* Use select to wait for connection with timeout */
-            fd_set write_fds;
-            struct timeval time_val;
+            /* Use poll to wait for connection with timeout (no FD_SETSIZE limit) */
+            struct pollfd pfd;
+            pfd.fd = sock;
+            pfd.events = POLLOUT;
+            pfd.revents = 0;
 
-            FD_ZERO(&write_fds);
-            FD_SET(sock, &write_fds);
-
-            time_val.tv_sec = timeout_ms / 1000;
-            time_val.tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U);
-
-            ret = select(sock + 1, NULL, &write_fds, NULL, &time_val);
+            ret = poll(&pfd, 1, (int)timeout_ms);
 
             if (ret == 0) {
                 MTLS_ERR_SET(err, MTLS_ERR_CONNECT_TIMEOUT, "Connection timed out");
@@ -260,7 +256,7 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
             if (ret < 0) {
                 saved_errno = errno;
                 platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-                MTLS_ERR_SET(err, MTLS_ERR_CONNECT_FAILED, "Select failed: %s", errbuf);
+                MTLS_ERR_SET(err, MTLS_ERR_CONNECT_FAILED, "Poll failed: %s", errbuf);
                 if (err) {
                     err->os_errno = saved_errno;
                 }
@@ -268,8 +264,8 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
             }
 
             /* Verify socket is actually ready (handle spurious wakeups) */
-            if (!FD_ISSET(sock, &write_fds)) {
-                MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Select returned but socket not writable");
+            if (!(pfd.revents & POLLOUT)) {
+                MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Poll returned but socket not writable");
                 return -1;
             }
 
@@ -319,62 +315,19 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
     return 0;
 }
 
-ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err *err)
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len)
 {
-    ssize_t bytes_read = read(sock, buf, len);
-
-    if (bytes_read < 0) {
-        int saved_errno = errno;
-        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
-            MTLS_ERR_SET(err, MTLS_ERR_READ_TIMEOUT, "Read timed out");
-        } else {
-            char errbuf[ERROR_BUFFER_SIZE];
-            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-            MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "Read failed: %s", errbuf);
-        }
-        if (err) {
-            err->os_errno = saved_errno;
-        }
-    }
-
-    return bytes_read;
+    return read(sock, buf, len);
 }
 
-ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len, mtls_err *err)
+ssize_t platform_socket_write(mtls_socket_t sock, const void *buf, size_t len)
 {
-    ssize_t bytes_written = write(sock, buf, len);
-
-    if (bytes_written < 0) {
-        int saved_errno = errno;
-        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_TIMEOUT, "Write timed out");
-        } else {
-            char errbuf[ERROR_BUFFER_SIZE];
-            platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-            MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write failed: %s", errbuf);
-        }
-        if (err) {
-            err->os_errno = saved_errno;
-        }
-    }
-
-    return bytes_written;
+    return write(sock, buf, len);
 }
 
-int platform_socket_shutdown(mtls_socket_t sock, int how, mtls_err *err)
+int platform_socket_shutdown(mtls_socket_t sock, int how)
 {
-    if (shutdown(sock, how) < 0) {
-        char errbuf[ERROR_BUFFER_SIZE];
-        int saved_errno = errno;
-        platform_strerror(saved_errno, errbuf, sizeof(errbuf));
-        MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Shutdown failed: %s", errbuf);
-        if (err) {
-            err->os_errno = saved_errno;
-        }
-        return -1;
-    }
-
-    return 0;
+    return shutdown(sock, how);
 }
 
 int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
