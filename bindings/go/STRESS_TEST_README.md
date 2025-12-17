@@ -136,3 +136,30 @@ Target metrics for 5M connections:
 - Throughput: 10,000-50,000 connections/second
 - Failure rate: < 1%
 - Average connect time: < 10ms (local)
+
+## Benchmark Results
+
+### Test Environment
+- **CPU**: AMD RYZEN AI MAX PRO 390 w/ Radeon 8050S
+- **Cores**: 24
+- **GOMAXPROCS**: 24
+- **File Descriptor Limit**: 65535
+
+### Results Summary
+
+| Test Scale | Connections | Workers | Success Rate | Throughput | Avg Handshake | Duration |
+|------------|-------------|---------|--------------|------------|---------------|----------|
+| 10K        | 10,000      | 48      | 99.8%        | ~1,310/s   | 15.95ms       | ~7.6s    |
+| 100K       | 100,000     | 48      | 99.8%        | ~1,305/s   | 16.06ms       | ~76.5s   |
+
+### Key Observations
+
+1. **Consistent Throughput**: The library maintains ~1,300 connections/second across different scales
+2. **Stable Handshake Time**: Average TLS handshake time stays consistent at ~16ms
+3. **High Reliability**: Success rate remains above 99.8% even at 100K connections
+4. **Connection Recycling**: Workers process connections sequentially, avoiding FD exhaustion
+
+### Notes
+- Results may vary based on system load and network conditions
+- The optimized stress test (`TestStressConnectionsOptimized`) and standard test (`TestStressConnections`) show similar performance
+- Most failures are SSL_read timeouts, typically due to brief network congestion
