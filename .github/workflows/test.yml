@@ -432,7 +432,9 @@ jobs:
       - name: Run clang-tidy
         run: |
           cd build
-          find ../src ../include -name "*.c" -o -name "*.h" | \
+          # Skip non-native platform files (platform_win32.c and platform_darwin.c on Linux)
+          find ../src ../include \( -name "*.c" -o -name "*.h" \) \
+            ! -name "platform_win32.c" ! -name "platform_darwin.c" | \
             xargs clang-tidy -p . --warnings-as-errors=* || true
 
   test-integration:

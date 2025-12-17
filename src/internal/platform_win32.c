@@ -529,7 +529,7 @@ int platform_strerror(int errnum, char *buf, size_t buflen)
 
     /* Windows uses strerror_s (C11 Annex K) */
     if (strerror_s(buf, buflen, errnum) != 0) {
-        snprintf(buf, buflen, "Unknown error %d", errnum);
+        (void)snprintf(buf, buflen, "Unknown error %d", errnum);
     }
 
     return 0;

@@ -4,14 +4,28 @@
  */
 
 #include "mtls/mtls.h"
+#include "mtls/mtls_types.h"
+#include "mtls/mtls_error.h"
+#include "mtls/mtls_config.h"
 #include "internal/mtls_internal.h"
+#include "internal/platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
+#if !defined(_WIN32)
+#    include <sys/types.h>
+#    include <sys/socket.h>
+#    include <netinet/in.h>
+#endif
+#include <openssl/opensslv.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 #include <openssl/err.h>
 
-mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
+mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
+{
     uint64_t start_time = platform_get_time_us();
 
     if (!ctx) {
@@ -25,15 +39,13 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     }
 
     /* Emit CONNECT_START event */
-    mtls_event event = {
-        .type = MTLS_EVENT_CONNECT_START,
-        .remote_addr = addr,
-        .conn = NULL,
-        .error_code = 0,
-        .timestamp_us = start_time,
-        .duration_us = 0,
-        .bytes = 0
-    };
+    mtls_event event = {.type = MTLS_EVENT_CONNECT_START,
+                        .remote_addr = addr,
+                        .conn = NULL,
+                        .error_code = 0,
+                        .timestamp_us = start_time,
+                        .duration_us = 0,
+                        .bytes = 0};
     mtls_emit_event(ctx, &event);
 
     /* Check kill-switch */
@@ -55,7 +67,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     }
 
     /* Allocate connection */
-    mtls_conn* conn = calloc(1, sizeof(*conn));
+    mtls_conn *conn = calloc(1, sizeof(*conn));
     if (!conn) {
         MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate connection");
         /* Emit CONNECT_FAILURE event */
@@ -142,7 +154,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     event.conn = conn;
 
     /* Create SSL object */
-    SSL_CTX* ssl_ctx = mtls_tls_get_ssl_ctx(ctx->tls_ctx);
+    SSL_CTX *ssl_ctx = mtls_tls_get_ssl_ctx(ctx->tls_ctx);
     conn->ssl = SSL_new(ssl_ctx);
     if (!conn->ssl) {
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to create SSL object");
@@ -175,7 +187,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     /* Hostname verification (client mode) - must be set before handshake */
     if (ctx->config.verify_hostname) {
         /* Extract hostname from address string */
-        const char* colon = strrchr(addr, ':');
+        const char *colon = strrchr(addr, ':');
         if (colon) {
             size_t hostname_len = colon - addr;
             char hostname[256];
@@ -183,7 +195,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
             if (hostname_len > 0 && hostname_len <= sizeof(hostname) - 1) {
                 memcpy(hostname, addr, hostname_len);
                 hostname[hostname_len] = '\0';
-                
+
                 /* Validate hostname doesn't contain invalid characters */
                 bool valid = true;
                 for (size_t i = 0; i < hostname_len; i++) {
@@ -192,10 +204,9 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
                         break;
                     }
                 }
-                
+
                 if (!valid) {
-                    MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
-                                 "Invalid characters in hostname");
+                    MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid characters in hostname");
                     /* Emit CONNECT_FAILURE event */
                     event.type = MTLS_EVENT_CONNECT_FAILURE;
                     event.error_code = MTLS_ERR_INVALID_ADDRESS;
@@ -207,9 +218,9 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
                     free(conn);
                     return NULL;
                 }
-                
-                /* Use SSL_set1_host for hostname verification (OpenSSL 1.0.2+) */
-                #if OPENSSL_VERSION_NUMBER >= 0x10002000L
+
+/* Use SSL_set1_host for hostname verification (OpenSSL 1.0.2+) */
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
                 if (SSL_set1_host(conn->ssl, hostname) == 0) {
                     MTLS_ERR_SET(err, MTLS_ERR_HOSTNAME_MISMATCH,
                                  "Failed to set hostname for verification: %s", hostname);
@@ -224,7 +235,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
                     free(conn);
                     return NULL;
                 }
-                #endif
+#endif
             } else {
                 MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Hostname too long");
                 /* Emit CONNECT_FAILURE event */
@@ -285,7 +296,7 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     /* Verify certificate validation result */
     long verify_result = SSL_get_verify_result(conn->ssl);
     if (verify_result != X509_V_OK) {
-        const char* verify_msg = X509_verify_cert_error_string(verify_result);
+        const char *verify_msg = X509_verify_cert_error_string(verify_result);
         MTLS_ERR_SET(err, MTLS_ERR_CERT_UNTRUSTED,
                      "Certificate verification failed: %s (code: %ld)",
                      verify_msg ? verify_msg : "Unknown error", verify_result);
@@ -320,9 +331,8 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
         mtls_peer_identity identity;
         if (mtls_get_peer_identity(conn, &identity, err) == 0) {
             /* Use helper function with wildcard support */
-            bool allowed = mtls_validate_peer_sans(&identity,
-                                                    ctx->config.allowed_sans,
-                                                    ctx->config.allowed_sans_count);
+            bool allowed = mtls_validate_peer_sans(&identity, ctx->config.allowed_sans,
+                                                   ctx->config.allowed_sans_count);
             mtls_free_peer_identity(&identity);
 
             if (!allowed) {
@@ -369,7 +379,8 @@ mtls_conn* mtls_connect(mtls_ctx* ctx, const char* addr, mtls_err* err) {
     return conn;
 }
 
-ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err) {
+ssize_t mtls_read(mtls_conn *conn, void *buffer, size_t len, mtls_err *err)
+{
     if (!conn || !buffer) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Invalid arguments");
         return -1;
@@ -402,7 +413,7 @@ ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err) {
         if (ssl_err == SSL_ERROR_ZERO_RETURN) {
             /* Connection closed gracefully */
             atomic_store(&conn->state, MTLS_CONN_STATE_CLOSED);
-            return 0;  /* EOF */
+            return 0; /* EOF */
         }
         MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "SSL_read failed");
         if (err) {
@@ -414,28 +425,27 @@ ssize_t mtls_read(mtls_conn* conn, void* buffer, size_t len, mtls_err* err) {
     /* Emit READ event */
     char remote_addr_str[128];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
-    mtls_event event = {
-        .type = MTLS_EVENT_READ,
-        .remote_addr = remote_addr_str,
-        .conn = conn,
-        .error_code = 0,
-        .timestamp_us = platform_get_time_us(),
-        .duration_us = 0,
-        .bytes = (size_t)bytes_read
-    };
+    mtls_event event = {.type = MTLS_EVENT_READ,
+                        .remote_addr = remote_addr_str,
+                        .conn = conn,
+                        .error_code = 0,
+                        .timestamp_us = platform_get_time_us(),
+                        .duration_us = 0,
+                        .bytes = (size_t)bytes_read};
     mtls_emit_event(conn->ctx, &event);
 
     return bytes_read;
 }
 
-ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* err) {
+ssize_t mtls_write(mtls_conn *conn, const void *buffer, size_t len, mtls_err *err)
+{
     if (!conn || !buffer) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Invalid arguments");
         return -1;
     }
 
     if (len == 0) {
-        return 0;  /* Zero-length write is valid */
+        return 0; /* Zero-length write is valid */
     }
 
     /* Check connection state atomically */
@@ -447,14 +457,15 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
 
     /* Validate write length */
     if (len > (size_t)MTLS_MAX_WRITE_BUFFER_SIZE) {
-        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Write buffer too large (max %d bytes)", MTLS_MAX_WRITE_BUFFER_SIZE);
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Write buffer too large (max %d bytes)",
+                     MTLS_MAX_WRITE_BUFFER_SIZE);
         return -1;
     }
 
     /* Handle partial writes - SSL_write may not write all data in one call */
     ssize_t total_written = 0;
-    const uint8_t* buf_ptr = (const uint8_t*)buffer;
-    
+    const uint8_t *buf_ptr = (const uint8_t *)buffer;
+
     while (total_written < (ssize_t)len) {
         size_t remaining = len - (size_t)total_written;
         /* Limit to INT_MAX for SSL_write */
@@ -464,14 +475,14 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
         } else {
             write_len = (int)remaining;
         }
-        
+
         int bytes_written = SSL_write(conn->ssl, buf_ptr + total_written, write_len);
         if (bytes_written <= 0) {
             int ssl_err = SSL_get_error(conn->ssl, bytes_written);
             if (ssl_err == SSL_ERROR_WANT_WRITE || ssl_err == SSL_ERROR_WANT_READ) {
                 /* Should not happen with blocking I/O, but handle gracefully */
                 if (total_written > 0) {
-                    return total_written;  /* Return partial write */
+                    return total_written; /* Return partial write */
                 }
                 MTLS_ERR_SET(err, MTLS_ERR_WOULD_BLOCK, "SSL_write would block");
             } else {
@@ -482,11 +493,11 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
             }
             return (total_written > 0) ? total_written : -1;
         }
-        /* Check for integer overflow before adding */
-        /* SSIZE_MAX may not be defined on all platforms, use SIZE_MAX/2 as safe limit */
-        #ifndef SSIZE_MAX
-        #define SSIZE_MAX ((ssize_t)(SIZE_MAX / 2))
-        #endif
+/* Check for integer overflow before adding */
+/* SSIZE_MAX may not be defined on all platforms, use SIZE_MAX/2 as safe limit */
+#ifndef SSIZE_MAX
+#    define SSIZE_MAX ((ssize_t)(SIZE_MAX / 2))
+#endif
         if (total_written > SSIZE_MAX - (ssize_t)bytes_written) {
             MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "Write would overflow ssize_t");
             return (total_written > 0) ? total_written : -1;
@@ -497,21 +508,20 @@ ssize_t mtls_write(mtls_conn* conn, const void* buffer, size_t len, mtls_err* er
     /* Emit WRITE event */
     char remote_addr_str[128];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
-    mtls_event event = {
-        .type = MTLS_EVENT_WRITE,
-        .remote_addr = remote_addr_str,
-        .conn = conn,
-        .error_code = 0,
-        .timestamp_us = platform_get_time_us(),
-        .duration_us = 0,
-        .bytes = (size_t)total_written
-    };
+    mtls_event event = {.type = MTLS_EVENT_WRITE,
+                        .remote_addr = remote_addr_str,
+                        .conn = conn,
+                        .error_code = 0,
+                        .timestamp_us = platform_get_time_us(),
+                        .duration_us = 0,
+                        .bytes = (size_t)total_written};
     mtls_emit_event(conn->ctx, &event);
 
     return total_written;
 }
 
-void mtls_close(mtls_conn* conn) {
+void mtls_close(mtls_conn *conn)
+{
     if (!conn) {
         return;
     }
@@ -528,21 +538,19 @@ void mtls_close(mtls_conn* conn) {
     /* Emit CLOSE event */
     char remote_addr_str[128];
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
-    mtls_event event = {
-        .type = MTLS_EVENT_CLOSE,
-        .remote_addr = remote_addr_str,
-        .conn = conn,
-        .error_code = 0,
-        .timestamp_us = platform_get_time_us(),
-        .duration_us = 0,
-        .bytes = 0
-    };
+    mtls_event event = {.type = MTLS_EVENT_CLOSE,
+                        .remote_addr = remote_addr_str,
+                        .conn = conn,
+                        .error_code = 0,
+                        .timestamp_us = platform_get_time_us(),
+                        .duration_us = 0,
+                        .bytes = 0};
     mtls_emit_event(conn->ctx, &event);
 
     if (conn->ssl) {
         /* Attempt graceful shutdown, but don't fail if it doesn't work */
         int shutdown_ret = SSL_shutdown(conn->ssl);
-        (void)shutdown_ret;  /* Ignore return value - connection is closing anyway */
+        (void)shutdown_ret; /* Ignore return value - connection is closing anyway */
         SSL_free(conn->ssl);
         conn->ssl = NULL;
     }
@@ -558,18 +566,21 @@ void mtls_close(mtls_conn* conn) {
     free(conn);
 }
 
-mtls_conn_state mtls_get_state(const mtls_conn* conn) {
+mtls_conn_state mtls_get_state(const mtls_conn *conn)
+{
     return conn ? (mtls_conn_state)atomic_load(&conn->state) : MTLS_CONN_STATE_NONE;
 }
 
-int mtls_get_remote_addr(const mtls_conn* conn, char* addr_buf, size_t addr_buf_len) {
+int mtls_get_remote_addr(const mtls_conn *conn, char *addr_buf, size_t addr_buf_len)
+{
     if (!conn || !addr_buf) {
         return -1;
     }
     return platform_format_addr(&conn->remote_addr, addr_buf, addr_buf_len);
 }
 
-int mtls_get_local_addr(const mtls_conn* conn, char* addr_buf, size_t addr_buf_len) {
+int mtls_get_local_addr(const mtls_conn *conn, char *addr_buf, size_t addr_buf_len)
+{
     if (!conn || !addr_buf) {
         return -1;
     }

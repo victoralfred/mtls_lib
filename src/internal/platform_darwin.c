@@ -466,11 +466,11 @@ int platform_format_addr(const mtls_addr *addr, char *buf, size_t buf_len)
     if (addr->addr.sa.sa_family == AF_INET) {
         inet_ntop(AF_INET, &addr->addr.sin.sin_addr, host, sizeof(host));
         port = ntohs(addr->addr.sin.sin_port);
-        snprintf(buf, buf_len, "%s:%u", host, port);
+        (void)snprintf(buf, buf_len, "%s:%u", host, port);
     } else if (addr->addr.sa.sa_family == AF_INET6) {
         inet_ntop(AF_INET6, &addr->addr.sin6.sin6_addr, host, sizeof(host));
         port = ntohs(addr->addr.sin6.sin6_port);
-        snprintf(buf, buf_len, "[%s]:%u", host, port);
+        (void)snprintf(buf, buf_len, "[%s]:%u", host, port);
     } else {
         return -1;
     }
@@ -597,7 +597,7 @@ int platform_strerror(int errnum, char *buf, size_t buflen)
 
     /* macOS/BSD uses XSI-compliant strerror_r (returns int) */
     if (strerror_r(errnum, buf, buflen) != 0) {
-        snprintf(buf, buflen, "Unknown error %d", errnum);
+        (void)snprintf(buf, buflen, "Unknown error %d", errnum);
     }
 
     return 0;

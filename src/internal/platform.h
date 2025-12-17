@@ -11,6 +11,10 @@
 
 #include "mtls/mtls_types.h"
 #include "mtls/mtls_error.h"
+#include <stdint.h>
+#if !defined(_WIN32)
+#    include <sys/types.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,8 +76,7 @@ int platform_socket_set_nonblocking(mtls_socket_t sock, bool nonblocking, mtls_e
 /*
  * Set socket timeout for read operations
  */
-int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms,
-                                     mtls_err *err); // NOLINT(misc-include-cleaner)
+int platform_socket_set_recv_timeout(mtls_socket_t sock, uint32_t timeout_ms, mtls_err *err);
 
 /*
  * Set socket timeout for write operations
@@ -109,8 +112,7 @@ int platform_socket_connect(mtls_socket_t sock, const mtls_addr *addr, uint32_t 
 /*
  * Read from socket
  */
-ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len,
-                             mtls_err *err); // NOLINT(misc-include-cleaner)
+ssize_t platform_socket_read(mtls_socket_t sock, void *buf, size_t len, mtls_err *err);
 
 /*
  * Write to socket
@@ -145,7 +147,7 @@ mtls_error_code platform_socket_error_to_mtls(int socket_err);
 /*
  * Get monotonic time in microseconds (for timing/metrics)
  */
-uint64_t platform_get_time_us(void); // NOLINT(misc-include-cleaner)
+uint64_t platform_get_time_us(void);
 
 /*
  * Secure memory zeroing (prevents compiler optimization)

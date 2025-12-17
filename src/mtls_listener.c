@@ -4,13 +4,25 @@
  */
 
 #include "mtls/mtls.h"
+#include "mtls/mtls_types.h"
+#include "mtls/mtls_error.h"
+#include "mtls/mtls_config.h"
 #include "internal/mtls_internal.h"
+#include "internal/platform.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#if !defined(_WIN32)
+#    include <sys/types.h>
+#    include <sys/socket.h>
+#endif
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 #include <openssl/err.h>
 
-mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_err* err) {
+mtls_listener *mtls_listen(mtls_ctx *ctx, const char *bind_addr, mtls_err *err)
+{
     if (!ctx) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Context is NULL");
         return NULL;
@@ -22,7 +34,7 @@ mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_err* err) 
     }
 
     /* Allocate listener */
-    mtls_listener* listener = calloc(1, sizeof(*listener));
+    mtls_listener *listener = calloc(1, sizeof(*listener));
     if (!listener) {
         MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate listener");
         return NULL;
@@ -71,7 +83,8 @@ mtls_listener* mtls_listen(mtls_ctx* ctx, const char* bind_addr, mtls_err* err) 
     return listener;
 }
 
-mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
+mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
+{
     uint64_t start_time = platform_get_time_us();
 
     if (!listener) {
@@ -80,15 +93,13 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     }
 
     /* Emit CONNECT_START event (server-side) */
-    mtls_event event = {
-        .type = MTLS_EVENT_CONNECT_START,
-        .remote_addr = NULL,  /* Not known yet */
-        .conn = NULL,
-        .error_code = 0,
-        .timestamp_us = start_time,
-        .duration_us = 0,
-        .bytes = 0
-    };
+    mtls_event event = {.type = MTLS_EVENT_CONNECT_START,
+                        .remote_addr = NULL, /* Not known yet */
+                        .conn = NULL,
+                        .error_code = 0,
+                        .timestamp_us = start_time,
+                        .duration_us = 0,
+                        .bytes = 0};
     mtls_emit_event(listener->ctx, &event);
 
     /* Check kill-switch */
@@ -110,7 +121,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     }
 
     /* Allocate connection */
-    mtls_conn* conn = calloc(1, sizeof(*conn));
+    mtls_conn *conn = calloc(1, sizeof(*conn));
     if (!conn) {
         MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate connection");
         /* Emit CONNECT_FAILURE event */
@@ -147,7 +158,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     event.conn = conn;
 
     /* Create SSL object */
-    SSL_CTX* ssl_ctx = mtls_tls_get_ssl_ctx(listener->ctx->tls_ctx);
+    SSL_CTX *ssl_ctx = mtls_tls_get_ssl_ctx(listener->ctx->tls_ctx);
     conn->ssl = SSL_new(ssl_ctx);
     if (!conn->ssl) {
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to create SSL object");
@@ -221,7 +232,7 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     /* Verify certificate validation result */
     long verify_result = SSL_get_verify_result(conn->ssl);
     if (verify_result != X509_V_OK) {
-        const char* verify_msg = X509_verify_cert_error_string(verify_result);
+        const char *verify_msg = X509_verify_cert_error_string(verify_result);
         MTLS_ERR_SET(err, MTLS_ERR_CERT_UNTRUSTED,
                      "Certificate verification failed: %s (code: %ld)",
                      verify_msg ? verify_msg : "Unknown error", verify_result);
@@ -256,9 +267,8 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
         mtls_peer_identity identity;
         if (mtls_get_peer_identity(conn, &identity, err) == 0) {
             /* Use helper function with wildcard support */
-            bool allowed = mtls_validate_peer_sans(&identity,
-                                                    listener->ctx->config.allowed_sans,
-                                                    listener->ctx->config.allowed_sans_count);
+            bool allowed = mtls_validate_peer_sans(&identity, listener->ctx->config.allowed_sans,
+                                                   listener->ctx->config.allowed_sans_count);
             mtls_free_peer_identity(&identity);
 
             if (!allowed) {
@@ -308,7 +318,8 @@ mtls_conn* mtls_accept(mtls_listener* listener, mtls_err* err) {
     return conn;
 }
 
-void mtls_listener_close(mtls_listener* listener) {
+void mtls_listener_close(mtls_listener *listener)
+{
     if (!listener) {
         return;
     }
