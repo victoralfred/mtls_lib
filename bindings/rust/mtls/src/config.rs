@@ -351,6 +351,16 @@ impl Default for ConfigBuilder {
 /// RAII guard for C config allocation.
 ///
 /// This holds the C config and all allocated strings, freeing them on drop.
+/// RAII guard for C configuration structure.
+///
+/// This guard manages the lifetime of C strings and pointer arrays allocated
+/// for the C config. The guard must remain alive for the duration of any C
+/// function calls that access the config data.
+///
+/// **Memory Safety**: The C library (mtls_ctx_create) copies all string data
+/// via strarr_dup() during context creation, so it does not retain pointers
+/// to memory owned by this guard. The guard must only stay alive during the
+/// C function call, not for the lifetime of the created context.
 pub(crate) struct CConfigGuard {
     pub config: mtls_sys::mtls_config,
     allocations: Vec<CString>,
@@ -359,13 +369,16 @@ pub(crate) struct CConfigGuard {
 
 impl CConfigGuard {
     /// Get a pointer to the C config.
+    ///
+    /// # Safety
+    /// The returned pointer is valid only while `self` is alive. The caller
+    /// must ensure the guard outlives any C function calls that access the
+    /// config data. The C library must copy any data it needs to retain
+    /// beyond the function call (as mtls_ctx_create does via strarr_dup).
     pub fn as_ptr(&self) -> *const mtls_sys::mtls_config {
         &self.config
     }
 }
-
-// CStrings are automatically dropped when CConfigGuard is dropped,
-// which frees all the C strings we allocated.
 
 #[cfg(test)]
 mod tests {

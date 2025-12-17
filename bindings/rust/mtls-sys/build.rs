@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
     // Get the project root (mtls_lib directory)
@@ -18,6 +19,9 @@ fn main() {
 
     // Tell cargo to look for libraries in the build directory
     println!("cargo:rustc-link-search=native={}", build_dir.display());
+
+    // Find OpenSSL library path (especially needed on macOS where Homebrew installs it)
+    find_openssl();
 
     // Link the mTLS library and its dependencies
     println!("cargo:rustc-link-lib=mtls");
@@ -77,4 +81,49 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+}
+
+/// Find OpenSSL library path and add it to the linker search path.
+/// This is especially important on macOS where Homebrew installs OpenSSL
+/// in a non-standard location.
+fn find_openssl() {
+    // Try pkg-config first (works on Linux and macOS with Homebrew)
+    if let Ok(output) = Command::new("pkg-config")
+        .args(&["--libs", "openssl"])
+        .output()
+    {
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            // Parse all -L paths from pkg-config output
+            for part in output_str.split_whitespace() {
+                if part.starts_with("-L") {
+                    let lib_path = &part[2..];
+                    if PathBuf::from(lib_path).exists() {
+                        println!("cargo:rustc-link-search=native={}", lib_path);
+                    }
+                }
+            }
+            // If we found any paths via pkg-config, we're done
+            if output_str.contains("-L") {
+                return;
+            }
+        }
+    }
+
+    // Fallback: Try common Homebrew paths on macOS
+    if cfg!(target_os = "macos") {
+        let homebrew_paths = [
+            "/opt/homebrew/opt/openssl@3/lib",  // Apple Silicon (openssl@3)
+            "/opt/homebrew/opt/openssl/lib",     // Apple Silicon (default)
+            "/usr/local/opt/openssl@3/lib",      // Intel (openssl@3)
+            "/usr/local/opt/openssl/lib",        // Intel (default)
+        ];
+
+        for path in &homebrew_paths {
+            if PathBuf::from(path).exists() {
+                println!("cargo:rustc-link-search=native={}", path);
+                return;
+            }
+        }
+    }
 }

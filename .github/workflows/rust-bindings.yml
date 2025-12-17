@@ -78,6 +78,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install cmake openssl@3 pkg-config
+          # Set PKG_CONFIG_PATH so pkg-config can find OpenSSL
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
@@ -169,15 +171,18 @@ jobs:
           echo "PATH=${{ github.workspace }}\build\${{ env.CMAKE_BUILD_TYPE }};$env:PATH" >> $env:GITHUB_ENV
         shell: pwsh
 
-      - name: Set build.rs environment variables
+      - name: Set build.rs environment variables (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            echo "MTLS_LIB_DIR=${{ github.workspace }}\build\${{ env.CMAKE_BUILD_TYPE }}" >> $env:GITHUB_ENV
-            echo "MTLS_INCLUDE_DIR=${{ github.workspace }}\include" >> $env:GITHUB_ENV
-          else
-            echo "MTLS_LIB_DIR=${{ github.workspace }}/build" >> $GITHUB_ENV
-            echo "MTLS_INCLUDE_DIR=${{ github.workspace }}/include" >> $GITHUB_ENV
-          fi
+          echo "MTLS_LIB_DIR=${{ github.workspace }}/build" >> $GITHUB_ENV
+          echo "MTLS_INCLUDE_DIR=${{ github.workspace }}/include" >> $GITHUB_ENV
+
+      - name: Set build.rs environment variables (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "MTLS_LIB_DIR=${{ github.workspace }}\build\${{ env.CMAKE_BUILD_TYPE }}" >> $env:GITHUB_ENV
+          echo "MTLS_INCLUDE_DIR=${{ github.workspace }}\include" >> $env:GITHUB_ENV
+        shell: pwsh
 
       - name: Check Rust formatting
         working-directory: bindings/rust

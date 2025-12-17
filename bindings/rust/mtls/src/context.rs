@@ -58,6 +58,14 @@ impl Context {
     pub fn new(config: &Config) -> Result<Self> {
         config.validate()?;
 
+        // Keep the guard alive for the entire duration of mtls_ctx_create().
+        // The C library:
+        // 1. Validates the config, accessing config->allowed_sans array (and the CStrings it points to)
+        // 2. Copies the data via strarr_dup() which allocates new memory and duplicates strings
+        // 3. Stores the copied data in ctx->allowed_sans, so it no longer depends on our guard
+        // After mtls_ctx_create returns, the guard can be safely dropped because the C library
+        // has its own copy of all the data. The guard's lifetime ensures all pointers remain
+        // valid throughout the entire mtls_ctx_create call.
         let c_config = config.to_c()?;
         let mut err = init_c_err();
 
