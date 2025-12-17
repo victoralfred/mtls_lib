@@ -89,15 +89,14 @@ fn main() {
 fn find_openssl() {
     // Try pkg-config first (works on Linux and macOS with Homebrew)
     if let Ok(output) = Command::new("pkg-config")
-        .args(&["--libs", "openssl"])
+        .args(["--libs", "openssl"])
         .output()
     {
         if output.status.success() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             // Parse all -L paths from pkg-config output
             for part in output_str.split_whitespace() {
-                if part.starts_with("-L") {
-                    let lib_path = &part[2..];
+                if let Some(lib_path) = part.strip_prefix("-L") {
                     if PathBuf::from(lib_path).exists() {
                         println!("cargo:rustc-link-search=native={}", lib_path);
                     }

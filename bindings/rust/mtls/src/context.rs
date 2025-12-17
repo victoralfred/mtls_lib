@@ -113,6 +113,30 @@ impl Context {
         Ok(Conn::from_raw(conn_ptr))
     }
 
+    /// Connect to a remote mTLS server asynchronously.
+    ///
+    /// This method uses `tokio::task::spawn_blocking` to execute the blocking
+    /// connection operation on a thread pool, allowing the async runtime to
+    /// continue processing other tasks.
+    ///
+    /// The address should be in the format "host:port".
+    ///
+    /// Requires the `async-tokio` feature.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let conn = ctx.connect_async("server.example.com:8443").await?;
+    /// ```
+    #[cfg(feature = "async-tokio")]
+    pub async fn connect_async(&self, addr: &str) -> Result<Conn> {
+        let ctx = self.clone();
+        let addr = addr.to_string();
+        tokio::task::spawn_blocking(move || ctx.connect(&addr))
+            .await
+            .map_err(|e| Error::new(ErrorCode::ConnectionFailed, format!("task panicked: {}", e)))?
+    }
+
     /// Create a listener bound to the given address.
     ///
     /// The address should be in the format "host:port" or ":port".

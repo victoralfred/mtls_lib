@@ -11,6 +11,7 @@ Safe, idiomatic Rust bindings for the mTLS C library.
 
 - RAII memory management via `Drop` trait
 - Implements `std::io::Read` and `std::io::Write` for connections
+- **Async support** via `async-tokio` feature (thread pool wrapper)
 - Builder pattern for configuration
 - Rich error types with categorization
 - Event observability with callback support
@@ -325,11 +326,51 @@ match result {
 }
 ```
 
+## Async Support
+
+The library provides async support via the `async-tokio` feature flag. This uses a thread pool wrapper to provide async-compatible APIs while keeping the underlying blocking C library unchanged.
+
+### Enabling Async Support
+
+Add the `async-tokio` feature to your `Cargo.toml`:
+
+```toml
+[dependencies]
+mtls = { path = "../mtls", features = ["async-tokio"] }
+```
+
+### Async API
+
+With the `async-tokio` feature enabled, the following async methods are available:
+
+- `Context::connect_async()` - Async client connection
+- `Listener::accept_async()` - Async server accept
+- `Conn` implements `futures::AsyncRead` and `futures::AsyncWrite`
+
+### Async Examples
+
+```bash
+# Async client
+cargo run --example async_client --features async-tokio -- server:8443 ca.pem client.pem client.key
+
+# Async server
+cargo run --example async_server --features async-tokio -- 0.0.0.0:8443 ca.pem server.pem server.key
+```
+
+### Performance Considerations
+
+The async API uses `tokio::task::spawn_blocking` to execute blocking operations on a thread pool. This provides good performance for most use cases (up to ~10K-50K concurrent connections) but has some overhead compared to true async I/O.
+
+For maximum performance with extreme concurrency (100K+ connections), consider implementing true async support using non-blocking sockets (see `ASYNC_TODO.md` for details).
+
 ## Building
 
 ```bash
 # Build the library
 cargo build
+
+# Build with async support
+cargo build --features async-tokio
 
 # Run tests
 cargo test
@@ -338,6 +379,10 @@ cargo test
 cargo run --example simple_client -- server:8443 ca.pem client.pem client.key
 cargo run --example simple_server -- 0.0.0.0:8443 ca.pem server.pem server.key
 cargo run --example echo_server -- 0.0.0.0:8443 ca.pem server.pem server.key
+
+# Run async examples (requires async-tokio feature)
+cargo run --example async_client --features async-tokio -- server:8443 ca.pem client.pem client.key
+cargo run --example async_server --features async-tokio -- 0.0.0.0:8443 ca.pem server.pem server.key
 ```
 
 ## Requirements

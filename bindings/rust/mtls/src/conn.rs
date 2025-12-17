@@ -277,6 +277,175 @@ impl Drop for Conn {
     }
 }
 
+#[cfg(feature = "async-tokio")]
+mod async_impl {
+    use super::*;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    /// Implementation of `futures::AsyncRead` for `Conn`.
+    ///
+    /// This uses `tokio::task::spawn_blocking` to execute blocking read
+    /// operations on a thread pool, allowing the async runtime to continue
+    /// processing other tasks.
+    ///
+    /// **Note**: Since `Conn` is not `Sync`, each async operation requires
+    /// moving the connection to the blocking thread and back. This adds some
+    /// overhead but maintains thread safety.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use futures::AsyncReadExt;
+    ///
+    /// let mut conn = ctx.connect_async("server:8443").await?;
+    /// let mut buf = [0u8; 1024];
+    /// let n = conn.read(&mut buf).await?;
+    /// ```
+    impl futures::AsyncRead for Conn {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            // Check if connection is closed
+            if self.ptr.is_none() {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "connection is closed",
+                )));
+            }
+
+            if buf.is_empty() {
+                return Poll::Ready(Ok(0));
+            }
+
+            // For async read, we spawn a blocking task that reads into a local buffer,
+            // then we copy the result back. Since Conn is not Sync, we need to move
+            // it to the blocking thread.
+
+            // Store the connection temporarily and create a local buffer
+            let mut conn = unsafe { std::ptr::read(&*self) };
+            let buf_len = buf.len();
+
+            // Spawn blocking task to perform the read
+            let mut handle = tokio::task::spawn_blocking(move || {
+                let mut read_buf = vec![0u8; buf_len];
+                let result = std::io::Read::read(&mut conn, &mut read_buf);
+                (conn, result, read_buf)
+            });
+
+            // Poll the JoinHandle (JoinHandle implements Future)
+            let handle_pin = Pin::new(&mut handle);
+            match handle_pin.poll(cx) {
+                Poll::Ready(Ok((returned_conn, result, read_buf))) => {
+                    // Restore the connection
+                    unsafe {
+                        std::ptr::write(&mut *self, returned_conn);
+                    }
+                    // Copy read data back to the provided buffer
+                    if let Ok(n) = result {
+                        let copy_len = n.min(buf.len()).min(read_buf.len());
+                        buf[..copy_len].copy_from_slice(&read_buf[..copy_len]);
+                    }
+                    Poll::Ready(result)
+                }
+                Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                    "blocking task panicked: {}",
+                    e
+                )))),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
+
+    /// Implementation of `futures::AsyncWrite` for `Conn`.
+    ///
+    /// This uses `tokio::task::spawn_blocking` to execute blocking write
+    /// operations on a thread pool, allowing the async runtime to continue
+    /// processing other tasks.
+    ///
+    /// **Note**: Since `Conn` is not `Sync`, each async operation requires
+    /// moving the connection to the blocking thread and back. This adds some
+    /// overhead but maintains thread safety.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use futures::AsyncWriteExt;
+    ///
+    /// let mut conn = ctx.connect_async("server:8443").await?;
+    /// conn.write_all(b"Hello").await?;
+    /// ```
+    impl futures::AsyncWrite for Conn {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            // Check if connection is closed
+            if self.ptr.is_none() {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "connection is closed",
+                )));
+            }
+
+            if buf.is_empty() {
+                return Poll::Ready(Ok(0));
+            }
+
+            // Use spawn_blocking to execute the blocking write on a thread pool
+            let mut conn = unsafe { std::ptr::read(&*self) };
+            let buf = buf.to_vec(); // Copy buffer data
+
+            let mut handle = tokio::task::spawn_blocking(move || {
+                let result = std::io::Write::write(&mut conn, &buf);
+                (conn, result)
+            });
+
+            // Poll the JoinHandle (JoinHandle implements Future)
+            let handle_pin = Pin::new(&mut handle);
+            match handle_pin.poll(cx) {
+                Poll::Ready(Ok((returned_conn, result))) => {
+                    // Restore the connection
+                    unsafe {
+                        std::ptr::write(&mut *self, returned_conn);
+                    }
+                    Poll::Ready(result)
+                }
+                Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                    "blocking task panicked: {}",
+                    e
+                )))),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            // TLS handles buffering internally, no explicit flush needed
+            if self.ptr.is_none() {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "connection is closed",
+                )));
+            }
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            // Close the connection
+            if let Some(ptr) = self.ptr.take() {
+                unsafe {
+                    mtls_sys::mtls_close(ptr.as_ptr());
+                }
+            }
+            Poll::Ready(Ok(()))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
