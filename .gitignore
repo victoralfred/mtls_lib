@@ -228,7 +228,7 @@ test-results/
 test-driver
 *.log
 *.out
-
+build_test/*
 # Google Test
 gtest/
 gmock/
@@ -359,3 +359,5 @@ yarn.lock
 *.rej
 .gdb_history
 dev_plan_pm
+error.txt
+error2.txt

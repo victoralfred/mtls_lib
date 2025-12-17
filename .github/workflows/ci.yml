@@ -1,0 +1,323 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, master ]
+  pull_request:
+    branches: [ main, develop, master ]
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        compiler: [default]
+        include:
+          - os: ubuntu-latest
+            compiler: default
+            cc: gcc
+          - os: macos-latest
+            compiler: default
+            cc: clang
+          - os: windows-latest
+            compiler: default
+            cc: cl
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake openssl@3 pkg-config
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install openssl -y
+          # Wait for installation to complete
+          Start-Sleep -Seconds 5
+
+          # Find OpenSSL installation
+          $possiblePaths = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\OpenSSL-Win64",
+            "C:\OpenSSL"
+          )
+
+          $opensslRoot = $null
+          foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+              Write-Host "Found OpenSSL at: $path"
+              $opensslRoot = $path
+              break
+            }
+          }
+
+          if (-not $opensslRoot) {
+            Write-Error "OpenSSL not found in any expected location"
+            exit 1
+          }
+
+          # List contents for debugging
+          Write-Host "`nOpenSSL directory structure:"
+          Get-ChildItem $opensslRoot | Format-Table Name
+
+          if (Test-Path "$opensslRoot\lib") {
+            Write-Host "`nLib directory contents:"
+            Get-ChildItem "$opensslRoot\lib" -Include *.lib,*.a -Recurse | Select-Object FullName
+          }
+
+          # Find the actual library files (both .lib for MSVC and .a for MinGW)
+          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib","crypto*.lib","libcrypto*.a","libcrypto*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib","ssl*.lib","libssl*.a","libssl*.dll.a" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if ($cryptoLib) {
+            Write-Host "Found crypto library: $($cryptoLib.FullName)"
+            echo "OPENSSL_CRYPTO_LIBRARY=$($cryptoLib.FullName)" >> $env:GITHUB_ENV
+          }
+
+          if ($sslLib) {
+            Write-Host "Found SSL library: $($sslLib.FullName)"
+            echo "OPENSSL_SSL_LIBRARY=$($sslLib.FullName)" >> $env:GITHUB_ENV
+          }
+
+          # Set other OpenSSL paths
+          echo "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$opensslRoot\include" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Setup MSBuild (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Configure CMake (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Set-Location build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} `
+            -DMTLS_BUILD_TESTS=ON `
+            -DMTLS_BUILD_EXAMPLES=ON `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR" `
+            -DOPENSSL_CRYPTO_LIBRARY="$env:OPENSSL_CRYPTO_LIBRARY" `
+            -DOPENSSL_SSL_LIBRARY="$env:OPENSSL_SSL_LIBRARY"
+        shell: pwsh
+
+      - name: Configure CMake (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=ON \
+            -DMTLS_BUILD_EXAMPLES=ON
+        shell: bash
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Set-Location build
+          cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+        shell: pwsh
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd build
+          cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel $(sysctl -n hw.ncpu)
+        shell: bash
+
+      - name: Build (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd build
+          cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel $(nproc)
+        shell: bash
+
+      - name: Run tests (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Set-Location build
+          ctest --output-on-failure --verbose -C ${{ env.CMAKE_BUILD_TYPE }}
+        shell: pwsh
+
+      - name: Run tests (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd build
+          ctest --output-on-failure --verbose
+        shell: bash
+
+      - name: Collect build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.os }}
+          path: |
+            build/libmtls.*
+            build/*.a
+            build/*.so
+            build/*.dylib
+            build/*.dll
+            build/*.lib
+          retention-days: 7
+
+      - name: Build summary (Windows)
+        if: always() && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Summary for ${{ matrix.os }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **OS**: ${{ matrix.os }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Compiler**: ${{ matrix.cc }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Type**: ${{ env.CMAKE_BUILD_TYPE }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Status**: ${{ job.status }}"
+          if (Test-Path build) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Artifacts**: Built successfully"
+          }
+
+      - name: Build summary (Unix)
+        if: always() && matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          echo "## Build Summary for ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **OS**: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compiler**: ${{ matrix.cc }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: ${{ env.CMAKE_BUILD_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          if [ -d build ]; then
+            echo "- **Artifacts**: Built successfully" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify-slack:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine build status
+        id: build-status
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "color=good" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get commit info
+        id: commit-info
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "message=$(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_OUTPUT
+          echo "author=$(git log -1 --pretty=%an)" >> $GITHUB_OUTPUT
+          echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Create Slack message
+        id: slack-message
+        run: |
+          cat > /tmp/slack_message.json << 'SLACKMSG'
+          {
+            "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Repository:*\n${{ github.repository }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Branch:*\n${{ steps.commit-info.outputs.branch }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Commit:*\n${{ steps.commit-info.outputs.sha }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Author:*\n${{ steps.commit-info.outputs.author }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Workflow:*\n${{ github.run_id }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Status:*\n${{ needs.build.result }}"
+                  }
+                ]
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Commit Message:*\n${{ steps.commit-info.outputs.message }}"
+                }
+              }
+            ]
+          }
+          SLACKMSG
+          cat /tmp/slack_message.json
+
+      - name: Send Slack notification
+        continue-on-error: true
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ steps.commit-info.outputs.branch }}\n*Commit:* ${{ steps.commit-info.outputs.sha }}\n*Author:* ${{ steps.commit-info.outputs.author }}\n*Status:* ${{ needs.build.result }}"
+                  }
+                }
+              ]
+            }
