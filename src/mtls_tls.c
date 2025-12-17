@@ -388,12 +388,10 @@ int mtls_tls_ctx_reload_certs(void *tls_ctx_ptr, const mtls_config *config, mtls
         }
 
         /* Replace the SSL_CTX's certificate store */
-        /* Get and free the old store to prevent memory leak */
-        X509_STORE *old_store = SSL_CTX_get_cert_store(ssl_ctx);
+        /* Note: SSL_CTX_set_cert_store() takes ownership of new_store and
+         * frees the old store internally (OpenSSL 3.0+). Do NOT manually
+         * free the old store to avoid double-free. */
         SSL_CTX_set_cert_store(ssl_ctx, new_store);
-        if (old_store) {
-            X509_STORE_free(old_store);
-        }
     }
 
     /* Reload client/server certificate if provided */

@@ -526,13 +526,22 @@ void mtls_close(mtls_conn *conn)
         return;
     }
 
-    /* Atomically set state to CLOSING to prevent concurrent operations */
-    int expected = MTLS_CONN_STATE_ESTABLISHED;
-    if (!atomic_compare_exchange_strong(&conn->state, &expected, MTLS_CONN_STATE_CLOSING)) {
-        /* Already closing or closed, avoid double-close */
-        if (expected == MTLS_CONN_STATE_CLOSED || expected == MTLS_CONN_STATE_CLOSING) {
-            return;
+    /* Atomically set state to CLOSING to prevent concurrent operations.
+     * Handle all possible states to avoid race conditions. */
+    int current_state = atomic_load(&conn->state);
+
+    /* Spin until we successfully transition to CLOSING or detect already closed */
+    while (current_state != MTLS_CONN_STATE_CLOSING && current_state != MTLS_CONN_STATE_CLOSED) {
+        if (atomic_compare_exchange_weak(&conn->state, &current_state, MTLS_CONN_STATE_CLOSING)) {
+            /* Successfully transitioned to CLOSING */
+            break;
         }
+        /* CAS failed, current_state was updated - loop will re-check */
+    }
+
+    /* If already closing or closed, avoid double-close */
+    if (current_state == MTLS_CONN_STATE_CLOSING || current_state == MTLS_CONN_STATE_CLOSED) {
+        return;
     }
 
     /* Emit CLOSE event */
