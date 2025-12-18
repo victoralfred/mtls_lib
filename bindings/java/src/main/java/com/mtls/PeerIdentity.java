@@ -110,23 +110,35 @@ public class PeerIdentity {
     }
 
     /**
-     * Checks if any of the SANs match the given pattern.
+     * Checks if any of the SANs or the SPIFFE ID match the given pattern.
      *
-     * Supports exact matches and wildcard DNS patterns (*.example.com).
+     * Supports:
+     * - Exact matches
+     * - DNS wildcard patterns (*.example.com)
+     * - SPIFFE ID wildcard patterns (spiffe://example.com/*)
      *
      * @param pattern the pattern to match against
-     * @return true if any SAN matches the pattern
+     * @return true if any SAN or SPIFFE ID matches the pattern
      */
     public boolean matchesSan(String pattern) {
         if (pattern == null || pattern.isEmpty()) {
             return false;
         }
 
+        // Check SANs
         for (String san : subjectAltNames) {
             if (matchesSanPattern(san, pattern)) {
                 return true;
             }
         }
+
+        // Also check SPIFFE ID (similar to Go implementation)
+        if (spiffeId != null && !spiffeId.isEmpty()) {
+            if (matchesSanPattern(spiffeId, pattern)) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -136,10 +148,41 @@ public class PeerIdentity {
             return true;
         }
 
-        // Wildcard DNS match (*.example.com matches foo.example.com)
-        if (pattern.startsWith("*.")) {
+        // DNS wildcard match (*.example.com matches foo.example.com)
+        if (pattern.length() > 2 && pattern.startsWith("*.")) {
             String suffix = pattern.substring(1); // ".example.com"
-            return san.endsWith(suffix);
+            if (san.length() <= suffix.length()) {
+                return false;
+            }
+            // Check that SAN ends with suffix and has at least one character before it
+            if (san.endsWith(suffix)) {
+                String prefix = san.substring(0, san.length() - suffix.length());
+                // Single-level wildcard: prefix should not contain dots
+                return !prefix.contains(".");
+            }
+            return false;
+        }
+
+        // SPIFFE ID wildcard match (spiffe://example.com/* matches spiffe://example.com/service)
+        if (pattern.length() > 2 && pattern.endsWith("/*")) {
+            String prefix = pattern.substring(0, pattern.length() - 2); // "spiffe://example.com"
+            if (san.length() < prefix.length()) {
+                return false;
+            }
+            // Check if SAN starts with the prefix
+            if (!san.startsWith(prefix)) {
+                return false;
+            }
+            // For SPIFFE IDs, the remaining part after the prefix should be a valid path
+            // (starts with / and contains no wildcards)
+            String remaining = san.substring(prefix.length());
+            if (remaining.isEmpty()) {
+                // Wildcard pattern requires a path component
+                // Exact match (no path) should be handled by exact match logic, not wildcard
+                return false;
+            }
+            // Must start with / for valid SPIFFE ID path
+            return remaining.startsWith("/");
         }
 
         return false;

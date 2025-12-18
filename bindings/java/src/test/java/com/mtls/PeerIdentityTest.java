@@ -281,4 +281,97 @@ class PeerIdentityTest {
         // Should NOT match specific subdomains (the pattern matches the SAN, not evaluates it)
         assertFalse(identity.matchesSan("foo.example.com"));
     }
+
+    @Test
+    @DisplayName("matchesSan supports SPIFFE ID wildcard patterns")
+    void testSpiffeWildcardMatching() {
+        PeerIdentity identity = new PeerIdentity(
+                "CN=service",
+                Arrays.asList("service.example.com"),
+                "spiffe://example.com/service/api",
+                0,
+                FUTURE_TIME
+        );
+
+        // SPIFFE ID wildcard should match paths under the prefix
+        assertTrue(identity.matchesSan("spiffe://example.com/*"));
+        assertTrue(identity.matchesSan("spiffe://example.com/service/*"));
+
+        // Should not match different SPIFFE wildcard pattern
+        assertFalse(identity.matchesSan("spiffe://example.com/client/*"));
+        assertFalse(identity.matchesSan("spiffe://other.com/*"));
+
+        // Exact SPIFFE ID match should work
+        assertTrue(identity.matchesSan("spiffe://example.com/service/api"));
+    }
+
+    @Test
+    @DisplayName("SPIFFE ID wildcard does not match base ID without path")
+    void testSpiffeWildcardBaseIdMatching() {
+        // Identity with base SPIFFE ID (no path component)
+        PeerIdentity identity = new PeerIdentity(
+                "CN=test",
+                Arrays.asList(),
+                "spiffe://example.com",
+                0,
+                FUTURE_TIME
+        );
+
+        // Wildcard should NOT match base SPIFFE ID without path
+        assertFalse(identity.matchesSan("spiffe://example.com/*"));
+
+        // Exact match should still work
+        assertTrue(identity.matchesSan("spiffe://example.com"));
+    }
+
+    @Test
+    @DisplayName("matchesSan checks SPIFFE ID field in addition to SANs")
+    void testMatchesSanChecksSpiffeId() {
+        // Identity with SPIFFE ID but no matching SANs
+        PeerIdentity identity = new PeerIdentity(
+                "CN=service",
+                Arrays.asList("service.example.com"),
+                "spiffe://example.com/client/frontend",
+                0,
+                FUTURE_TIME
+        );
+
+        // Should match SPIFFE ID wildcard pattern
+        assertTrue(identity.matchesSan("spiffe://example.com/client/*"));
+
+        // Should match exact SPIFFE ID
+        assertTrue(identity.matchesSan("spiffe://example.com/client/frontend"));
+
+        // Should not match different SPIFFE pattern
+        assertFalse(identity.matchesSan("spiffe://example.com/service/*"));
+    }
+
+    @Test
+    @DisplayName("SPIFFE ID wildcard requires valid path component")
+    void testSpiffeWildcardPathRequirement() {
+        PeerIdentity identity = new PeerIdentity(
+                "CN=test",
+                Arrays.asList(),
+                "spiffe://example.com/service",
+                0,
+                FUTURE_TIME
+        );
+
+        // Should match wildcard pattern (spiffe://example.com/service has path /service)
+        assertTrue(identity.matchesSan("spiffe://example.com/*"));
+
+        // Should NOT match more specific wildcard (spiffe://example.com/service has no path after /service)
+        // The pattern spiffe://example.com/service/* requires a path component after /service
+        assertFalse(identity.matchesSan("spiffe://example.com/service/*"));
+
+        // Identity with path under /service should match
+        PeerIdentity identityWithPath = new PeerIdentity(
+                "CN=test",
+                Arrays.asList(),
+                "spiffe://example.com/service/api",
+                0,
+                FUTURE_TIME
+        );
+        assertTrue(identityWithPath.matchesSan("spiffe://example.com/service/*"));
+    }
 }
