@@ -50,6 +50,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     /* Get CA cert file */
     jmethodID get_ca_cert_file =
         (*env)->GetMethodID(env, config_class, "getCaCertFile", "()Ljava/lang/String;");
+    if (get_ca_cert_file == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jstring ca_cert_file = (jstring)(*env)->CallObjectMethod(env, jconfig, get_ca_cert_file);
     if (ca_cert_file != NULL) {
         const char *ca_file_str = (*env)->GetStringUTFChars(env, ca_cert_file, NULL);
@@ -62,6 +67,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
 
     /* Get CA cert PEM */
     jmethodID get_ca_cert_pem = (*env)->GetMethodID(env, config_class, "getCaCertPem", "()[B");
+    if (get_ca_cert_pem == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jbyteArray ca_cert_pem = (jbyteArray)(*env)->CallObjectMethod(env, jconfig, get_ca_cert_pem);
     if (ca_cert_pem != NULL) {
         jsize pem_len = (*env)->GetArrayLength(env, ca_cert_pem);
@@ -76,6 +86,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     /* Get cert file */
     jmethodID get_cert_file =
         (*env)->GetMethodID(env, config_class, "getCertFile", "()Ljava/lang/String;");
+    if (get_cert_file == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jstring cert_file = (jstring)(*env)->CallObjectMethod(env, jconfig, get_cert_file);
     if (cert_file != NULL) {
         const char *cert_file_str = (*env)->GetStringUTFChars(env, cert_file, NULL);
@@ -87,6 +102,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
 
     /* Get cert PEM */
     jmethodID get_cert_pem = (*env)->GetMethodID(env, config_class, "getCertPem", "()[B");
+    if (get_cert_pem == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jbyteArray cert_pem = (jbyteArray)(*env)->CallObjectMethod(env, jconfig, get_cert_pem);
     if (cert_pem != NULL) {
         jsize pem_len = (*env)->GetArrayLength(env, cert_pem);
@@ -101,6 +121,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     /* Get key file */
     jmethodID get_key_file =
         (*env)->GetMethodID(env, config_class, "getKeyFile", "()Ljava/lang/String;");
+    if (get_key_file == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jstring key_file = (jstring)(*env)->CallObjectMethod(env, jconfig, get_key_file);
     if (key_file != NULL) {
         const char *key_file_str = (*env)->GetStringUTFChars(env, key_file, NULL);
@@ -112,6 +137,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
 
     /* Get key PEM */
     jmethodID get_key_pem = (*env)->GetMethodID(env, config_class, "getKeyPem", "()[B");
+    if (get_key_pem == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jbyteArray key_pem = (jbyteArray)(*env)->CallObjectMethod(env, jconfig, get_key_pem);
     if (key_pem != NULL) {
         jsize pem_len = (*env)->GetArrayLength(env, key_pem);
