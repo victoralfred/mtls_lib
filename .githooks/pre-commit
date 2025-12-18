@@ -81,13 +81,6 @@ step_clang_tidy() {
         return 0
     fi
 
-    # Check if build directory exists with compile_commands.json
-    if [ ! -f "$PROJECT_ROOT/build/compile_commands.json" ]; then
-        echo -e "${YELLOW}  ⚠ Build directory not configured, skipping clang-tidy${NC}"
-        echo -e "${YELLOW}  Run: cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..${NC}\n"
-        return 0
-    fi
-
     # Get staged C files
     STAGED_C_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.c$' || true)
 
@@ -138,6 +131,12 @@ step_clang_tidy() {
                 fi
             else
                 COMPILE_DB_DIR="build"
+                # Check if main build directory exists (deferred check for non-Java files)
+                if [ ! -f "$PROJECT_ROOT/$COMPILE_DB_DIR/compile_commands.json" ]; then
+                    echo -e "${YELLOW}  ⚠ Skipping: $file (main build directory not configured)${NC}"
+                    echo -e "${YELLOW}    Run: cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..${NC}"
+                    continue
+                fi
             fi
 
             # Run clang-tidy and capture output

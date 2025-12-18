@@ -13,7 +13,7 @@ Java bindings for the mTLS C library, providing secure mutual TLS communication 
 
 ## Requirements
 
-- Java 11 or higher
+- Java 25 or higher
 - Maven 3.6+ (for building)
 - CMake 3.16+ (for native library compilation)
 - OpenSSL 1.1+ or BoringSSL
@@ -353,5 +353,5 @@ Contributions are welcome! Please submit pull requests or open issues on GitHub.
 ## Resources
 
 - [mTLS C Library Documentation](../../README.md)
-- [Java Cryptography Architecture](https://docs.oracle.com/en/java/javase/11/security/)
-- [JNI Specification](https://docs.oracle.com/en/java/javase/11/docs/specs/jni/)
+- [Java Cryptography Architecture](https://docs.oracle.com/en/java/javase/25/security/)
+- [JNI Specification](https://docs.oracle.com/en/java/javase/25/docs/specs/jni/)
