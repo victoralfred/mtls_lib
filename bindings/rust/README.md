@@ -372,7 +372,7 @@ cargo run --example async_server --features async-tokio -- 0.0.0.0:8443 ca.pem s
 
 ## Requirements
 
-- Rust 1.70+
+- Rust 1.78+
 - The mTLS C library must be installed
 - OpenSSL development headers
 
