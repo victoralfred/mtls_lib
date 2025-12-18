@@ -142,7 +142,7 @@ jobs:
         continue-on-error: true
 
       - name: Check Java code style
-        if: matrix.os == 'ubuntu-latest' && matrix.java-version == '17'
+        if: matrix.os == 'ubuntu-latest' && matrix.java-version == '25'
         working-directory: bindings/java
         run: |
           mvn checkstyle:check || true
