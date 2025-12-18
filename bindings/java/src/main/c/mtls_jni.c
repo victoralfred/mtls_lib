@@ -126,51 +126,116 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     /* Get TLS versions */
     jmethodID get_min_tls = (*env)->GetMethodID(env, config_class, "getMinTlsVersion",
                                                 "()Lcom/mtls/Config$TlsVersion;");
+    if (get_min_tls == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jobject min_tls = (*env)->CallObjectMethod(env, jconfig, get_min_tls);
     if (min_tls != NULL) {
         jclass tls_version_class = (*env)->GetObjectClass(env, min_tls);
         jmethodID get_value = (*env)->GetMethodID(env, tls_version_class, "getValue", "()I");
+        if (get_value == NULL) {
+            /* Exception already thrown by GetMethodID */
+            free_c_config(config);
+            return -1;
+        }
         config->min_tls_version = (*env)->CallIntMethod(env, min_tls, get_value);
     }
 
     jmethodID get_max_tls = (*env)->GetMethodID(env, config_class, "getMaxTlsVersion",
                                                 "()Lcom/mtls/Config$TlsVersion;");
+    if (get_max_tls == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jobject max_tls = (*env)->CallObjectMethod(env, jconfig, get_max_tls);
     if (max_tls != NULL) {
         jclass tls_version_class = (*env)->GetObjectClass(env, max_tls);
         jmethodID get_value = (*env)->GetMethodID(env, tls_version_class, "getValue", "()I");
+        if (get_value == NULL) {
+            /* Exception already thrown by GetMethodID */
+            free_c_config(config);
+            return -1;
+        }
         config->max_tls_version = (*env)->CallIntMethod(env, max_tls, get_value);
     }
 
     /* Get boolean flags */
     jmethodID is_require_client_cert =
         (*env)->GetMethodID(env, config_class, "isRequireClientCert", "()Z");
+    if (is_require_client_cert == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     config->require_client_cert = (*env)->CallBooleanMethod(env, jconfig, is_require_client_cert);
 
     jmethodID is_verify_hostname =
         (*env)->GetMethodID(env, config_class, "isVerifyHostname", "()Z");
+    if (is_verify_hostname == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     config->verify_hostname = (*env)->CallBooleanMethod(env, jconfig, is_verify_hostname);
 
     /* Get timeouts */
     jmethodID get_connect_timeout =
         (*env)->GetMethodID(env, config_class, "getConnectTimeoutMs", "()I");
+    if (get_connect_timeout == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     config->connect_timeout_ms = (*env)->CallIntMethod(env, jconfig, get_connect_timeout);
 
     jmethodID get_read_timeout = (*env)->GetMethodID(env, config_class, "getReadTimeoutMs", "()I");
+    if (get_read_timeout == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     config->read_timeout_ms = (*env)->CallIntMethod(env, jconfig, get_read_timeout);
 
     jmethodID get_write_timeout =
         (*env)->GetMethodID(env, config_class, "getWriteTimeoutMs", "()I");
+    if (get_write_timeout == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     config->write_timeout_ms = (*env)->CallIntMethod(env, jconfig, get_write_timeout);
 
     /* Get allowed SANs */
     jmethodID get_allowed_sans =
         (*env)->GetMethodID(env, config_class, "getAllowedSans", "()Ljava/util/List;");
+    if (get_allowed_sans == NULL) {
+        /* Exception already thrown by GetMethodID */
+        free_c_config(config);
+        return -1;
+    }
     jobject sans_list = (*env)->CallObjectMethod(env, jconfig, get_allowed_sans);
     if (sans_list != NULL) {
         jclass list_class = (*env)->FindClass(env, "java/util/List");
+        if (list_class == NULL) {
+            /* Exception already thrown by FindClass */
+            free_c_config(config);
+            return -1;
+        }
         jmethodID size_method = (*env)->GetMethodID(env, list_class, "size", "()I");
+        if (size_method == NULL) {
+            /* Exception already thrown by GetMethodID */
+            free_c_config(config);
+            return -1;
+        }
         jmethodID get_method = (*env)->GetMethodID(env, list_class, "get", "(I)Ljava/lang/Object;");
+        if (get_method == NULL) {
+            /* Exception already thrown by GetMethodID */
+            free_c_config(config);
+            return -1;
+        }
 
         int size = (*env)->CallIntMethod(env, sans_list, size_method);
         if (size > 0) {
@@ -517,17 +582,37 @@ JNIEXPORT jobject JNICALL Java_com_mtls_Connection_nativeGetPeerIdentity(JNIEnv 
 
     /* Create Java PeerIdentity object */
     jclass identity_class = (*env)->FindClass(env, "com/mtls/PeerIdentity");
+    if (identity_class == NULL) {
+        /* Exception already thrown by FindClass */
+        return NULL;
+    }
     jmethodID constructor = (*env)->GetMethodID(
         env, identity_class, "<init>", "(Ljava/lang/String;Ljava/util/List;Ljava/lang/String;JJ)V");
+    if (constructor == NULL) {
+        /* Exception already thrown by GetMethodID */
+        return NULL;
+    }
 
     /* Common name */
     jstring common_name = (*env)->NewStringUTF(env, identity.common_name);
 
     /* SANs list */
     jclass array_list_class = (*env)->FindClass(env, "java/util/ArrayList");
+    if (array_list_class == NULL) {
+        /* Exception already thrown by FindClass */
+        return NULL;
+    }
     jmethodID array_list_init = (*env)->GetMethodID(env, array_list_class, "<init>", "()V");
+    if (array_list_init == NULL) {
+        /* Exception already thrown by GetMethodID */
+        return NULL;
+    }
     jmethodID array_list_add =
         (*env)->GetMethodID(env, array_list_class, "add", "(Ljava/lang/Object;)Z");
+    if (array_list_add == NULL) {
+        /* Exception already thrown by GetMethodID */
+        return NULL;
+    }
     jobject sans_list = (*env)->NewObject(env, array_list_class, array_list_init);
 
     for (size_t i = 0; i < identity.san_count; i++) {
