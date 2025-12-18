@@ -360,7 +360,7 @@ impl Error {
         };
 
         let tls_error = if c_err.ssl_err != 0 {
-            Some(c_err.ssl_err)
+            Some(c_err.ssl_err as u64)
         } else {
             None
         };
