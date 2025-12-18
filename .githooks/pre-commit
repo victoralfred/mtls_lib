@@ -288,6 +288,10 @@ step_tests() {
 step_security() {
     echo -e "${YELLOW}[6/7] Running security checks...${NC}"
 
+    # Ensure we're in the project root for relative path resolution
+    # Previous steps (build, tests) may have changed to build directory
+    cd "$PROJECT_ROOT"
+
     SECURITY_ISSUES=0
 
     # Check for common security issues in staged files
