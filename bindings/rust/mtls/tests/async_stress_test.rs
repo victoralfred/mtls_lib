@@ -62,6 +62,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 // AsyncConn has explicit async methods, no need for futures traits
+use mtls::ListenerShutdownHandle;
 use mtls::{Config, Context, ErrorCode};
 use tokio::sync::Mutex;
 
@@ -386,9 +387,9 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
     let server_addr = format!("127.0.0.1:{}", port);
 
     // Start listener
-    let listener = Arc::new(std::sync::Mutex::new(Some(
-        server_ctx.listen(&server_addr).expect("Failed to listen"),
-    )));
+    let listener = server_ctx.listen(&server_addr).expect("Failed to listen");
+    let shutdown_handle: ListenerShutdownHandle =
+        listener.shutdown_handle().expect("listener should be open");
 
     let metrics = Arc::new(AsyncStressMetrics::new());
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -439,11 +440,11 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
         config.total_connections, config.concurrent_workers
     );
 
-    // Spawn the acceptor task using tokio::task::spawn_blocking
-    // Keep listener in Arc<Mutex> so shutdown() can be called from outside
+    // Spawn the acceptor task using tokio::task::spawn_blocking.
+    // The accept loop is blocking; we interrupt it via `ListenerShutdownHandle`.
     let acceptor_metrics = metrics.clone();
     let acceptor_stop = stop_flag.clone();
-    let acceptor_listener = listener.clone();
+    let acceptor_listener = listener;
 
     let acceptor_handle = tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
@@ -453,30 +454,12 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
                 break;
             }
 
-            // Take listener out of Arc<Mutex> temporarily for accept() call
-            // This releases the lock, allowing shutdown() to be called from outside
-            let listener_opt = {
-                let mut listener_guard = acceptor_listener.lock().unwrap();
-                listener_guard.take()
-            };
-
-            let listener = match listener_opt {
-                Some(ref l) if l.is_closed() => {
-                    break;
-                }
-                Some(l) => l,
-                None => break,
-            };
-
-            // Call accept - this blocks until a connection arrives or shutdown interrupts
-            // Lock is released during this call, so shutdown() can acquire it
-            let accept_result = listener.accept();
-
-            // Put listener back into Arc<Mutex>
-            {
-                let mut listener_guard = acceptor_listener.lock().unwrap();
-                *listener_guard = Some(listener);
+            if acceptor_listener.is_closed() {
+                break;
             }
+
+            // Call accept - this blocks until a connection arrives or shutdown interrupts.
+            let accept_result = acceptor_listener.accept();
 
             match accept_result {
                 Ok(conn) => {
@@ -495,16 +478,9 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
                     if acceptor_stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    // Check if listener was closed (shutdown called)
-                    let listener_guard = acceptor_listener.lock().unwrap();
-                    if listener_guard
-                        .as_ref()
-                        .map(|l| l.is_closed())
-                        .unwrap_or(true)
-                    {
+                    if acceptor_listener.is_closed() {
                         break;
                     }
-                    drop(listener_guard);
 
                     // Log error but continue (might be interrupted by shutdown)
                     if !acceptor_stop.load(Ordering::SeqCst) {
@@ -636,14 +612,8 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
     // Signal shutdown
     stop_flag.store(true, Ordering::SeqCst);
 
-    // Call shutdown on the listener to interrupt any blocking accept() calls
-    // This must be done while the listener is in the Arc<Mutex>
-    {
-        let mut listener_guard = listener.lock().unwrap();
-        if let Some(ref mut l) = listener_guard.as_mut() {
-            l.shutdown();
-        }
-    }
+    // Interrupt the acceptor thread if it's blocked in accept().
+    shutdown_handle.shutdown();
 
     // Wait for acceptor to finish
     acceptor_handle.await.expect("Acceptor task panicked");

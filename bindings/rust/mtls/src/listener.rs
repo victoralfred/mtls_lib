@@ -35,6 +35,32 @@ pub struct Listener {
     pub(crate) addr: String, // Store the address since there's no getter in C API
 }
 
+/// A lightweight handle that can be used to shutdown a listener from another thread/task.
+///
+/// This is intentionally separate from `Listener` so you can interrupt a blocking `accept()`
+/// loop without sharing/moving the `Listener` itself.
+#[derive(Clone, Copy)]
+pub struct ListenerShutdownHandle {
+    ptr: *mut mtls_sys::mtls_listener,
+}
+
+// SAFETY: This handle only forwards to a C shutdown function on a stable pointer.
+// It does not provide access to `Listener` internals and does not manage lifetime.
+unsafe impl Send for ListenerShutdownHandle {}
+unsafe impl Sync for ListenerShutdownHandle {}
+
+impl ListenerShutdownHandle {
+    /// Request that the listener stop accepting new connections.
+    ///
+    /// This is safe to call from a different thread while another thread is blocked
+    /// inside `accept()`.
+    pub fn shutdown(self) {
+        unsafe {
+            mtls_sys::mtls_listener_shutdown(self.ptr);
+        }
+    }
+}
+
 // SAFETY: Listener can be sent between threads but not shared.
 unsafe impl Send for Listener {}
 
@@ -132,6 +158,11 @@ impl Listener {
     /// Returns the bind address that was passed to listen().
     pub fn addr(&self) -> &str {
         &self.addr
+    }
+
+    /// Returns a shutdown handle for this listener, if it is still open.
+    pub fn shutdown_handle(&self) -> Option<ListenerShutdownHandle> {
+        self.ptr.map(|p| ListenerShutdownHandle { ptr: p.as_ptr() })
     }
 
     /// Parse the listener address as a SocketAddr.

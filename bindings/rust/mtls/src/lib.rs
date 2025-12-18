@@ -78,7 +78,11 @@ pub use context::Context;
 pub use error::{Error, ErrorCode, Result};
 pub use event::{Event, EventType};
 pub use identity::{ConnState, PeerIdentity};
-pub use listener::Listener;
+pub use listener::{Listener, ListenerShutdownHandle};
+
+// Async re-exports
+#[cfg(feature = "async-tokio")]
+pub use conn::AsyncConn;
 
 /// Returns the library version string.
 pub fn version() -> String {
