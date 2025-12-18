@@ -84,9 +84,8 @@ impl Listener {
             // `Listener`'s Drop closes the underlying C listener; creating a temporary
             // wrapper would close the real listener at the end of this closure.
 
-            let SendPtr(listener_ptr) = ptr.ok_or_else(|| {
-                Error::new(ErrorCode::ListenerClosed, "listener is closed")
-            })?;
+            let SendPtr(listener_ptr) =
+                ptr.ok_or_else(|| Error::new(ErrorCode::ListenerClosed, "listener is closed"))?;
 
             let mut err = init_c_err();
             let conn_ptr = unsafe { mtls_sys::mtls_accept(listener_ptr, &mut err) };
