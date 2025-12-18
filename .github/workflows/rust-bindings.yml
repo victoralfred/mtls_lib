@@ -321,4 +321,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Matrix" >> $GITHUB_STEP_SUMMARY
           echo "- OS: ubuntu-latest, macos-latest, windows-latest" >> $GITHUB_STEP_SUMMARY
-          echo "- Rust Versions: stable, 1.70, 1.75" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust Versions: stable, 1.78" >> $GITHUB_STEP_SUMMARY
