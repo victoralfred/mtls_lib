@@ -13,6 +13,9 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class PeerIdentityTest {
 
+    // Use a reasonable future timestamp instead of FUTURE_TIME which exceeds Instant bounds
+    private static final long FUTURE_TIME = Instant.now().getEpochSecond() + (365 * 24 * 3600L);
+
     @Test
     @DisplayName("PeerIdentity stores basic properties correctly")
     void testBasicProperties() {
@@ -113,7 +116,7 @@ class PeerIdentityTest {
                 Arrays.asList("service.example.com"),
                 "spiffe://example.com/service",
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
         assertTrue(withSpiffe.hasSpiffeId());
 
@@ -123,7 +126,7 @@ class PeerIdentityTest {
                 Arrays.asList("service.example.com"),
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
         assertFalse(withoutSpiffe.hasSpiffeId());
 
@@ -133,7 +136,7 @@ class PeerIdentityTest {
                 Arrays.asList("service.example.com"),
                 "",
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
         assertFalse(emptySpiffe.hasSpiffeId());
     }
@@ -146,7 +149,7 @@ class PeerIdentityTest {
                 Arrays.asList("example.com", "test.local", "service.example.com"),
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
 
         assertTrue(identity.matchesSan("example.com"));
@@ -164,7 +167,7 @@ class PeerIdentityTest {
                 Arrays.asList("example.com", "foo.example.com", "bar.example.com"),
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
 
         // Wildcard pattern should match subdomains
@@ -182,7 +185,7 @@ class PeerIdentityTest {
                 Arrays.asList("example.com"),
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
 
         assertFalse(identity.matchesSan(null));
@@ -198,7 +201,7 @@ class PeerIdentityTest {
                 originalSans,
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
 
         List<String> retrievedSans = identity.getSubjectAltNames();
@@ -236,7 +239,7 @@ class PeerIdentityTest {
                 Arrays.asList(),
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
 
         assertNotNull(identity.getSubjectAltNames());
@@ -269,7 +272,7 @@ class PeerIdentityTest {
                 Arrays.asList("*.example.com"),
                 null,
                 0,
-                Long.MAX_VALUE
+                FUTURE_TIME
         );
 
         // Should match the wildcard pattern itself

@@ -4,9 +4,13 @@ project(mtls-jni C)
 # Find JNI
 find_package(JNI REQUIRED)
 
+# Find OpenSSL
+find_package(OpenSSL REQUIRED)
+
 # Include directories
 include_directories(${JNI_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/../../include)
+include_directories(${OPENSSL_INCLUDE_DIR})
 
 # Source files
 set(JNI_SOURCES
@@ -18,13 +22,27 @@ add_library(mtls_jni SHARED ${JNI_SOURCES})
 
 # Link against the mTLS C library
 target_link_libraries(mtls_jni
-    ${CMAKE_SOURCE_DIR}/../../build/libmtls.a  # Adjust path as needed
-    ${OPENSSL_LIBRARIES}
+    ${CMAKE_SOURCE_DIR}/../../build/libmtls.a
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    pthread
 )
 
-# Set output directory
+# Output directory
+# - Default: checked-in resources folder (used by docs/examples)
+# - Maven: set -DMTLS_JNI_OUTPUT_DIR=... to drop the built library directly into target/classes/natives
+if(DEFINED MTLS_JNI_OUTPUT_DIR AND NOT "${MTLS_JNI_OUTPUT_DIR}" STREQUAL "")
+    set(MTLS_JNI_OUTDIR "${MTLS_JNI_OUTPUT_DIR}")
+else()
+    set(MTLS_JNI_OUTDIR "${CMAKE_CURRENT_SOURCE_DIR}/src/main/resources/natives")
+endif()
+
+file(MAKE_DIRECTORY "${MTLS_JNI_OUTDIR}")
+
 set_target_properties(mtls_jni PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/main/resources/natives
+    LIBRARY_OUTPUT_DIRECTORY "${MTLS_JNI_OUTDIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${MTLS_JNI_OUTDIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${MTLS_JNI_OUTDIR}"
 )
 
 # Platform-specific library name

@@ -44,7 +44,7 @@ public class Listener implements AutoCloseable {
      * @return a new Connection
      * @throws MtlsException if accept fails
      */
-    public Connection accept() throws MtlsException {
+    public synchronized Connection accept() throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Listener is closed");
         }
@@ -59,7 +59,7 @@ public class Listener implements AutoCloseable {
      * @return a new Connection
      * @throws MtlsException if accept fails or times out
      */
-    public Connection accept(int timeoutMs) throws MtlsException {
+    public synchronized Connection accept(int timeoutMs) throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Listener is closed");
         }
@@ -76,7 +76,7 @@ public class Listener implements AutoCloseable {
      * This stops the listener from accepting new connections.
      * Existing connections are not affected.
      */
-    public void shutdown() {
+    public synchronized void shutdown() {
         if (!closed && nativeHandle != 0) {
             nativeShutdown(nativeHandle);
         }
@@ -96,7 +96,7 @@ public class Listener implements AutoCloseable {
      *
      * @return true if closed
      */
-    public boolean isClosed() {
+    public synchronized boolean isClosed() {
         return closed;
     }
 
@@ -109,15 +109,6 @@ public class Listener implements AutoCloseable {
             nativeClose(nativeHandle);
             nativeHandle = 0;
             closed = true;
-        }
-    }
-
-    @Override
-    protected void finalize() throws Throwable {
-        try {
-            close();
-        } finally {
-            super.finalize();
         }
     }
 

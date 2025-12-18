@@ -67,7 +67,7 @@ public class Connection implements AutoCloseable {
      * @return the number of bytes written
      * @throws MtlsException if write fails
      */
-    public int write(byte[] data) throws MtlsException {
+    public synchronized int write(byte[] data) throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Connection is closed");
         }
@@ -86,7 +86,7 @@ public class Connection implements AutoCloseable {
      * @return the number of bytes written
      * @throws MtlsException if write fails
      */
-    public int write(byte[] data, int offset, int length) throws MtlsException {
+    public synchronized int write(byte[] data, int offset, int length) throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Connection is closed");
         }
@@ -106,7 +106,7 @@ public class Connection implements AutoCloseable {
      * @return the data read
      * @throws MtlsException if read fails
      */
-    public byte[] read(int maxBytes) throws MtlsException {
+    public synchronized byte[] read(int maxBytes) throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Connection is closed");
         }
@@ -123,7 +123,7 @@ public class Connection implements AutoCloseable {
      * @return the number of bytes read, or -1 on EOF
      * @throws MtlsException if read fails
      */
-    public int read(byte[] buffer) throws MtlsException {
+    public synchronized int read(byte[] buffer) throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Connection is closed");
         }
@@ -142,7 +142,7 @@ public class Connection implements AutoCloseable {
      * @return the number of bytes read, or -1 on EOF
      * @throws MtlsException if read fails
      */
-    public int read(byte[] buffer, int offset, int length) throws MtlsException {
+    public synchronized int read(byte[] buffer, int offset, int length) throws MtlsException {
         if (closed) {
             throw new IllegalStateException("Connection is closed");
         }
@@ -160,7 +160,7 @@ public class Connection implements AutoCloseable {
      *
      * @return the current state
      */
-    public State getState() {
+    public synchronized State getState() {
         if (closed) {
             return State.CLOSED;
         }
@@ -172,7 +172,7 @@ public class Connection implements AutoCloseable {
      *
      * @return true if established
      */
-    public boolean isEstablished() {
+    public synchronized boolean isEstablished() {
         return getState() == State.ESTABLISHED;
     }
 
@@ -181,7 +181,7 @@ public class Connection implements AutoCloseable {
      *
      * @return the peer identity, or null if not available
      */
-    public PeerIdentity getPeerIdentity() {
+    public synchronized PeerIdentity getPeerIdentity() {
         if (closed) {
             return null;
         }
@@ -193,7 +193,7 @@ public class Connection implements AutoCloseable {
      *
      * @return the remote address (e.g., "192.168.1.1:443"), or null if not available
      */
-    public String getRemoteAddress() {
+    public synchronized String getRemoteAddress() {
         if (closed) {
             return null;
         }
@@ -205,7 +205,7 @@ public class Connection implements AutoCloseable {
      *
      * @return the local address (e.g., "192.168.1.2:54321"), or null if not available
      */
-    public String getLocalAddress() {
+    public synchronized String getLocalAddress() {
         if (closed) {
             return null;
         }
@@ -247,17 +247,8 @@ public class Connection implements AutoCloseable {
      *
      * @return true if closed
      */
-    public boolean isClosed() {
+    public synchronized boolean isClosed() {
         return closed;
-    }
-
-    @Override
-    protected void finalize() throws Throwable {
-        try {
-            close();
-        } finally {
-            super.finalize();
-        }
     }
 
     // Native methods

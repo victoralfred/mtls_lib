@@ -132,15 +132,6 @@ public class Context implements AutoCloseable {
         return closed;
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        try {
-            close();
-        } finally {
-            super.finalize();
-        }
-    }
-
     // Native methods
     private native long nativeCreate(Config config) throws MtlsException;
     private native long nativeConnect(long contextHandle, String address) throws MtlsException;

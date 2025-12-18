@@ -7,10 +7,15 @@
 #include <jni.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <limits.h>
 #include "mtls/mtls.h"
 
+/* Forward declarations */
+static void free_c_config(struct mtls_config *config);
+
 /* Helper function to throw MtlsException */
-static void throw_mtls_exception(JNIEnv *env, const struct mtls_error *err)
+static void throw_mtls_exception(JNIEnv *env, const mtls_err *err)
 {
     jclass exception_class = (*env)->FindClass(env, "com/mtls/MtlsException");
     if (exception_class == NULL) {
@@ -37,7 +42,8 @@ static void throw_mtls_exception(JNIEnv *env, const struct mtls_error *err)
 /* Helper function to convert Java Config to C config */
 static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *config)
 {
-    memset(config, 0, sizeof(*config));
+    /* Zero-initialize config struct using designated initializer (C99) */
+    *config = (struct mtls_config){0};
 
     jclass config_class = (*env)->GetObjectClass(env, jconfig);
 
@@ -48,7 +54,8 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     if (ca_cert_file != NULL) {
         const char *ca_file_str = (*env)->GetStringUTFChars(env, ca_cert_file, NULL);
         if (ca_file_str != NULL) {
-            strncpy(config->ca_cert_file, ca_file_str, sizeof(config->ca_cert_file) - 1);
+            /* Copy into C-owned memory; JNI string chars are only valid until released. */
+            config->ca_cert_path = strdup(ca_file_str);
             (*env)->ReleaseStringUTFChars(env, ca_cert_file, ca_file_str);
         }
     }
@@ -73,7 +80,7 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     if (cert_file != NULL) {
         const char *cert_file_str = (*env)->GetStringUTFChars(env, cert_file, NULL);
         if (cert_file_str != NULL) {
-            strncpy(config->cert_file, cert_file_str, sizeof(config->cert_file) - 1);
+            config->cert_path = strdup(cert_file_str);
             (*env)->ReleaseStringUTFChars(env, cert_file, cert_file_str);
         }
     }
@@ -98,7 +105,7 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
     if (key_file != NULL) {
         const char *key_file_str = (*env)->GetStringUTFChars(env, key_file, NULL);
         if (key_file_str != NULL) {
-            strncpy(config->key_file, key_file_str, sizeof(config->key_file) - 1);
+            config->key_path = strdup(key_file_str);
             (*env)->ReleaseStringUTFChars(env, key_file, key_file_str);
         }
     }
@@ -168,13 +175,23 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
         int size = (*env)->CallIntMethod(env, sans_list, size_method);
         if (size > 0) {
             config->allowed_sans = malloc(size * sizeof(char *));
+            if (config->allowed_sans == NULL) {
+                config->allowed_sans_count = 0;
+                /* Clean up any already-allocated strings before returning error */
+                free_c_config(config);
+                return -1;
+            }
             config->allowed_sans_count = size;
 
             for (int i = 0; i < size; i++) {
                 jstring san = (jstring)(*env)->CallObjectMethod(env, sans_list, get_method, i);
                 const char *san_str = (*env)->GetStringUTFChars(env, san, NULL);
-                config->allowed_sans[i] = strdup(san_str);
-                (*env)->ReleaseStringUTFChars(env, san, san_str);
+                if (san_str != NULL) {
+                    config->allowed_sans[i] = strdup(san_str);
+                    (*env)->ReleaseStringUTFChars(env, san, san_str);
+                } else {
+                    config->allowed_sans[i] = NULL;
+                }
             }
         }
     }
@@ -185,18 +202,33 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
 /* Helper function to free C config */
 static void free_c_config(struct mtls_config *config)
 {
-    if (config->ca_cert_pem)
+    if (config->ca_cert_path) {
+        free((void *)config->ca_cert_path);
+    }
+    if (config->cert_path) {
+        free((void *)config->cert_path);
+    }
+    if (config->key_path) {
+        free((void *)config->key_path);
+    }
+
+    if (config->ca_cert_pem) {
         free((void *)config->ca_cert_pem);
-    if (config->cert_pem)
+    }
+    if (config->cert_pem) {
         free((void *)config->cert_pem);
-    if (config->key_pem)
+    }
+    if (config->key_pem) {
         free((void *)config->key_pem);
+    }
 
     if (config->allowed_sans) {
-        for (size_t i = 0; i < config->allowed_sans_count; i++) {
-            free(config->allowed_sans[i]);
+        for (int i = 0; i < (int)config->allowed_sans_count; i++) {
+            if (config->allowed_sans[i]) {
+                free((void *)config->allowed_sans[i]);
+            }
         }
-        free(config->allowed_sans);
+        free((void *)config->allowed_sans);
     }
 }
 
@@ -209,7 +241,7 @@ JNIEXPORT jlong JNICALL Java_com_mtls_Context_nativeCreate(JNIEnv *env, jobject 
                                                            jobject jconfig)
 {
     struct mtls_config config;
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     /* Convert Java config to C config */
@@ -239,7 +271,7 @@ JNIEXPORT jlong JNICALL Java_com_mtls_Context_nativeConnect(JNIEnv *env, jobject
 {
     struct mtls_ctx *ctx = (struct mtls_ctx *)(uintptr_t)ctx_handle;
     const char *addr_str = (*env)->GetStringUTFChars(env, address, NULL);
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     struct mtls_conn *conn = mtls_connect(ctx, addr_str, &err);
@@ -263,7 +295,7 @@ JNIEXPORT jlong JNICALL Java_com_mtls_Context_nativeListen(JNIEnv *env, jobject 
 {
     struct mtls_ctx *ctx = (struct mtls_ctx *)(uintptr_t)ctx_handle;
     const char *addr_str = (*env)->GetStringUTFChars(env, address, NULL);
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     struct mtls_listener *listener = mtls_listen(ctx, addr_str, &err);
@@ -355,7 +387,7 @@ JNIEXPORT jint JNICALL Java_com_mtls_Connection_nativeWrite(JNIEnv *env, jobject
                                                             jint offset, jint length)
 {
     struct mtls_conn *conn = (struct mtls_conn *)(uintptr_t)conn_handle;
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     /* Get data from Java array */
@@ -385,7 +417,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_mtls_Connection_nativeRead(JNIEnv *env, jo
                                                                  jlong conn_handle, jint max_bytes)
 {
     struct mtls_conn *conn = (struct mtls_conn *)(uintptr_t)conn_handle;
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     /* Allocate buffer */
@@ -402,9 +434,14 @@ JNIEXPORT jbyteArray JNICALL Java_com_mtls_Connection_nativeRead(JNIEnv *env, jo
         return NULL;
     }
 
-    /* Create Java byte array */
-    jbyteArray result = (*env)->NewByteArray(env, bytes_read);
-    (*env)->SetByteArrayRegion(env, result, 0, bytes_read, (jbyte *)buffer);
+    /* Create Java byte array - cast ssize_t to jsize with bounds check */
+    if (bytes_read > (ssize_t)INT_MAX) {
+        free(buffer);
+        return NULL; /* Too large for Java array */
+    }
+    jsize jsize_bytes = (jsize)bytes_read;
+    jbyteArray result = (*env)->NewByteArray(env, jsize_bytes);
+    (*env)->SetByteArrayRegion(env, result, 0, jsize_bytes, (jbyte *)buffer);
     free(buffer);
 
     return result;
@@ -420,7 +457,7 @@ JNIEXPORT jint JNICALL Java_com_mtls_Connection_nativeReadInto(JNIEnv *env, jobj
                                                                jint offset, jint length)
 {
     struct mtls_conn *conn = (struct mtls_conn *)(uintptr_t)conn_handle;
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     /* Allocate temporary buffer */
@@ -437,8 +474,13 @@ JNIEXPORT jint JNICALL Java_com_mtls_Connection_nativeReadInto(JNIEnv *env, jobj
         return -1;
     }
 
-    /* Copy to Java array */
-    (*env)->SetByteArrayRegion(env, buffer, offset, bytes_read, (jbyte *)temp_buffer);
+    /* Copy to Java array - cast ssize_t to jsize with bounds check */
+    if (bytes_read > (ssize_t)INT_MAX) {
+        free(temp_buffer);
+        return -1; /* Too large for Java array */
+    }
+    jsize jsize_bytes = (jsize)bytes_read;
+    (*env)->SetByteArrayRegion(env, buffer, offset, jsize_bytes, (jbyte *)temp_buffer);
     free(temp_buffer);
 
     return (jint)bytes_read;
@@ -466,7 +508,7 @@ JNIEXPORT jobject JNICALL Java_com_mtls_Connection_nativeGetPeerIdentity(JNIEnv 
 {
     struct mtls_conn *conn = (struct mtls_conn *)(uintptr_t)conn_handle;
     struct mtls_peer_identity identity;
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     if (mtls_get_peer_identity(conn, &identity, &err) != 0) {
@@ -501,7 +543,7 @@ JNIEXPORT jobject JNICALL Java_com_mtls_Connection_nativeGetPeerIdentity(JNIEnv 
     /* Create PeerIdentity */
     jobject peer_identity =
         (*env)->NewObject(env, identity_class, constructor, common_name, sans_list, spiffe_id,
-                          (jlong)identity.not_before, (jlong)identity.not_after);
+                          (jlong)identity.cert_not_before, (jlong)identity.cert_not_after);
 
     /* Free identity */
     mtls_free_peer_identity(&identity);
@@ -570,7 +612,7 @@ JNIEXPORT jlong JNICALL Java_com_mtls_Listener_nativeAccept(JNIEnv *env, jobject
                                                             jlong listener_handle)
 {
     struct mtls_listener *listener = (struct mtls_listener *)(uintptr_t)listener_handle;
-    struct mtls_error err;
+    mtls_err err;
     mtls_err_clear(&err);
 
     struct mtls_conn *conn = mtls_accept(listener, &err);

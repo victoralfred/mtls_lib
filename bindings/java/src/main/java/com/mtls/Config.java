@@ -77,7 +77,7 @@ public class Config {
     public TlsVersion getMaxTlsVersion() { return maxTlsVersion; }
     public boolean isRequireClientCert() { return requireClientCert; }
     public boolean isVerifyHostname() { return verifyHostname; }
-    public List<String> getAllowedSans() { return new ArrayList<>(allowedSans); }
+    public List<String> getAllowedSans() { return List.copyOf(allowedSans); }
     public int getConnectTimeoutMs() { return connectTimeoutMs; }
     public int getReadTimeoutMs() { return readTimeoutMs; }
     public int getWriteTimeoutMs() { return writeTimeoutMs; }

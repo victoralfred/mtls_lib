@@ -29,7 +29,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        java-version: ['11', '17', '21']
+        # Java bindings target Java 25 (see bindings/java/pom.xml)
+        java-version: ['25']
 
     steps:
       - name: Checkout code
@@ -378,7 +379,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Matrix" >> $GITHUB_STEP_SUMMARY
           echo "- OS: ubuntu-latest, macos-latest" >> $GITHUB_STEP_SUMMARY
-          echo "- JDK Versions: 11, 17, 21" >> $GITHUB_STEP_SUMMARY
+          echo "- JDK Versions: 25" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- JAR package: Available for download" >> $GITHUB_STEP_SUMMARY

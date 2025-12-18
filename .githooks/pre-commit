@@ -126,8 +126,21 @@ step_clang_tidy() {
             esac
             echo -e "${YELLOW}  Analyzing: $file${NC}"
 
+            # Determine correct compile_commands.json path
+            # Java JNI files need the Java bindings build directory
+            if echo "$file" | grep -q "^bindings/java/"; then
+                COMPILE_DB_DIR="bindings/java/build"
+                if [ ! -f "$PROJECT_ROOT/$COMPILE_DB_DIR/compile_commands.json" ]; then
+                    echo -e "${YELLOW}  ⚠ Skipping: $file (Java JNI build not configured)${NC}"
+                    echo -e "${YELLOW}    Run: cd bindings/java && cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON${NC}"
+                    continue
+                fi
+            else
+                COMPILE_DB_DIR="build"
+            fi
+
             # Run clang-tidy and capture output
-            TIDY_OUTPUT=$(clang-tidy -p build "$file" 2>&1 || true)
+            TIDY_OUTPUT=$(clang-tidy -p "$COMPILE_DB_DIR" "$file" 2>&1 || true)
 
             # Check if there are any warnings or errors
             if echo "$TIDY_OUTPUT" | grep -E "warning:|error:" > /dev/null; then
