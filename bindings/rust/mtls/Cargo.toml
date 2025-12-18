@@ -35,6 +35,16 @@ name = "async_api"
 path = "tests/async_api_test.rs"
 required-features = ["async-tokio"]
 
+[[example]]
+name = "async_client"
+path = "examples/async_client.rs"
+required-features = ["async-tokio"]
+
+[[example]]
+name = "async_server"
+path = "examples/async_server.rs"
+required-features = ["async-tokio"]
+
 [features]
 default = []
 stress = []

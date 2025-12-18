@@ -79,13 +79,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Server Example (Multi-threaded with Graceful Shutdown)
 
-When you need to shut down the listener from another thread (e.g., for graceful shutdown), you must use `Arc<Mutex<Listener>>` and **release the lock before calling `accept()`**. This allows `shutdown()` to interrupt the blocking `accept()` call:
+When you need to shut down the listener from another thread (e.g., for graceful shutdown), use `ListenerShutdownHandle`. This avoids sharing `Listener` across threads and avoids unsafe “unlock-before-accept” patterns.
 
 ```rust
-use mtls::{Config, Context};
+use mtls::{Config, Context, ListenerShutdownHandle};
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -96,11 +96,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let ctx = Context::new(&config)?;
-    let listener = Arc::new(Mutex::new(ctx.listen("0.0.0.0:8443")?));
+    let listener = ctx.listen("0.0.0.0:8443")?;
+    let shutdown: ListenerShutdownHandle = listener
+        .shutdown_handle()
+        .expect("listener should be open");
     let stop_flag = Arc::new(AtomicBool::new(false));
 
     // Spawn acceptor thread
-    let listener_acceptor = listener.clone();
     let stop_acceptor = stop_flag.clone();
     let acceptor_handle = thread::spawn(move || {
         loop {
@@ -108,20 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
 
-            // Get pointer to listener while holding lock, then release lock
-            // before blocking accept() call. This allows shutdown() to interrupt accept()
-            let listener_ptr: *const mtls::Listener = {
-                let guard = listener_acceptor.lock().unwrap();
-                if guard.is_closed() {
-                    break;
-                }
-                &*guard as *const mtls::Listener
-            };
-
-            // SAFETY: Listener is in Arc, so it remains valid.
-            // accept() only needs &self, so concurrent reads are safe.
-            // shutdown() modifies state, but accept() checks closed state internally.
-            let accept_result = unsafe { (*listener_ptr).accept() };
+            let accept_result = listener.accept();
 
             match accept_result {
                 Ok(mut conn) => {
@@ -147,10 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Graceful shutdown: signal stop and shutdown listener
     stop_flag.store(true, Ordering::SeqCst);
-    {
-        let mut guard = listener.lock().unwrap();
-        guard.shutdown(); // This interrupts blocking accept() calls
-    }
+    shutdown.shutdown(); // Interrupts blocking accept() calls
 
     acceptor_handle.join().unwrap();
     Ok(())
@@ -160,14 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 **Important Notes on Listener Shutdown:**
 - `accept()` blocks until a connection arrives or the listener is shut down
 - `shutdown()` interrupts blocking `accept()` calls by calling `shutdown()` on the underlying socket at the OS level
-- If you hold a `Mutex` lock during `accept()`, `shutdown()` cannot acquire the lock → deadlock
-- Always release the lock **before** calling `accept()` when using `Arc<Mutex<Listener>>`
-- The `shutdown()` method requires `&mut self`, so use `Mutex` when sharing across threads
-- The unsafe pointer usage in the example above is necessary because Rust's borrow checker cannot verify that the listener remains valid after releasing the lock. This is safe because:
-  - The listener is stored in an `Arc`, ensuring it lives as long as needed
-  - `accept()` only requires `&self` (immutable reference), so concurrent reads are safe
-  - `shutdown()` modifies internal state, but `accept()` checks the closed state internally
-- The `serve()` convenience method handles the accept loop internally, but still requires proper synchronization (`Arc<Mutex<Listener>>`) for multi-threaded shutdown scenarios
+- Prefer `ListenerShutdownHandle` for cross-thread shutdown (no locking and no unsafe pointers)
 
 ## API Overview
 
@@ -290,10 +269,8 @@ ctx.set_kill_switch(false);
 The `Listener` type can be moved between threads (`Send`), but concurrent access requires synchronization:
 
 - **Single-threaded use**: Direct use is fine - `accept()` blocks until a connection arrives
-- **Multi-threaded shutdown**: Use `Arc<Mutex<Listener>>` but **release the lock before calling `accept()`**
-  - Holding the lock during `accept()` prevents `shutdown()` from acquiring it → deadlock
-  - `shutdown()` calls `shutdown()` on the underlying socket, which interrupts blocking `accept()` calls at the OS level
-  - Always check the stop flag between `accept()` calls
+- **Multi-threaded shutdown**: Prefer `ListenerShutdownHandle` obtained via `listener.shutdown_handle()`
+  - It can be called from another thread/task to interrupt a blocking `accept()`
 
 See the "Multi-threaded with Graceful Shutdown" example above for the correct pattern.
 
@@ -345,7 +322,12 @@ With the `async-tokio` feature enabled, the following async methods are availabl
 
 - `Context::connect_async()` - Async client connection
 - `Listener::accept_async()` - Async server accept
-- `Conn` implements `futures::AsyncRead` and `futures::AsyncWrite`
+- `AsyncConn` - Async connection wrapper with explicit async I/O methods:
+  - `read(&mut self, buf: &mut [u8])`
+  - `write(&mut self, buf: &[u8])`
+  - `write_all(&mut self, buf: &[u8])`
+  - `flush(&mut self)`
+  - `close(&mut self)`
 
 ### Async Examples
 
@@ -361,12 +343,15 @@ cargo run --example async_server --features async-tokio -- 0.0.0.0:8443 ca.pem s
 
 The async API uses `tokio::task::spawn_blocking` to execute blocking operations on a thread pool. This provides good performance for most use cases (up to ~10K-50K concurrent connections) but has some overhead compared to true async I/O.
 
-For maximum performance with extreme concurrency (100K+ connections), consider implementing true async support using non-blocking sockets (see `ASYNC_TODO.md` for details).
+For maximum performance with extreme concurrency (100K+ connections), true async support in the C library (non-blocking sockets + poll/epoll/kqueue) would be required.
 
 ## Building
 
 ```bash
-# Build the library
+# From bindings/rust/
+cd bindings/rust
+
+# Build the Rust workspace
 cargo build
 
 # Build with async support
