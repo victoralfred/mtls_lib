@@ -176,7 +176,15 @@ func mtlsEventGateway(cEvent *C.mtls_event, userdata unsafe.Pointer) {
 		event.RemoteAddr = C.GoString(cEvent.remote_addr)
 	}
 
-	// Invoke Go callback
+	// Invoke Go callback with panic recovery to prevent crashes from propagating
+	// through C code (which would cause undefined behavior)
+	defer func() {
+		if r := recover(); r != nil {
+			// Panic recovered - log if possible, but don't crash the library.
+			// In production, this could log to a diagnostics system.
+			// Silently continue - callback panics should not affect library operation.
+		}
+	}()
 	callback(event)
 }
 

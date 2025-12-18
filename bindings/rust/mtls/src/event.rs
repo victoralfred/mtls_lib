@@ -205,8 +205,13 @@ extern "C" fn c_event_callback(event: *const mtls_sys::mtls_event, user_data: *m
 
     // Call callback outside of lock to avoid deadlock if callback
     // tries to register/unregister other callbacks or acquires locks
+    // Use catch_unwind to prevent panics from unwinding through C code (undefined behavior)
     if let Some(callback) = callback {
-        callback(&rust_event);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            callback(&rust_event);
+        }));
+        // Note: Panics are silently swallowed to prevent unwinding through C code.
+        // In production, consider logging panics to a diagnostics system.
     }
 }
 
