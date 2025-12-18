@@ -92,6 +92,10 @@ step_clang_tidy() {
     # Detect platform for skipping non-native platform files
     CURRENT_OS=$(uname -s)
 
+    # Ensure we're in the project root for relative path resolution
+    # clang-tidy's -p flag and file paths are relative to the current working directory
+    cd "$PROJECT_ROOT"
+
     TIDY_ISSUES=0
 
     for file in $STAGED_C_FILES; do
@@ -124,7 +128,7 @@ step_clang_tidy() {
             # Use relative paths to match original behavior and clang-tidy's -p argument expectations
             if echo "$file" | grep -q "^bindings/java/"; then
                 COMPILE_DB_DIR="bindings/java/build"
-                if [ ! -f "$PROJECT_ROOT/$COMPILE_DB_DIR/compile_commands.json" ]; then
+                if [ ! -f "$COMPILE_DB_DIR/compile_commands.json" ]; then
                     echo -e "${YELLOW}  ⚠ Skipping: $file (Java JNI build not configured)${NC}"
                     echo -e "${YELLOW}    Run: cd bindings/java && cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON${NC}"
                     continue
@@ -132,7 +136,7 @@ step_clang_tidy() {
             else
                 COMPILE_DB_DIR="build"
                 # Check if main build directory exists (deferred check for non-Java files)
-                if [ ! -f "$PROJECT_ROOT/$COMPILE_DB_DIR/compile_commands.json" ]; then
+                if [ ! -f "$COMPILE_DB_DIR/compile_commands.json" ]; then
                     echo -e "${YELLOW}  ⚠ Skipping: $file (main build directory not configured)${NC}"
                     echo -e "${YELLOW}    Run: cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..${NC}"
                     continue
@@ -140,6 +144,7 @@ step_clang_tidy() {
             fi
 
             # Run clang-tidy and capture output
+            # Both COMPILE_DB_DIR and file are relative paths from PROJECT_ROOT
             TIDY_OUTPUT=$(clang-tidy -p "$COMPILE_DB_DIR" "$file" 2>&1 || true)
 
             # Check if there are any warnings or errors
