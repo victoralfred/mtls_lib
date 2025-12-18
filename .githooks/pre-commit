@@ -128,6 +128,7 @@ step_clang_tidy() {
 
             # Determine correct compile_commands.json path
             # Java JNI files need the Java bindings build directory
+            # Use relative paths to match original behavior and clang-tidy's -p argument expectations
             if echo "$file" | grep -q "^bindings/java/"; then
                 COMPILE_DB_DIR="bindings/java/build"
                 if [ ! -f "$PROJECT_ROOT/$COMPILE_DB_DIR/compile_commands.json" ]; then
