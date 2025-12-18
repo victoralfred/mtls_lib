@@ -477,9 +477,9 @@ impl From<Error> for io::Error {
                 io::ErrorKind::ConnectionReset
             }
             ErrorCode::ConnectionRefused => io::ErrorKind::ConnectionRefused,
-            ErrorCode::NetworkUnreachable | ErrorCode::HostUnreachable => {
-                io::ErrorKind::NetworkUnreachable
-            }
+            // `io::ErrorKind::{NetworkUnreachable,HostUnreachable}` require newer Rust.
+            // For our MSRV (1.78), map these to `Other` while preserving the original error.
+            ErrorCode::NetworkUnreachable | ErrorCode::HostUnreachable => io::ErrorKind::Other,
             ErrorCode::InvalidAddress | ErrorCode::InvalidArgument => io::ErrorKind::InvalidInput,
             ErrorCode::WouldBlock => io::ErrorKind::WouldBlock,
             ErrorCode::AddressInUse => io::ErrorKind::AddrInUse,

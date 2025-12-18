@@ -29,6 +29,7 @@
 #![allow(clippy::all)]
 // Suppress warning for function pointer comparisons in generated bindings
 // This is safe because function pointers in FFI are compared by value, not address
+#![allow(unknown_lints)]
 #![allow(unpredictable_function_pointer_comparisons)]
 
 // Include the generated bindings
