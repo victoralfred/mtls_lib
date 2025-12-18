@@ -277,186 +277,188 @@ impl Drop for Conn {
     }
 }
 
+/// Async connection wrapper that owns a Conn and provides async I/O.
+///
+/// This wrapper is needed because the underlying C library uses blocking I/O,
+/// and we need to run those operations on a blocking thread pool.
 #[cfg(feature = "async-tokio")]
-mod async_impl {
-    use super::*;
-    use std::future::Future;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
+pub struct AsyncConn {
+    conn: Option<Conn>,
+    read_scratch: Vec<u8>,
+}
 
-    /// Implementation of `futures::AsyncRead` for `Conn`.
-    ///
-    /// This uses `tokio::task::spawn_blocking` to execute blocking read
-    /// operations on a thread pool, allowing the async runtime to continue
-    /// processing other tasks.
-    ///
-    /// **Note**: Since `Conn` is not `Sync`, each async operation requires
-    /// moving the connection to the blocking thread and back. This adds some
-    /// overhead but maintains thread safety.
+#[cfg(feature = "async-tokio")]
+impl AsyncConn {
+    /// Create a new AsyncConn from a Conn.
+    pub fn new(conn: Conn) -> Self {
+        AsyncConn {
+            conn: Some(conn),
+            read_scratch: Vec::new(),
+        }
+    }
+
+    /// Read data from the connection asynchronously.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// use futures::AsyncReadExt;
-    ///
     /// let mut conn = ctx.connect_async("server:8443").await?;
     /// let mut buf = [0u8; 1024];
     /// let n = conn.read(&mut buf).await?;
     /// ```
-    impl futures::AsyncRead for Conn {
-        fn poll_read(
-            mut self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<io::Result<usize>> {
-            // Check if connection is closed
-            if self.ptr.is_none() {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "connection is closed",
-                )));
+    pub async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        // We must NOT pass raw pointers into a spawned blocking task, because the future
+        // can be cancelled (dropped) while the task is still running, which could make
+        // stack/borrowed buffers invalid. Instead we read into an owned scratch buffer
+        // that lives inside the blocking task.
+        let mut conn = self
+            .conn
+            .take()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "connection is closed"))?;
+        let mut scratch = std::mem::take(&mut self.read_scratch);
+        if scratch.len() < buf.len() {
+            scratch.resize(buf.len(), 0u8);
+        }
+
+        let buf_len = buf.len();
+        let (returned_conn, result, returned_scratch) = tokio::task::spawn_blocking(move || {
+            let result = std::io::Read::read(&mut conn, &mut scratch[..buf_len]);
+            (conn, result, scratch)
+        })
+        .await
+        .map_err(|e| io::Error::other(format!("task panicked: {}", e)))?;
+
+        self.conn = Some(returned_conn);
+        self.read_scratch = returned_scratch;
+
+        match result {
+            Ok(n) => {
+                buf[..n].copy_from_slice(&self.read_scratch[..n]);
+                Ok(n)
             }
-
-            if buf.is_empty() {
-                return Poll::Ready(Ok(0));
-            }
-
-            // For async read, we spawn a blocking task that reads into a local buffer,
-            // then we copy the result back. Since Conn is not Sync, we need to move
-            // it to the blocking thread.
-
-            // Store the connection temporarily and create a local buffer
-            let mut conn = unsafe { std::ptr::read(&*self) };
-            let buf_len = buf.len();
-
-            // Spawn blocking task to perform the read
-            let mut handle = tokio::task::spawn_blocking(move || {
-                let mut read_buf = vec![0u8; buf_len];
-                let result = std::io::Read::read(&mut conn, &mut read_buf);
-                (conn, result, read_buf)
-            });
-
-            // Poll the JoinHandle (JoinHandle implements Future)
-            let handle_pin = Pin::new(&mut handle);
-            match handle_pin.poll(cx) {
-                Poll::Ready(Ok((returned_conn, result, read_buf))) => {
-                    // Restore the connection
-                    unsafe {
-                        std::ptr::write(&mut *self, returned_conn);
-                    }
-                    // Copy read data back to the provided buffer
-                    if let Ok(n) = result {
-                        let copy_len = n.min(buf.len()).min(read_buf.len());
-                        buf[..copy_len].copy_from_slice(&read_buf[..copy_len]);
-                    }
-                    Poll::Ready(result)
-                }
-                Poll::Ready(Err(e)) => {
-                    // Task panicked - connection is lost, restore a closed connection
-                    // to prevent uninitialized memory in self
-                    unsafe {
-                        std::ptr::write(&mut *self, Conn { ptr: None });
-                    }
-                    Poll::Ready(Err(io::Error::other(format!(
-                        "blocking task panicked: {}",
-                        e
-                    ))))
-                }
-                Poll::Pending => Poll::Pending,
-            }
+            Err(e) => Err(e),
         }
     }
 
-    /// Implementation of `futures::AsyncWrite` for `Conn`.
-    ///
-    /// This uses `tokio::task::spawn_blocking` to execute blocking write
-    /// operations on a thread pool, allowing the async runtime to continue
-    /// processing other tasks.
-    ///
-    /// **Note**: Since `Conn` is not `Sync`, each async operation requires
-    /// moving the connection to the blocking thread and back. This adds some
-    /// overhead but maintains thread safety.
+    /// Write data to the connection asynchronously.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// use futures::AsyncWriteExt;
+    /// let mut conn = ctx.connect_async("server:8443").await?;
+    /// let n = conn.write(b"Hello").await?;
+    /// ```
+    pub async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let mut conn = self
+            .conn
+            .take()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "connection is closed"))?;
+
+        // Copy into an owned buffer so cancellation is safe.
+        let owned = buf.to_vec();
+        let (returned_conn, result) = tokio::task::spawn_blocking(move || {
+            let result = std::io::Write::write(&mut conn, &owned);
+            (conn, result)
+        })
+        .await
+        .map_err(|e| io::Error::other(format!("task panicked: {}", e)))?;
+
+        self.conn = Some(returned_conn);
+        result
+    }
+
+    /// Write all data to the connection asynchronously.
     ///
+    /// # Example
+    ///
+    /// ```ignore
     /// let mut conn = ctx.connect_async("server:8443").await?;
     /// conn.write_all(b"Hello").await?;
     /// ```
-    impl futures::AsyncWrite for Conn {
-        fn poll_write(
-            mut self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            // Check if connection is closed
-            if self.ptr.is_none() {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "connection is closed",
-                )));
-            }
-
-            if buf.is_empty() {
-                return Poll::Ready(Ok(0));
-            }
-
-            // Use spawn_blocking to execute the blocking write on a thread pool
-            let mut conn = unsafe { std::ptr::read(&*self) };
-            let buf = buf.to_vec(); // Copy buffer data
-
-            let mut handle = tokio::task::spawn_blocking(move || {
-                let result = std::io::Write::write(&mut conn, &buf);
-                (conn, result)
-            });
-
-            // Poll the JoinHandle (JoinHandle implements Future)
-            let handle_pin = Pin::new(&mut handle);
-            match handle_pin.poll(cx) {
-                Poll::Ready(Ok((returned_conn, result))) => {
-                    // Restore the connection
-                    unsafe {
-                        std::ptr::write(&mut *self, returned_conn);
-                    }
-                    Poll::Ready(result)
-                }
-                Poll::Ready(Err(e)) => {
-                    // Task panicked - connection is lost, restore a closed connection
-                    // to prevent uninitialized memory in self
-                    unsafe {
-                        std::ptr::write(&mut *self, Conn { ptr: None });
-                    }
-                    Poll::Ready(Err(io::Error::other(format!(
-                        "blocking task panicked: {}",
-                        e
-                    ))))
-                }
-                Poll::Pending => Poll::Pending,
-            }
+    pub async fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        if buf.is_empty() {
+            return Ok(());
         }
 
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            // TLS handles buffering internally, no explicit flush needed
-            if self.ptr.is_none() {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "connection is closed",
-                )));
-            }
-            Poll::Ready(Ok(()))
-        }
+        let mut conn = self
+            .conn
+            .take()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "connection is closed"))?;
 
-        fn poll_close(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            // Close the connection
-            if let Some(ptr) = self.ptr.take() {
-                unsafe {
-                    mtls_sys::mtls_close(ptr.as_ptr());
-                }
-            }
-            Poll::Ready(Ok(()))
+        // Copy into an owned buffer so cancellation is safe.
+        let owned = buf.to_vec();
+        let (returned_conn, result) = tokio::task::spawn_blocking(move || {
+            let result = std::io::Write::write_all(&mut conn, &owned);
+            (conn, result)
+        })
+        .await
+        .map_err(|e| io::Error::other(format!("task panicked: {}", e)))?;
+
+        self.conn = Some(returned_conn);
+        result
+    }
+
+    /// Flush the connection asynchronously.
+    pub async fn flush(&mut self) -> io::Result<()> {
+        // `Conn::flush()` is a no-op (TLS buffers internally).
+        // Keep this async API for symmetry, but avoid a thread hop.
+        if self.conn.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "connection is closed",
+            ));
         }
+        Ok(())
+    }
+
+    /// Close the connection.
+    pub fn close(&mut self) {
+        if let Some(mut conn) = self.conn.take() {
+            conn.close();
+        }
+    }
+
+    /// Check if the connection is closed.
+    pub fn is_closed(&self) -> bool {
+        self.conn.as_ref().map(|c| c.is_closed()).unwrap_or(true)
+    }
+
+    /// Get the connection state.
+    pub fn state(&self) -> crate::identity::ConnState {
+        self.conn
+            .as_ref()
+            .map(|c| c.state())
+            .unwrap_or(crate::identity::ConnState::Closed)
+    }
+
+    /// Get peer identity if available.
+    pub fn peer_identity(&self) -> Option<crate::identity::PeerIdentity> {
+        self.conn.as_ref().and_then(|c| c.peer_identity())
+    }
+
+    /// Get remote address if available.
+    pub fn remote_addr(&self) -> Option<String> {
+        self.conn.as_ref().and_then(|c| c.remote_addr())
+    }
+
+    /// Get local address if available.
+    pub fn local_addr(&self) -> Option<String> {
+        self.conn.as_ref().and_then(|c| c.local_addr())
+    }
+}
+
+#[cfg(feature = "async-tokio")]
+impl Drop for AsyncConn {
+    fn drop(&mut self) {
+        // Connection will be closed when the inner Conn is dropped
     }
 }
 

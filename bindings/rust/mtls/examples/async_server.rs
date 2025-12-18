@@ -13,7 +13,7 @@ use mtls::{Config, Context};
 static CONNECTION_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 async fn handle_connection(
-    mut conn: mtls::Conn,
+    mut conn: mtls::AsyncConn,
     id: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("[{}] New connection from {:?}", id, conn.remote_addr());
@@ -25,9 +25,6 @@ async fn handle_connection(
             id, identity.common_name, identity.sans
         );
     }
-
-    use futures::AsyncReadExt;
-    use futures::AsyncWriteExt;
 
     let mut buf = [0u8; 4096];
     loop {

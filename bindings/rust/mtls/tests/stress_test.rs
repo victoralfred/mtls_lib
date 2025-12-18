@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 
 use mtls::{Config, Context};
 
+type CertBundle = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
+
 /// Stress test configuration
 #[derive(Clone)]
 struct StressTestConfig {
@@ -164,7 +166,7 @@ fn check_system_limits(workers: usize) {
 }
 
 /// Generate test certificates using rcgen
-fn generate_certificates() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+fn generate_certificates() -> CertBundle {
     use rcgen::{
         BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
         KeyUsagePurpose, SanType,

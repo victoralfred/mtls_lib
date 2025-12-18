@@ -119,6 +119,8 @@ impl Context {
     /// connection operation on a thread pool, allowing the async runtime to
     /// continue processing other tasks.
     ///
+    /// Returns an `AsyncConn` which provides async read/write methods.
+    ///
     /// The address should be in the format "host:port".
     ///
     /// Requires the `async-tokio` feature.
@@ -126,15 +128,21 @@ impl Context {
     /// # Example
     ///
     /// ```ignore
-    /// let conn = ctx.connect_async("server.example.com:8443").await?;
+    /// let mut conn = ctx.connect_async("server.example.com:8443").await?;
+    /// conn.write_all(b"Hello").await?;
+    /// let mut buf = [0u8; 1024];
+    /// let n = conn.read(&mut buf).await?;
     /// ```
     #[cfg(feature = "async-tokio")]
-    pub async fn connect_async(&self, addr: &str) -> Result<Conn> {
+    pub async fn connect_async(&self, addr: &str) -> Result<crate::conn::AsyncConn> {
         let ctx = self.clone();
         let addr = addr.to_string();
-        tokio::task::spawn_blocking(move || ctx.connect(&addr))
+        let conn = tokio::task::spawn_blocking(move || ctx.connect(&addr))
             .await
-            .map_err(|e| Error::new(ErrorCode::ConnectionFailed, format!("task panicked: {}", e)))?
+            .map_err(|e| {
+                Error::new(ErrorCode::ConnectionFailed, format!("task panicked: {}", e))
+            })??;
+        Ok(crate::conn::AsyncConn::new(conn))
     }
 
     /// Create a listener bound to the given address.

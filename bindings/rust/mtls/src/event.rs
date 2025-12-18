@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::context::Context;
 use crate::ffi_helpers::from_c_str;
@@ -148,24 +148,24 @@ pub type EventCallback = Arc<dyn Fn(&Event) + Send + Sync>;
 /// so we store callbacks in a global registry and pass IDs through
 /// the user_data pointer.
 ///
-/// Performance note: Uses Mutex for thread safety. The lock is held
-/// only briefly during lookup, minimizing contention. For high-throughput
-/// scenarios, consider using a lock-free data structure or sharding.
-static CALLBACK_REGISTRY: LazyLock<Mutex<HashMap<usize, EventCallback>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Performance note: Uses a `RwLock` so callback dispatch takes a shared read lock
+/// (many concurrent readers), while register/unregister take an exclusive write lock
+/// (rare). This reduces contention on hot event paths.
+static CALLBACK_REGISTRY: LazyLock<RwLock<HashMap<usize, EventCallback>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 static NEXT_CALLBACK_ID: AtomicUsize = AtomicUsize::new(1);
 
 /// Register a callback and return its ID.
 fn register_callback(callback: Box<dyn Fn(&Event) + Send + Sync + 'static>) -> usize {
-    let id = NEXT_CALLBACK_ID.fetch_add(1, Ordering::SeqCst);
-    let mut registry = CALLBACK_REGISTRY.lock().unwrap();
+    let id = NEXT_CALLBACK_ID.fetch_add(1, Ordering::Relaxed);
+    let mut registry = CALLBACK_REGISTRY.write().unwrap();
     registry.insert(id, Arc::from(callback));
     id
 }
 
 /// Unregister a callback by ID.
 fn unregister_callback(id: usize) {
-    let mut registry = CALLBACK_REGISTRY.lock().unwrap();
+    let mut registry = CALLBACK_REGISTRY.write().unwrap();
     registry.remove(&id);
 }
 
@@ -195,7 +195,7 @@ extern "C" fn c_event_callback(event: *const mtls_sys::mtls_event, user_data: *m
     // This allows us to release the lock before calling the callback,
     // preventing deadlocks if the callback tries to register/unregister
     let callback = {
-        let registry = CALLBACK_REGISTRY.lock().unwrap();
+        let registry = CALLBACK_REGISTRY.read().unwrap();
         registry.get(&id).cloned()
     };
 

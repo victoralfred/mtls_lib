@@ -10,7 +10,6 @@ use std::io;
 use std::net::TcpListener;
 use std::time::Duration;
 
-use futures::{AsyncReadExt, AsyncWriteExt};
 use mtls::{Config, Context};
 
 /// Generate test certificates using rcgen

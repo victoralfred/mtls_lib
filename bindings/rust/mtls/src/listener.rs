@@ -53,6 +53,8 @@ impl Listener {
     /// accept operation on a thread pool, allowing the async runtime to continue
     /// processing other tasks.
     ///
+    /// Returns an `AsyncConn` which provides async read/write methods.
+    ///
     /// This blocks until a client connects and completes the TLS handshake.
     ///
     /// Requires the `async-tokio` feature.
@@ -61,46 +63,46 @@ impl Listener {
     ///
     /// ```ignore
     /// loop {
-    ///     let conn = listener.accept_async().await?;
-    ///     // Handle connection...
+    ///     let mut conn = listener.accept_async().await?;
+    ///     conn.write_all(b"Hello").await?;
     /// }
     /// ```
     #[cfg(feature = "async-tokio")]
-    pub async fn accept_async(&self) -> Result<Conn> {
-        // For async accept, we extract the raw pointer and address.
+    pub async fn accept_async(&self) -> Result<crate::conn::AsyncConn> {
+        // For async accept, we extract the raw pointer.
         // SAFETY: We wrap the C pointer in a Send-safe newtype since Rust
-        // can't prove that C types are Send. Since we only read from the listener
-        // and the listener must outlive the await point, this is safe.
-
-        // Newtype wrapper to make the C pointer Send
+        // can't prove that C types are Send. The caller holds `&self` across
+        // the await, so the underlying C listener outlives this blocking task.
         #[repr(transparent)]
         struct SendPtr(*mut mtls_sys::mtls_listener);
         unsafe impl Send for SendPtr {}
 
-        struct SendListenerData {
-            ptr: Option<SendPtr>,
-            addr: String,
-        }
-        unsafe impl Send for SendListenerData {}
-
-        let data = SendListenerData {
-            ptr: self.ptr.map(|p| SendPtr(p.as_ptr())),
-            addr: self.addr.clone(),
-        };
+        let ptr = self.ptr.map(|p| SendPtr(p.as_ptr()));
 
         tokio::task::spawn_blocking(move || {
-            // Reconstruct Listener from raw pointer
-            // SAFETY: The original Listener must not be dropped while this task runs.
-            // This is safe because spawn_blocking completes before the await returns,
-            // and the caller holds a reference to self during that time.
-            let temp_listener = Listener {
-                ptr: data.ptr.and_then(|SendPtr(p)| NonNull::new(p)),
-                addr: data.addr,
-            };
-            temp_listener.accept()
+            // IMPORTANT: Do NOT reconstruct a temporary `Listener` here.
+            // `Listener`'s Drop closes the underlying C listener; creating a temporary
+            // wrapper would close the real listener at the end of this closure.
+
+            let SendPtr(listener_ptr) = ptr.ok_or_else(|| {
+                Error::new(ErrorCode::ListenerClosed, "listener is closed")
+            })?;
+
+            let mut err = init_c_err();
+            let conn_ptr = unsafe { mtls_sys::mtls_accept(listener_ptr, &mut err) };
+
+            if conn_ptr.is_null() || !is_c_err_ok(&err) {
+                return Err(Error::from_c_err(&err));
+            }
+
+            let conn_ptr = NonNull::new(conn_ptr)
+                .ok_or_else(|| Error::new(ErrorCode::AcceptFailed, "accept returned null"))?;
+
+            Ok(Conn::from_raw(conn_ptr))
         })
         .await
-        .map_err(|e| Error::new(ErrorCode::AcceptFailed, format!("task panicked: {}", e)))?
+        .map_err(|e| Error::new(ErrorCode::AcceptFailed, format!("task panicked: {}", e)))
+        .map(|result| result.map(crate::conn::AsyncConn::new))?
     }
 
     /// Accept an incoming connection.

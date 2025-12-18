@@ -58,11 +58,14 @@ use std::env;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 
-use futures::{AsyncReadExt, AsyncWriteExt};
-use mtls::{Config, Context};
+// AsyncConn has explicit async methods, no need for futures traits
+use mtls::{Config, Context, ErrorCode};
 use tokio::sync::Mutex;
+
+type CertBundle = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 
 /// Stress test configuration
 #[derive(Clone)]
@@ -210,7 +213,7 @@ fn check_system_limits(workers: usize, total_connections: usize) {
 }
 
 /// Generate test certificates using rcgen
-fn generate_certificates() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+fn generate_certificates() -> CertBundle {
     use rcgen::{
         BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
         KeyUsagePurpose, SanType,
@@ -295,25 +298,27 @@ fn find_available_port() -> u16 {
 
 /// Handle a connection on the server side (async)
 async fn handle_server_connection(
-    mut conn: mtls::Conn,
+    mut conn: mtls::AsyncConn,
     metrics: Arc<AsyncStressMetrics>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf = [0u8; 1024];
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut buf = [0u8; 4096]; // Increased buffer size
 
     match conn.read(&mut buf).await {
         Ok(n) => {
             if n > 0 {
-                metrics.bytes_received.fetch_add(n as i64, Ordering::SeqCst);
+                metrics
+                    .bytes_received
+                    .fetch_add(n as i64, Ordering::Relaxed);
                 // Echo back
                 match conn.write_all(&buf[..n]).await {
                     Ok(_) => {
-                        metrics.bytes_sent.fetch_add(n as i64, Ordering::SeqCst);
+                        metrics.bytes_sent.fetch_add(n as i64, Ordering::Relaxed);
                     }
                     Err(e) => {
                         metrics.record_error(&format!("server write: {}", e)).await;
                     }
                 }
-                conn.flush().await?;
+                let _ = conn.flush().await;
             }
         }
         Err(e) => {
@@ -374,25 +379,26 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
         .expect("Failed to create client config");
 
     let client_ctx =
-        Arc::new(Context::new(&client_config).expect("Failed to create client config"));
+        Arc::new(Context::new(&client_config).expect("Failed to create client context"));
 
     // Find available port
     let port = find_available_port();
     let server_addr = format!("127.0.0.1:{}", port);
 
     // Start listener
-    // Note: Since Listener is not Send, we can't spawn it in a separate task.
-    // We'll run the acceptor loop directly in this function.
-    let mut listener = server_ctx.listen(&server_addr).expect("Failed to listen");
+    let listener = Arc::new(std::sync::Mutex::new(Some(
+        server_ctx.listen(&server_addr).expect("Failed to listen"),
+    )));
 
     let metrics = Arc::new(AsyncStressMetrics::new());
-    let stop_server = Arc::new(AtomicBool::new(false));
+    let stop_flag = Arc::new(AtomicBool::new(false));
 
     // Progress reporting task
     let progress_metrics = metrics.clone();
-    let progress_stop = stop_server.clone();
+    let progress_stop = stop_flag.clone();
     let progress_interval = config.progress_interval;
     let start_time = Instant::now();
+    let total_connections = config.total_connections;
 
     let progress_handle = tokio::spawn(async move {
         while !progress_stop.load(Ordering::SeqCst) {
@@ -403,12 +409,12 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
 
             let attempted = progress_metrics
                 .connections_attempted
-                .load(Ordering::SeqCst);
+                .load(Ordering::Relaxed);
             let succeeded = progress_metrics
                 .connections_succeeded
-                .load(Ordering::SeqCst);
-            let failed = progress_metrics.connections_failed.load(Ordering::SeqCst);
-            let current = progress_metrics.current_conns.load(Ordering::SeqCst);
+                .load(Ordering::Relaxed);
+            let failed = progress_metrics.connections_failed.load(Ordering::Relaxed);
+            let current = progress_metrics.current_conns.load(Ordering::Relaxed);
             let elapsed = start_time.elapsed().as_secs_f64();
             let rate = if elapsed > 0.0 {
                 succeeded as f64 / elapsed
@@ -417,8 +423,8 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
             };
 
             print!(
-                "\r[{:5.1}s] Attempted: {:6} | Succeeded: {:6} | Failed: {:4} | Active: {:3} | Rate: {:.0}/s    ",
-                elapsed, attempted, succeeded, failed, current, rate
+                "\r[{:5.1}s] Attempted: {:6}/{:6} | Succeeded: {:6} | Failed: {:4} | Active: {:3} | Rate: {:.0}/s    ",
+                elapsed, attempted, total_connections, succeeded, failed, current, rate
             );
             use std::io::Write as _;
             let _ = std::io::stdout().flush();
@@ -428,12 +434,92 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
     // Wait for server to be ready
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Client worker tasks
     println!(
         "\nStarting async stress test: {} connections with {} workers\n",
         config.total_connections, config.concurrent_workers
     );
 
+    // Spawn the acceptor task using tokio::task::spawn_blocking
+    // Keep listener in Arc<Mutex> so shutdown() can be called from outside
+    let acceptor_metrics = metrics.clone();
+    let acceptor_stop = stop_flag.clone();
+    let acceptor_listener = listener.clone();
+
+    let acceptor_handle = tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Handle::current();
+
+        loop {
+            if acceptor_stop.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // Take listener out of Arc<Mutex> temporarily for accept() call
+            // This releases the lock, allowing shutdown() to be called from outside
+            let listener_opt = {
+                let mut listener_guard = acceptor_listener.lock().unwrap();
+                listener_guard.take()
+            };
+
+            let listener = match listener_opt {
+                Some(ref l) if l.is_closed() => {
+                    break;
+                }
+                Some(l) => l,
+                None => break,
+            };
+
+            // Call accept - this blocks until a connection arrives or shutdown interrupts
+            // Lock is released during this call, so shutdown() can acquire it
+            let accept_result = listener.accept();
+
+            // Put listener back into Arc<Mutex>
+            {
+                let mut listener_guard = acceptor_listener.lock().unwrap();
+                *listener_guard = Some(listener);
+            }
+
+            match accept_result {
+                Ok(conn) => {
+                    let metrics = acceptor_metrics.clone();
+                    // Wrap Conn in AsyncConn for async I/O
+                    let async_conn = mtls::AsyncConn::new(conn);
+                    rt.spawn(async move {
+                        if let Err(e) = handle_server_connection(async_conn, metrics.clone()).await
+                        {
+                            metrics.record_error(&format!("handler: {}", e)).await;
+                        }
+                    });
+                }
+                Err(e) => {
+                    // Check if we're shutting down
+                    if acceptor_stop.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    // Check if listener was closed (shutdown called)
+                    let listener_guard = acceptor_listener.lock().unwrap();
+                    if listener_guard
+                        .as_ref()
+                        .map(|l| l.is_closed())
+                        .unwrap_or(true)
+                    {
+                        break;
+                    }
+                    drop(listener_guard);
+
+                    // Log error but continue (might be interrupted by shutdown)
+                    if !acceptor_stop.load(Ordering::SeqCst) {
+                        eprintln!("Accept error: {:?}", e);
+                    }
+                    // Break on non-timeout errors
+                    if e.code() != ErrorCode::Timeout {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // Client worker tasks
     let connection_counter = Arc::new(AtomicI64::new(0));
     let total = config.total_connections as i64;
 
@@ -447,7 +533,7 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
 
         let handle = tokio::spawn(async move {
             let message: Vec<u8> = (0..message_size).map(|i| b'A' + (i % 26) as u8).collect();
-            let mut buf = [0u8; 1024];
+            let mut buf = vec![0u8; message_size + 256]; // Buffer slightly larger than message
 
             loop {
                 let conn_id = counter.fetch_add(1, Ordering::SeqCst);
@@ -455,18 +541,20 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
                     break;
                 }
 
-                metrics.connections_attempted.fetch_add(1, Ordering::SeqCst);
-                let current = metrics.current_conns.fetch_add(1, Ordering::SeqCst) + 1;
+                metrics
+                    .connections_attempted
+                    .fetch_add(1, Ordering::Relaxed);
+                let current = metrics.current_conns.fetch_add(1, Ordering::Relaxed) + 1;
 
                 // Update max concurrent
                 loop {
-                    let max = metrics.max_concurrent_conns.load(Ordering::SeqCst);
+                    let max = metrics.max_concurrent_conns.load(Ordering::Relaxed);
                     if current <= max {
                         break;
                     }
                     if metrics
                         .max_concurrent_conns
-                        .compare_exchange(max, current, Ordering::SeqCst, Ordering::SeqCst)
+                        .compare_exchange(max, current, Ordering::Relaxed, Ordering::Relaxed)
                         .is_ok()
                     {
                         break;
@@ -484,41 +572,54 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
                             Ok(_) => {
                                 metrics
                                     .bytes_sent
-                                    .fetch_add(message.len() as i64, Ordering::SeqCst);
+                                    .fetch_add(message.len() as i64, Ordering::Relaxed);
                             }
                             Err(e) => {
                                 drop(conn);
-                                metrics.connections_failed.fetch_add(1, Ordering::SeqCst);
-                                metrics.current_conns.fetch_sub(1, Ordering::SeqCst);
+                                metrics.connections_failed.fetch_add(1, Ordering::Relaxed);
+                                metrics.current_conns.fetch_sub(1, Ordering::Relaxed);
                                 metrics.record_error(&format!("write: {}", e)).await;
                                 continue;
                             }
                         }
 
+                        // Flush before reading
+                        if let Err(e) = conn.flush().await {
+                            drop(conn);
+                            metrics.connections_failed.fetch_add(1, Ordering::Relaxed);
+                            metrics.current_conns.fetch_sub(1, Ordering::Relaxed);
+                            metrics.record_error(&format!("flush: {}", e)).await;
+                            continue;
+                        }
+
                         // Read
                         match conn.read(&mut buf).await {
                             Ok(n) => {
-                                metrics.bytes_received.fetch_add(n as i64, Ordering::SeqCst);
+                                metrics
+                                    .bytes_received
+                                    .fetch_add(n as i64, Ordering::Relaxed);
                             }
                             Err(e) => {
                                 drop(conn);
-                                metrics.connections_failed.fetch_add(1, Ordering::SeqCst);
-                                metrics.current_conns.fetch_sub(1, Ordering::SeqCst);
+                                metrics.connections_failed.fetch_add(1, Ordering::Relaxed);
+                                metrics.current_conns.fetch_sub(1, Ordering::Relaxed);
                                 metrics.record_error(&format!("read: {}", e)).await;
                                 continue;
                             }
                         }
 
                         drop(conn);
-                        metrics.connections_succeeded.fetch_add(1, Ordering::SeqCst);
+                        metrics
+                            .connections_succeeded
+                            .fetch_add(1, Ordering::Relaxed);
                         metrics
                             .total_connect_time_ns
-                            .fetch_add(connect_duration.as_nanos() as i64, Ordering::SeqCst);
-                        metrics.current_conns.fetch_sub(1, Ordering::SeqCst);
+                            .fetch_add(connect_duration.as_nanos() as i64, Ordering::Relaxed);
+                        metrics.current_conns.fetch_sub(1, Ordering::Relaxed);
                     }
                     Err(e) => {
-                        metrics.connections_failed.fetch_add(1, Ordering::SeqCst);
-                        metrics.current_conns.fetch_sub(1, Ordering::SeqCst);
+                        metrics.connections_failed.fetch_add(1, Ordering::Relaxed);
+                        metrics.current_conns.fetch_sub(1, Ordering::Relaxed);
                         metrics.record_error(&format!("connect: {}", e)).await;
                     }
                 }
@@ -527,91 +628,34 @@ async fn run_async_stress_test(config: AsyncStressTestConfig) {
         client_handles.push(handle);
     }
 
-    // Run acceptor loop concurrently with clients
-    // Since Listener is not Send, we run the acceptor loop directly in this function.
-    // Clients are spawned tasks, so they run concurrently with the acceptor loop.
-    let metrics_acceptor = metrics.clone();
-    let stop_acceptor = stop_server.clone();
+    // Wait for all clients to complete
+    for handle in client_handles {
+        handle.await.expect("Client worker panicked");
+    }
 
-    // Run acceptor loop concurrently with clients
-    // Since Listener is not Send, we can't spawn it, so we run it directly
-    // Clients are spawned tasks, so they run concurrently automatically
-    let metrics_acceptor = metrics.clone();
-    let stop_acceptor = stop_server.clone();
+    // Signal shutdown
+    stop_flag.store(true, Ordering::SeqCst);
 
-    // Spawn clients - they run concurrently with the acceptor loop below
-    let clients_handle = tokio::spawn(async move {
-        for handle in client_handles {
-            handle.await.expect("Client worker panicked");
-        }
-        // Signal shutdown when clients finish
-        stop_server.store(true, Ordering::SeqCst);
-    });
-
-    // Run acceptor loop directly (not spawned, since Listener is not Send)
-    // Use futures::select! to coordinate with clients
-    use futures::future::{select, Either};
-    let acceptor_future = async {
-        loop {
-            if stop_acceptor.load(Ordering::SeqCst) {
-                break;
-            }
-
-            if listener.is_closed() {
-                break;
-            }
-
-            let accept_result = listener.accept_async().await;
-
-            match accept_result {
-                Ok(conn) => {
-                    let metrics = metrics_acceptor.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_server_connection(conn, metrics.clone()).await {
-                            metrics.record_error(&format!("handler: {}", e)).await;
-                        }
-                    });
-                }
-                Err(e) => {
-                    if stop_acceptor.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    metrics_acceptor
-                        .record_error(&format!("accept: {}", e))
-                        .await;
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            }
-        }
-    };
-
-    // Use futures::select! to run both concurrently (it doesn't require Send)
-    let mut acceptor_pinned = Box::pin(acceptor_future);
-    let mut clients_pinned = Box::pin(clients_handle);
-
-    match select(acceptor_pinned.as_mut(), clients_pinned.as_mut()).await {
-        Either::Left((_, _)) => {
-            // Acceptor finished first (shouldn't happen normally)
-        }
-        Either::Right((_, _)) => {
-            // Clients finished - stop flag is already set, acceptor should exit
+    // Call shutdown on the listener to interrupt any blocking accept() calls
+    // This must be done while the listener is in the Arc<Mutex>
+    {
+        let mut listener_guard = listener.lock().unwrap();
+        if let Some(ref mut l) = listener_guard.as_mut() {
+            l.shutdown();
         }
     }
 
-    // Drop pinned futures to release borrows
-    drop(acceptor_pinned);
-    drop(clients_pinned);
-
-    // Now we can shutdown the listener
-    listener.shutdown();
+    // Wait for acceptor to finish
+    acceptor_handle.await.expect("Acceptor task panicked");
 
     let total_duration = start_time.elapsed();
 
-    // Wait for progress task
-    progress_handle.await.expect("Progress task panicked");
+    // Stop progress reporting
+    progress_handle.abort();
+    let _ = progress_handle.await;
 
     // Give a moment for any remaining connections to close
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     println!(
         "\n\nTest completed in {:.2} seconds",

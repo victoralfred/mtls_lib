@@ -55,10 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Use async read/write
-    use futures::AsyncReadExt;
-    use futures::AsyncWriteExt;
-
     // Send message
     let message = b"Hello, mTLS!";
     conn.write_all(message).await?;
