@@ -55,6 +55,10 @@ struct StressMetrics {
     bytes_sent: AtomicI64,
     bytes_received: AtomicI64,
     total_connect_time_ns: AtomicI64,
+    total_client_write_time_ns: AtomicI64,
+    total_client_read_time_ns: AtomicI64,
+    total_server_accept_time_ns: AtomicI64,
+    total_server_echo_time_ns: AtomicI64,
     max_concurrent_conns: AtomicI64,
     current_conns: AtomicI64,
     errors: Mutex<HashMap<String, usize>>,
@@ -69,6 +73,10 @@ impl StressMetrics {
             bytes_sent: AtomicI64::new(0),
             bytes_received: AtomicI64::new(0),
             total_connect_time_ns: AtomicI64::new(0),
+            total_client_write_time_ns: AtomicI64::new(0),
+            total_client_read_time_ns: AtomicI64::new(0),
+            total_server_accept_time_ns: AtomicI64::new(0),
+            total_server_echo_time_ns: AtomicI64::new(0),
             max_concurrent_conns: AtomicI64::new(0),
             current_conns: AtomicI64::new(0),
             errors: Mutex::new(HashMap::new()),
@@ -88,10 +96,34 @@ impl StressMetrics {
         let bytes_sent = self.bytes_sent.load(Ordering::SeqCst);
         let bytes_received = self.bytes_received.load(Ordering::SeqCst);
         let total_connect_ns = self.total_connect_time_ns.load(Ordering::SeqCst);
+        let total_client_write_ns = self.total_client_write_time_ns.load(Ordering::SeqCst);
+        let total_client_read_ns = self.total_client_read_time_ns.load(Ordering::SeqCst);
+        let total_server_accept_ns = self.total_server_accept_time_ns.load(Ordering::SeqCst);
+        let total_server_echo_ns = self.total_server_echo_time_ns.load(Ordering::SeqCst);
         let max_concurrent = self.max_concurrent_conns.load(Ordering::SeqCst);
 
         let avg_connect_ms = if succeeded > 0 {
             (total_connect_ns as f64) / (succeeded as f64) / 1_000_000.0
+        } else {
+            0.0
+        };
+        let avg_client_write_ms = if succeeded > 0 {
+            (total_client_write_ns as f64) / (succeeded as f64) / 1_000_000.0
+        } else {
+            0.0
+        };
+        let avg_client_read_ms = if succeeded > 0 {
+            (total_client_read_ns as f64) / (succeeded as f64) / 1_000_000.0
+        } else {
+            0.0
+        };
+        let avg_server_accept_ms = if succeeded > 0 {
+            (total_server_accept_ns as f64) / (succeeded as f64) / 1_000_000.0
+        } else {
+            0.0
+        };
+        let avg_server_echo_ms = if succeeded > 0 {
+            (total_server_echo_ns as f64) / (succeeded as f64) / 1_000_000.0
         } else {
             0.0
         };
@@ -112,6 +144,10 @@ impl StressMetrics {
         println!("  Max Concurrent: {}", max_concurrent);
         println!("\nPerformance:");
         println!("  Avg Connect+Handshake: {:.2} ms", avg_connect_ms);
+        println!("  Avg Client Write:      {:.2} ms", avg_client_write_ms);
+        println!("  Avg Client Read:       {:.2} ms", avg_client_read_ms);
+        println!("  Avg Server Accept:     {:.2} ms", avg_server_accept_ms);
+        println!("  Avg Server Echo:       {:.2} ms", avg_server_echo_ms);
         println!("  Bytes Sent:            {}", bytes_sent);
         println!("  Bytes Received:        {}", bytes_received);
         println!("\nErrors:");
@@ -313,38 +349,39 @@ fn run_stress_test(config: StressTestConfig) {
     let stop_server = Arc::new(AtomicBool::new(false));
     let active_handlers = Arc::new(AtomicI64::new(0));
 
-    // Channel for dispatching connections to handler threads
-    let (conn_tx, conn_rx) = std::sync::mpsc::channel::<mtls::Conn>();
-    let conn_rx = Arc::new(Mutex::new(conn_rx));
-
-    // Start handler worker threads
+    // One channel per handler worker to avoid a shared Receiver mutex bottleneck.
     let mut handler_handles = Vec::new();
+    let mut worker_txs = Vec::new();
     for _ in 0..config.concurrent_workers {
-        let rx = conn_rx.clone();
+        let (tx, rx) = std::sync::mpsc::channel::<mtls::Conn>();
+        worker_txs.push(tx);
         let handlers = active_handlers.clone();
         let stop = stop_server.clone();
+        let metrics = metrics.clone();
 
         let handle = thread::spawn(move || loop {
-            let conn = {
-                let lock = rx.lock().unwrap();
-                match lock.recv_timeout(Duration::from_millis(100)) {
-                    Ok(c) => c,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        if stop.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        continue;
+            let conn = match rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(c) => c,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if stop.load(Ordering::SeqCst) {
+                        break;
                     }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    continue;
                 }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             };
 
             handlers.fetch_add(1, Ordering::SeqCst);
             let mut conn = conn;
             let mut buf = [0u8; 1024];
+            let echo_start = Instant::now();
             if let Ok(n) = conn.read(&mut buf) {
                 let _ = conn.write_all(&buf[..n]);
             }
+            let echo_dur = echo_start.elapsed();
+            metrics
+                .total_server_echo_time_ns
+                .fetch_add(echo_dur.as_nanos() as i64, Ordering::SeqCst);
             conn.close();
             handlers.fetch_sub(1, Ordering::SeqCst);
         });
@@ -360,7 +397,10 @@ fn run_stress_test(config: StressTestConfig) {
     //    at the OS level even though we're using the listener from another thread
     let listener_acceptor = listener.clone();
     let accept_stop = stop_server.clone();
+    let accept_metrics = metrics.clone();
+    let accept_worker_txs = worker_txs;
     let accept_handle = thread::spawn(move || {
+        let mut rr: usize = 0;
         loop {
             // Check stop flag before blocking accept
             if accept_stop.load(Ordering::SeqCst) {
@@ -383,11 +423,23 @@ fn run_stress_test(config: StressTestConfig) {
             // - accept() only requires &self (immutable reference), so concurrent reads are safe
             // - shutdown() modifies internal state, but accept() checks for closed state internally
             // - This matches the Go bindings pattern: unlock mutex before blocking C call
+            let accept_start = Instant::now();
             let accept_result = unsafe { (*listener_ptr).accept() };
+            let accept_dur = accept_start.elapsed();
 
             match accept_result {
                 Ok(conn) => {
-                    if conn_tx.send(conn).is_err() {
+                    accept_metrics
+                        .total_server_accept_time_ns
+                        .fetch_add(accept_dur.as_nanos() as i64, Ordering::SeqCst);
+
+                    // Round-robin dispatch to avoid shared receiver contention.
+                    if accept_worker_txs.is_empty() {
+                        break;
+                    }
+                    let idx = rr % accept_worker_txs.len();
+                    rr = rr.wrapping_add(1);
+                    if accept_worker_txs[idx].send(conn).is_err() {
                         break;
                     }
                 }
@@ -402,7 +454,8 @@ fn run_stress_test(config: StressTestConfig) {
                 }
             }
         }
-        drop(conn_tx); // Close the channel
+        // Dropping the senders closes all worker channels.
+        drop(accept_worker_txs);
     });
 
     // Progress reporting thread
@@ -499,11 +552,17 @@ fn run_stress_test(config: StressTestConfig) {
                 match conn_result {
                     Ok(mut conn) => {
                         // Write
-                        match conn.write_all(&message) {
+                        let write_start = Instant::now();
+                        let write_res = conn.write_all(&message);
+                        let write_dur = write_start.elapsed();
+                        match write_res {
                             Ok(_) => {
                                 metrics
                                     .bytes_sent
                                     .fetch_add(message.len() as i64, Ordering::SeqCst);
+                                metrics
+                                    .total_client_write_time_ns
+                                    .fetch_add(write_dur.as_nanos() as i64, Ordering::SeqCst);
                             }
                             Err(e) => {
                                 conn.close();
@@ -515,9 +574,15 @@ fn run_stress_test(config: StressTestConfig) {
                         }
 
                         // Read
-                        match conn.read(&mut buf) {
+                        let read_start = Instant::now();
+                        let read_res = conn.read(&mut buf);
+                        let read_dur = read_start.elapsed();
+                        match read_res {
                             Ok(n) => {
                                 metrics.bytes_received.fetch_add(n as i64, Ordering::SeqCst);
+                                metrics
+                                    .total_client_read_time_ns
+                                    .fetch_add(read_dur.as_nanos() as i64, Ordering::SeqCst);
                             }
                             Err(e) => {
                                 conn.close();
