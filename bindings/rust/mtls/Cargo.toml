@@ -15,7 +15,8 @@ futures = { version = "0.3", optional = true }
 [dev-dependencies]
 tempfile = "3"
 rcgen = "0.13"
-time = "0.3"
+# Keep MSRV compatibility (CI tests Rust 1.78); `time` >= 0.3.42 requires newer rustc.
+time = ">=0.3, <0.3.42"
 tokio-test = "0.4"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 futures = "0.3"

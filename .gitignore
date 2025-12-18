@@ -363,3 +363,4 @@ error.txt
 error2.txt
 .c*/*
 bindings/rust/target
+bindings/java/target
