@@ -250,6 +250,11 @@ static int java_config_to_c(JNIEnv *env, jobject jconfig, struct mtls_config *co
 
             for (int i = 0; i < size; i++) {
                 jstring san = (jstring)(*env)->CallObjectMethod(env, sans_list, get_method, i);
+                if (san == NULL) {
+                    /* NULL element in list or exception thrown - skip this element */
+                    config->allowed_sans[i] = NULL;
+                    continue;
+                }
                 const char *san_str = (*env)->GetStringUTFChars(env, san, NULL);
                 if (san_str != NULL) {
                     config->allowed_sans[i] = strdup(san_str);
