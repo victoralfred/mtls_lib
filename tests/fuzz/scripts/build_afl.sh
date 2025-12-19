@@ -66,18 +66,31 @@ cmake --build . --parallel "$(nproc 2>/dev/null || echo 4)"
 
 # Verify AFL++ instrumentation
 echo -e "${GREEN}[+] Verifying AFL++ instrumentation${NC}"
-for fuzzer in tests/fuzz_*.c; do
-    if [ -f "$(basename "$fuzzer" .c)" ]; then
-        binary="$(basename "$fuzzer" .c)"
-        if ! nm "$binary" | grep -q "__afl"; then
-            echo -e "${YELLOW}[!] Warning: ${binary} may not be instrumented${NC}"
+INSTRUMENTED=0
+NOT_INSTRUMENTED=0
+for binary in tests/fuzz_oversized_sans tests/test_*; do
+    if [ -f "$binary" ] && [ -x "$binary" ]; then
+        if nm "$binary" 2>/dev/null | grep -q "__afl"; then
+            echo -e "${GREEN}  ✓ ${binary} is instrumented${NC}"
+            INSTRUMENTED=$((INSTRUMENTED + 1))
+        else
+            echo -e "${YELLOW}  ⚠ ${binary} may not be instrumented${NC}"
+            NOT_INSTRUMENTED=$((NOT_INSTRUMENTED + 1))
         fi
     fi
 done
 
+if [ $INSTRUMENTED -eq 0 ]; then
+    echo -e "${RED}[!] Error: No AFL++ instrumentation detected!${NC}"
+    echo "    Make sure AFL++ is properly installed and configured."
+    exit 1
+fi
+
 echo -e "${GREEN}[+] Build complete!${NC}"
-echo "    Fuzzing harnesses:"
-find tests -name "fuzz_*" -type f -executable 2>/dev/null | sed 's/^/      - /'
+echo "    Instrumented: $INSTRUMENTED binaries"
+if [ $NOT_INSTRUMENTED -gt 0 ]; then
+    echo -e "${YELLOW}    Not instrumented: $NOT_INSTRUMENTED binaries${NC}"
+fi
 
 echo ""
 echo "Next steps:"

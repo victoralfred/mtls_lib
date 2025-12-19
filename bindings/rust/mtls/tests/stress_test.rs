@@ -166,7 +166,7 @@ impl StressMetrics {
 }
 
 /// Check system file descriptor limits
-fn check_system_limits(_workers: usize) {
+fn check_system_limits(workers: usize) {
     println!("\n{}", "=".repeat(60));
     println!("  SYSTEM LIMITS CHECK");
     println!("{}", "=".repeat(60));
