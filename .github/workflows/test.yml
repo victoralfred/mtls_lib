@@ -568,7 +568,6 @@ jobs:
 
       - name: Send Slack notification
         continue-on-error: true
-        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
         uses: ./.github/actions/slack-notify
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
