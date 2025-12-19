@@ -389,7 +389,7 @@ jobs:
   notify-slack:
     name: Notify Slack
     runs-on: ubuntu-latest
-    needs: [test-java-bindings, package-java-bindings, code-quality]
+    needs: [test-java-bindings, build-java-package, code-quality]
     if: always()
     environment: production
 
@@ -401,7 +401,7 @@ jobs:
         id: build-status
         run: |
           if [ "${{ needs.test-java-bindings.result }}" == "success" ] && \
-             [ "${{ needs.package-java-bindings.result }}" == "success" ] && \
+             [ "${{ needs.build-java-package.result }}" == "success" ] && \
              [ "${{ needs.code-quality.result }}" == "success" ]; then
             echo "status=success" >> $GITHUB_OUTPUT
           else

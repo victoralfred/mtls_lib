@@ -166,6 +166,7 @@ impl StressMetrics {
 }
 
 /// Check system file descriptor limits
+#[cfg_attr(not(unix), allow(unused_variables))]
 fn check_system_limits(workers: usize) {
     println!("\n{}", "=".repeat(60));
     println!("  SYSTEM LIMITS CHECK");
