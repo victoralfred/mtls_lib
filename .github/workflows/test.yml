@@ -427,7 +427,7 @@ jobs:
         run: |
           cppcheck --enable=all --suppress=missingIncludeSystem \
             --suppress=unusedFunction --error-exitcode=1 \
-            --project=build/compile_commands.json || true
+            --project=build/compile_commands.json
 
       - name: Run clang-tidy
         run: |
@@ -435,7 +435,7 @@ jobs:
           # Skip non-native platform files (platform_win32.c and platform_darwin.c on Linux)
           find ../src ../include \( -name "*.c" -o -name "*.h" \) \
             ! -name "platform_win32.c" ! -name "platform_darwin.c" | \
-            xargs clang-tidy -p . --warnings-as-errors=* || true
+            xargs clang-tidy -p . --warnings-as-errors=*
 
   test-integration:
     name: Integration Tests
