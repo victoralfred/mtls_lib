@@ -417,6 +417,40 @@ cd build/tests
 5. **Initialize variables** before use
 6. **Free allocated memory** in all paths
 7. **Use const** for read-only parameters
+8. **Use constant-time comparisons** for security-sensitive data
+
+### Constant-Time Operations
+
+For security-sensitive comparisons (credentials, tokens, cryptographic data), use the constant-time functions to prevent timing attacks:
+
+```c
+#include "internal/platform.h"
+
+// For memory comparison (recommended for most cases)
+int platform_consttime_memcmp(const void *lhs, const void *rhs, size_t len);
+
+// For string comparison
+int platform_consttime_strcmp(const char *lhs, const char *rhs);
+```
+
+**When to use constant-time:**
+- Password/token verification
+- Cryptographic key comparison
+- Certificate/identity validation
+- Any comparison where timing could leak information
+
+**Example:**
+```c
+// Good: Constant-time comparison
+if (platform_consttime_memcmp(user_token, expected_token, TOKEN_LEN) == 0) {
+    // Authenticated
+}
+
+// Bad: Standard comparison leaks timing information
+if (memcmp(user_token, expected_token, TOKEN_LEN) == 0) {
+    // Timing attack possible
+}
+```
 
 ---
 
@@ -481,6 +515,89 @@ Most IDEs support clang-format and clang-tidy:
 
 ---
 
+## CI Static Analysis Enforcement
+
+Static analysis is **enforced in CI** - violations will fail the build. This ensures the codebase maintains industrial-grade quality.
+
+### Enforced Tools
+
+| Tool | Configuration | CI Behavior |
+|------|---------------|-------------|
+| **clang-tidy** | `.clang-tidy` | `--warnings-as-errors=*` - any warning fails build |
+| **cppcheck** | inline suppression | `--error-exitcode=1` - any error fails build |
+
+### Running Locally (Before Push)
+
+```bash
+# Generate compile_commands.json (required for analysis)
+cd build
+cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build .
+
+# Run cppcheck
+cppcheck --enable=all --suppress=missingIncludeSystem \
+  --suppress=unusedFunction --error-exitcode=1 \
+  --project=compile_commands.json
+
+# Run clang-tidy (excludes non-native platform files)
+find ../src ../include \( -name "*.c" -o -name "*.h" \) \
+  ! -name "platform_win32.c" ! -name "platform_darwin.c" | \
+  xargs clang-tidy -p . --warnings-as-errors=*
+```
+
+### Suppression Mechanism
+
+#### When to Suppress
+
+Suppression should be a **last resort**. Only suppress when:
+1. The warning is a **false positive** (tool bug or context misunderstanding)
+2. The pattern is **intentional** and documented
+3. Fixing would introduce **worse problems**
+
+#### Inline Suppression
+
+**clang-tidy** - use `NOLINT` comments:
+```c
+// Suppress specific check with justification
+void* ptr = malloc(size);  // NOLINT(cppcoreguidelines-no-malloc) - low-level API
+
+// Suppress for next line
+// NOLINTNEXTLINE(bugprone-suspicious-include)
+#include "generated_code.c"
+```
+
+**cppcheck** - use inline suppression:
+```c
+// cppcheck-suppress unusedFunction
+// Justification: Called only via function pointer
+static void callback_handler(void) { ... }
+```
+
+#### Project-Level Suppression
+
+Configured in `.clang-tidy`:
+- `bugprone-easily-swappable-parameters` - disabled (common in C APIs)
+- `readability-magic-numbers` - disabled (too noisy for constants)
+- `clang-analyzer-valist.Uninitialized` - disabled (false positives with va_list)
+
+#### Documentation Requirement
+
+All suppressions **must** include:
+1. The specific check being suppressed
+2. A brief justification explaining why
+
+```c
+// Good: Clear justification
+// NOLINTNEXTLINE(cert-err33-c) - fprintf return value not critical for logging
+fprintf(stderr, "Debug: %s\n", msg);
+
+// Bad: No justification
+// NOLINTNEXTLINE
+fprintf(stderr, "Debug: %s\n", msg);
+```
+
+---
+
 ## Summary
 
 ✅ **Pre-commit hook** enforces 7 validation steps
@@ -489,5 +606,6 @@ Most IDEs support clang-format and clang-tidy:
 ✅ **cppcheck** provides additional static analysis
 ✅ **Automated tests** ensure functionality
 ✅ **Security scans** prevent vulnerabilities
+✅ **CI enforces** static analysis (build fails on violations)
 
 The development workflow is designed to maintain industrial-standard code quality while remaining fast and developer-friendly.

@@ -368,3 +368,5 @@ build_fuzz
 tests/fuzz/FUZZING_FINDINGS.md
 tests/fuzz/corpus/fuzz_pem_parsing/truncated.pem
 tests/fuzz/corpus/fuzz_pem_parsing/valid_cert.pem
+docs/SECURITY_AUDIT.md
+docs/IDENTITY_VERIFICATION.md

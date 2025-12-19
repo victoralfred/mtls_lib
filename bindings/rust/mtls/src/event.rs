@@ -207,11 +207,23 @@ extern "C" fn c_event_callback(event: *const mtls_sys::mtls_event, user_data: *m
     // tries to register/unregister other callbacks or acquires locks
     // Use catch_unwind to prevent panics from unwinding through C code (undefined behavior)
     if let Some(callback) = callback {
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if let Err(panic_info) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             callback(&rust_event);
-        }));
-        // Note: Panics are silently swallowed to prevent unwinding through C code.
-        // In production, consider logging panics to a diagnostics system.
+        })) {
+            // Log the panic - this prevents silent failures in production
+            let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            log::error!(
+                "mtls event callback panicked: {} (event: {:?})",
+                panic_msg,
+                rust_event.event_type
+            );
+        }
     }
 }
 

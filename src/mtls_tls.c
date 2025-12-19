@@ -48,7 +48,10 @@ static bool is_valid_pem_format(const uint8_t *data, size_t len)
     if (!data || len < MTLS_PEM_HEADER_PREFIX_LEN) {
         return false;
     }
-    return memcmp(data, MTLS_PEM_HEADER_PREFIX, MTLS_PEM_HEADER_PREFIX_LEN) == 0;
+    /* Use constant-time comparison to prevent timing attacks.
+     * While PEM headers are not secret, consistent timing prevents
+     * format probing and side-channel analysis. */
+    return platform_consttime_memcmp(data, MTLS_PEM_HEADER_PREFIX, MTLS_PEM_HEADER_PREFIX_LEN) == 0;
 }
 
 /*
