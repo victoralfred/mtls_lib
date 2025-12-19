@@ -9,6 +9,7 @@ extern void mtlsEventGateway(mtls_event *event, void *userdata);
 import "C"
 
 import (
+	"log"
 	"sync"
 	"time"
 	"unsafe"
@@ -180,9 +181,8 @@ func mtlsEventGateway(cEvent *C.mtls_event, userdata unsafe.Pointer) {
 	// through C code (which would cause undefined behavior)
 	defer func() {
 		if r := recover(); r != nil {
-			// Panic recovered - log if possible, but don't crash the library.
-			// In production, this could log to a diagnostics system.
-			// Silently continue - callback panics should not affect library operation.
+			// Log the panic to prevent silent failures in production
+			log.Printf("mtls: event callback panicked: %v (event: %s)", r, event.Type)
 		}
 	}()
 	callback(event)
