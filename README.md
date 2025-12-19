@@ -34,8 +34,6 @@ A minimal, secure, and auditable mTLS (mutual TLS) transport library with cross-
 - ✅ Timing-attack resistant (constant-time comparison)
 - ✅ Fail-closed security (explicit error handling)
 
-See [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) for complete details and [CHANGELOG.md](CHANGELOG.md) for version history.
-
 ### Security Constants
 
 - `MTLS_MAX_IDENTITY_LEN` - Maximum identity string length (10,000 characters)
@@ -621,6 +619,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 - [BUILD.md](docs/BUILD.md) - Build status and compilation instructions
 - [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Development workflow and tooling
-- [IDENTITY_VERIFICATION.md](docs/IDENTITY_VERIFICATION.md) - Complete identity verification guide
-- [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) - Security fixes and vulnerability remediation
 - [Go Bindings](bindings/go/README.md) - Go language bindings documentation
