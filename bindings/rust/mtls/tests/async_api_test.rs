@@ -275,9 +275,10 @@ async fn test_accept_async_success() {
     // Spawn client task (blocking I/O with delay)
     let client_ctx_clone = client_ctx.clone();
     let server_addr_clone = server_addr.clone();
-    let client_handle = tokio::spawn(async move {
+    let client_handle = tokio::task::spawn_blocking(move || {
         use std::io::Write;
-        tokio::time::sleep(Duration::from_millis(50)).await; // Give server time to accept
+        // Give server time to start accepting
+        std::thread::sleep(Duration::from_millis(100));
         let mut conn = client_ctx_clone
             .connect(&server_addr_clone)
             .expect("Failed to connect");
@@ -286,7 +287,11 @@ async fn test_accept_async_success() {
 
     // Test async accept
     let conn_result = listener.accept_async().await;
-    assert!(conn_result.is_ok(), "accept_async should succeed");
+    assert!(
+        conn_result.is_ok(),
+        "accept_async should succeed, got error: {:?}",
+        conn_result.as_ref().err()
+    );
     let mut conn = conn_result.unwrap();
     assert!(
         conn.remote_addr().is_some(),
