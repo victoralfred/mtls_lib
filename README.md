@@ -620,3 +620,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 - [BUILD.md](docs/BUILD.md) - Build status and compilation instructions
 - [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Development workflow and tooling
 - [Go Bindings](bindings/go/README.md) - Go language bindings documentation
+- [Java Bindings](bindings/java/README.md) - Go language bindings documentation
+- [Rust Bindings](bindings/rust/README.md) - Go language bindings documentation
