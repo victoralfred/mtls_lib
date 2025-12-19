@@ -1,0 +1,252 @@
+name: 'Slack Notification'
+description: 'Send detailed Slack notification with links to repo, PR, and workflow'
+inputs:
+  webhook-url:
+    description: 'Slack webhook URL'
+    required: true
+  workflow-name:
+    description: 'Name of the workflow (e.g., "CI Build", "Release", "Fuzzing")'
+    required: true
+  job-status:
+    description: 'Overall job status (success, failure, cancelled)'
+    required: true
+  job-details:
+    description: 'Additional job-specific details (optional)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine status emoji and color
+      id: status
+      shell: bash
+      run: |
+        case "${{ inputs.job-status }}" in
+          success)
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "color=#36a64f" >> $GITHUB_OUTPUT
+            echo "text=Success" >> $GITHUB_OUTPUT
+            ;;
+          failure)
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "color=#dc3545" >> $GITHUB_OUTPUT
+            echo "text=Failed" >> $GITHUB_OUTPUT
+            ;;
+          cancelled)
+            echo "emoji=⚠️" >> $GITHUB_OUTPUT
+            echo "color=#ffc107" >> $GITHUB_OUTPUT
+            echo "text=Cancelled" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "emoji=ℹ️" >> $GITHUB_OUTPUT
+            echo "color=#17a2b8" >> $GITHUB_OUTPUT
+            echo "text=Unknown" >> $GITHUB_OUTPUT
+            ;;
+        esac
+
+    - name: Get commit information
+      id: commit
+      shell: bash
+      run: |
+        echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "full_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        echo "message=$(git log -1 --pretty=%B | head -n 1 | sed 's/"/\\"/g')" >> $GITHUB_OUTPUT
+        echo "author=$(git log -1 --pretty=%an | sed 's/"/\\"/g')" >> $GITHUB_OUTPUT
+        echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+    - name: Build Slack payload
+      id: payload
+      shell: bash
+      env:
+        WORKFLOW_NAME: ${{ inputs.workflow-name }}
+        JOB_STATUS: ${{ inputs.job-status }}
+        JOB_DETAILS: ${{ inputs.job-details }}
+        EMOJI: ${{ steps.status.outputs.emoji }}
+        STATUS_TEXT: ${{ steps.status.outputs.text }}
+        COLOR: ${{ steps.status.outputs.color }}
+      run: |
+        # Construct URLs
+        REPO_URL="https://github.com/${{ github.repository }}"
+        COMMIT_URL="${REPO_URL}/commit/${{ steps.commit.outputs.full_sha }}"
+        WORKFLOW_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
+        BRANCH_URL="${REPO_URL}/tree/${{ steps.commit.outputs.branch }}"
+
+        # PR information if available
+        PR_SECTION=""
+        if [ -n "${{ github.event.pull_request.number }}" ]; then
+          PR_URL="${REPO_URL}/pull/${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_SECTION=$(cat <<EOF
+        ,
+        {
+          "type": "section",
+          "fields": [
+            {
+              "type": "mrkdwn",
+              "text": "*Pull Request:*\n<${PR_URL}|#${{ github.event.pull_request.number }}: ${PR_TITLE}>"
+            },
+            {
+              "type": "mrkdwn",
+              "text": "*PR Author:*\n${{ github.event.pull_request.user.login }}"
+            }
+          ]
+        }
+        EOF
+        )
+        fi
+
+        # Event type context
+        EVENT_TYPE=""
+        case "${{ github.event_name }}" in
+          push)
+            EVENT_TYPE="Push to branch"
+            ;;
+          pull_request)
+            EVENT_TYPE="Pull request"
+            ;;
+          schedule)
+            EVENT_TYPE="Scheduled run"
+            ;;
+          workflow_dispatch)
+            EVENT_TYPE="Manual trigger"
+            ;;
+          *)
+            EVENT_TYPE="${{ github.event_name }}"
+            ;;
+        esac
+
+        # Job details section
+        DETAILS_SECTION=""
+        if [ -n "${JOB_DETAILS}" ]; then
+          DETAILS_SECTION=$(cat <<EOF
+        ,
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Details:*\n${JOB_DETAILS}"
+          }
+        }
+        EOF
+        )
+        fi
+
+        # Construct full payload
+        cat > /tmp/slack_payload.json <<PAYLOAD
+        {
+          "text": "${EMOJI} ${WORKFLOW_NAME} ${STATUS_TEXT}",
+          "attachments": [
+            {
+              "color": "${COLOR}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${EMOJI} ${WORKFLOW_NAME} ${STATUS_TEXT}",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${REPO_URL}|${{ github.repository }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n<${BRANCH_URL}|${{ steps.commit.outputs.branch }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${COMMIT_URL}|${{ steps.commit.outputs.sha }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Author:*\n${{ steps.commit.outputs.author }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Event:*\n${EVENT_TYPE}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\n${STATUS_TEXT}"
+                    }
+                  ]
+                }${PR_SECTION},
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Commit Message:*\n${{ steps.commit.outputs.message }}"
+                  }
+                }${DETAILS_SECTION},
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow Run",
+                        "emoji": true
+                      },
+                      "url": "${WORKFLOW_URL}",
+                      "style": "primary"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Commit",
+                        "emoji": true
+                      },
+                      "url": "${COMMIT_URL}"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Repository",
+                        "emoji": true
+                      },
+                      "url": "${REPO_URL}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Workflow run <${WORKFLOW_URL}|#${{ github.run_number }}> • <${REPO_URL}|${{ github.repository }}>"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        PAYLOAD
+
+        # Output for debugging
+        echo "Slack payload:"
+        cat /tmp/slack_payload.json
+
+        # Set output
+        echo "payload<<EOF" >> $GITHUB_OUTPUT
+        cat /tmp/slack_payload.json >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Send Slack notification
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.webhook-url }}
+      run: |
+        curl -X POST \
+          -H 'Content-Type: application/json' \
+          --data '@/tmp/slack_payload.json' \
+          "${SLACK_WEBHOOK_URL}"
