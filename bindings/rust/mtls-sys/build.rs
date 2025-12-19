@@ -47,9 +47,17 @@ fn main() {
 
     // Link the mTLS library and its dependencies
     println!("cargo:rustc-link-lib=mtls");
-    println!("cargo:rustc-link-lib=ssl");
-    println!("cargo:rustc-link-lib=crypto");
-    println!("cargo:rustc-link-lib=pthread");
+
+    // OpenSSL libraries have different names on Windows
+    if cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=libssl");
+        println!("cargo:rustc-link-lib=libcrypto");
+        // Windows doesn't use pthread
+    } else {
+        println!("cargo:rustc-link-lib=ssl");
+        println!("cargo:rustc-link-lib=crypto");
+        println!("cargo:rustc-link-lib=pthread");
+    }
 
     // Rerun if headers change
     println!("cargo:rerun-if-changed=wrapper.h");
@@ -141,6 +149,38 @@ fn find_openssl() {
         ];
 
         for path in &homebrew_paths {
+            if PathBuf::from(path).exists() {
+                println!("cargo:rustc-link-search=native={}", path);
+                return;
+            }
+        }
+    }
+
+    // Windows: Use OPENSSL_DIR or OPENSSL_LIB_DIR environment variables
+    if cfg!(target_os = "windows") {
+        // First try OPENSSL_LIB_DIR (set by CI workflow)
+        if let Ok(lib_dir) = env::var("OPENSSL_LIB_DIR") {
+            println!("cargo:rustc-link-search=native={}", lib_dir);
+            return;
+        }
+
+        // Then try OPENSSL_DIR/lib
+        if let Ok(openssl_dir) = env::var("OPENSSL_DIR") {
+            let lib_path = PathBuf::from(openssl_dir).join("lib");
+            if lib_path.exists() {
+                println!("cargo:rustc-link-search=native={}", lib_path.display());
+                return;
+            }
+        }
+
+        // Fallback: Common choco install paths
+        let common_paths = [
+            "C:\\Program Files\\OpenSSL\\lib",
+            "C:\\Program Files\\OpenSSL-Win64\\lib",
+            "C:\\OpenSSL-Win64\\lib",
+        ];
+
+        for path in &common_paths {
             if PathBuf::from(path).exists() {
                 println!("cargo:rustc-link-search=native={}", path);
                 return;
