@@ -568,9 +568,12 @@ jobs:
 
       - name: Send Slack notification
         continue-on-error: true
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         uses: ./.github/actions/slack-notify
         with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
           workflow-name: "Test Suite"
           job-status: ${{ steps.build-status.outputs.status }}
           job-details: ${{ steps.test-details.outputs.details }}
