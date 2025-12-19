@@ -272,29 +272,36 @@ async fn test_accept_async_success() {
     let server_addr = format!("127.0.0.1:{}", port);
     let listener = server_ctx.listen(&server_addr).expect("Failed to listen");
 
-    // Spawn client task (blocking I/O) BEFORE accepting
-    // Give it a longer delay to ensure accept starts first
+    // Use tokio::join! to run both accept and connect concurrently
+    // This avoids the race condition of having two spawn_blocking tasks
+    // competing for the blocking thread pool
     let client_ctx_clone = client_ctx.clone();
     let server_addr_clone = server_addr.clone();
-    let client_handle = tokio::task::spawn_blocking(move || {
-        use std::io::Write;
-        // Wait to ensure server starts accepting first
-        // Use longer delay on Windows for more reliable timing
-        std::thread::sleep(Duration::from_millis(200));
-        let mut conn = client_ctx_clone
-            .connect(&server_addr_clone)
-            .expect("Failed to connect");
-        Write::write_all(&mut conn, b"test message").expect("Failed to write");
-    });
 
-    // Test async accept - this should start immediately after spawning client
-    let conn_result = listener.accept_async().await;
-    assert!(
-        conn_result.is_ok(),
-        "accept_async should succeed, got error: {:?}",
-        conn_result.as_ref().err()
+    let (accept_result, _client_result) = tokio::join!(
+        // Server: async accept
+        listener.accept_async(),
+        // Client: delay then async connect
+        async move {
+            // Give server time to start accepting
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let mut conn = client_ctx_clone
+                .connect_async(&server_addr_clone)
+                .await
+                .expect("Failed to connect");
+            conn.write_all(b"test message")
+                .await
+                .expect("Failed to write");
+        }
     );
-    let mut conn = conn_result.unwrap();
+
+    // Verify accept succeeded
+    assert!(
+        accept_result.is_ok(),
+        "accept_async should succeed, got error: {:?}",
+        accept_result.as_ref().err()
+    );
+    let mut conn = accept_result.unwrap();
     assert!(
         conn.remote_addr().is_some(),
         "Connection should have remote address"
@@ -304,8 +311,6 @@ async fn test_accept_async_success() {
     let mut buf = [0u8; 1024];
     let n = conn.read(&mut buf).await.expect("Failed to read");
     assert_eq!(&buf[..n], b"test message");
-
-    let _ = client_handle.await;
 }
 
 #[tokio::test]
