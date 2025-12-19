@@ -1,0 +1,6 @@
+# Clang-tidy configuration for fuzzing harnesses
+# LibFuzzer requires specific function names that don't follow naming conventions
+
+InheritParentConfig: true
+
+Checks: '-readability-identifier-naming'

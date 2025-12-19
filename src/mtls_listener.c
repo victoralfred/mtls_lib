@@ -116,6 +116,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.error_code = MTLS_ERR_KILL_SWITCH_ENABLED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(listener->ctx, &event);
