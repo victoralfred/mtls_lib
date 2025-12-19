@@ -272,20 +272,22 @@ async fn test_accept_async_success() {
     let server_addr = format!("127.0.0.1:{}", port);
     let listener = server_ctx.listen(&server_addr).expect("Failed to listen");
 
-    // Spawn client task (blocking I/O with delay)
+    // Spawn client task (blocking I/O) BEFORE accepting
+    // Give it a longer delay to ensure accept starts first
     let client_ctx_clone = client_ctx.clone();
     let server_addr_clone = server_addr.clone();
     let client_handle = tokio::task::spawn_blocking(move || {
         use std::io::Write;
-        // Give server time to start accepting
-        std::thread::sleep(Duration::from_millis(100));
+        // Wait to ensure server starts accepting first
+        // Use longer delay on Windows for more reliable timing
+        std::thread::sleep(Duration::from_millis(200));
         let mut conn = client_ctx_clone
             .connect(&server_addr_clone)
             .expect("Failed to connect");
         Write::write_all(&mut conn, b"test message").expect("Failed to write");
     });
 
-    // Test async accept
+    // Test async accept - this should start immediately after spawning client
     let conn_result = listener.accept_async().await;
     assert!(
         conn_result.is_ok(),
