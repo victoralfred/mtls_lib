@@ -116,7 +116,9 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
-        event.duration_us = platform_get_time_us() - start_time;
+        event.error_code = MTLS_ERR_KILL_SWITCH_ENABLED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(listener->ctx, &event);
 
         return NULL;
@@ -146,6 +148,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Listener socket is closed");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_CONNECTION_CLOSED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -159,6 +162,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
     if (conn->sock == MTLS_INVALID_SOCKET) {
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = err ? (int)err->code : MTLS_ERR_ACCEPT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -193,6 +197,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to create SSL object");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_TLS_INIT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -207,6 +212,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to attach socket to SSL");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_TLS_INIT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -222,6 +228,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
     /* Emit HANDSHAKE_START event */
     event.type = MTLS_EVENT_HANDSHAKE_START;
+    /* event.conn already set earlier at line 190 */
     event.timestamp_us = platform_get_time_us();
     mtls_emit_event(listener->ctx, &event);
 
@@ -235,6 +242,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
         /* Emit HANDSHAKE_FAILURE event */
         event.type = MTLS_EVENT_HANDSHAKE_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_TLS_HANDSHAKE_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - handshake_start;
@@ -242,6 +250,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(listener->ctx, &event);
 
@@ -253,6 +262,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
     /* Emit HANDSHAKE_SUCCESS event */
     event.type = MTLS_EVENT_HANDSHAKE_SUCCESS;
+    event.conn = conn;
     event.error_code = 0;
     event.timestamp_us = platform_get_time_us();
     event.duration_us = event.timestamp_us - handshake_start;
@@ -271,6 +281,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_CERT_UNTRUSTED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -306,6 +317,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
                 /* Emit CONNECT_FAILURE event */
                 event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.conn = conn;
                 event.error_code = MTLS_ERR_IDENTITY_MISMATCH;
                 event.timestamp_us = platform_get_time_us();
                 event.duration_us = event.timestamp_us - start_time;
@@ -323,6 +335,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
             /* Emit CONNECT_FAILURE event */
             event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.conn = conn;
             event.error_code = MTLS_ERR_IDENTITY_MISMATCH;
             event.timestamp_us = platform_get_time_us();
             event.duration_us = event.timestamp_us - start_time;
@@ -339,6 +352,7 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
 
     /* Emit CONNECT_SUCCESS event */
     event.type = MTLS_EVENT_CONNECT_SUCCESS;
+    event.conn = conn;
     event.error_code = 0;
     event.timestamp_us = platform_get_time_us();
     event.duration_us = event.timestamp_us - start_time;

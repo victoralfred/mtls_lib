@@ -219,105 +219,18 @@ jobs:
     needs: [build]
     if: always()
     environment: production
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Determine build status
-        id: build-status
-        run: |
-          if [ "${{ needs.build.result }}" == "success" ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "color=good" >> $GITHUB_OUTPUT
-            echo "emoji=✅" >> $GITHUB_OUTPUT
-          else
-            echo "status=failure" >> $GITHUB_OUTPUT
-            echo "color=danger" >> $GITHUB_OUTPUT
-            echo "emoji=❌" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Get commit info
-        id: commit-info
-        run: |
-          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "message=$(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_OUTPUT
-          echo "author=$(git log -1 --pretty=%an)" >> $GITHUB_OUTPUT
-          echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
-
-      - name: Create Slack message
-        id: slack-message
-        run: |
-          cat > /tmp/slack_message.json << 'SLACKMSG'
-          {
-            "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}",
-            "blocks": [
-              {
-                "type": "header",
-                "text": {
-                  "type": "plain_text",
-                  "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}"
-                }
-              },
-              {
-                "type": "section",
-                "fields": [
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Repository:*\n${{ github.repository }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Branch:*\n${{ steps.commit-info.outputs.branch }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Commit:*\n${{ steps.commit-info.outputs.sha }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Author:*\n${{ steps.commit-info.outputs.author }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Workflow:*\n${{ github.run_id }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Status:*\n${{ needs.build.result }}"
-                  }
-                ]
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*Commit Message:*\n${{ steps.commit-info.outputs.message }}"
-                }
-              }
-            ]
-          }
-          SLACKMSG
-          cat /tmp/slack_message.json
 
       - name: Send Slack notification
         continue-on-error: true
         if: ${{ env.SLACK_WEBHOOK_URL != '' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        uses: slackapi/slack-github-action@v1
+        uses: ./.github/actions/slack-notify
         with:
           webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*${{ steps.build-status.outputs.emoji }} CI Build ${{ steps.build-status.outputs.status }}*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ steps.commit-info.outputs.branch }}\n*Commit:* ${{ steps.commit-info.outputs.sha }}\n*Author:* ${{ steps.commit-info.outputs.author }}\n*Status:* ${{ needs.build.result }}"
-                  }
-                }
-              ]
-            }
+          workflow-name: "CI Build"
+          job-status: ${{ needs.build.result }}

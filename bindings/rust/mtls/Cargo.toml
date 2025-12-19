@@ -1,0 +1,52 @@
+[package]
+name = "mtls"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Safe, idiomatic Rust bindings for the mTLS C library"
+readme = "../README.md"
+
+[dependencies]
+mtls-sys = { path = "../mtls-sys" }
+libc = "0.2"
+tokio = { version = "1.0", optional = true, features = ["rt-multi-thread", "net", "macros"] }
+futures = { version = "0.3", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+rcgen = "0.13"
+# Keep MSRV compatibility (CI tests Rust 1.78); `time` >= 0.3.42 requires newer rustc.
+time = ">=0.3, <0.3.42"
+tokio-test = "0.4"
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+futures = "0.3"
+
+[[test]]
+name = "stress"
+path = "tests/stress_test.rs"
+required-features = ["stress"]
+
+[[test]]
+name = "async_stress"
+path = "tests/async_stress_test.rs"
+required-features = ["stress", "async-tokio"]
+
+[[test]]
+name = "async_api"
+path = "tests/async_api_test.rs"
+required-features = ["async-tokio"]
+
+[[example]]
+name = "async_client"
+path = "examples/async_client.rs"
+required-features = ["async-tokio"]
+
+[[example]]
+name = "async_server"
+path = "examples/async_server.rs"
+required-features = ["async-tokio"]
+
+[features]
+default = []
+stress = []
+async-tokio = ["dep:tokio", "dep:futures"]

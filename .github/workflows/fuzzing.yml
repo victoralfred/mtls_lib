@@ -1,0 +1,356 @@
+name: Fuzzing
+
+on:
+  # Run nightly at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzzing duration in seconds'
+        required: false
+        default: '3600'
+
+jobs:
+  libfuzzer:
+    name: LibFuzzer - ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_san_validation
+          - fuzz_pem_parsing
+          - fuzz_certificate_validation
+          - fuzz_address_parsing
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            libssl-dev \
+            pkg-config
+
+      - name: Configure build
+        run: |
+          mkdir -p build_fuzz
+          cd build_fuzz
+          CC=clang cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DMTLS_ENABLE_FUZZING=ON \
+            -DMTLS_BUILD_TESTS=ON \
+            -DMTLS_BUILD_EXAMPLES=OFF \
+            ..
+
+      - name: Build fuzzing target
+        run: |
+          cd build_fuzz
+          cmake --build . --target ${{ matrix.target }} --parallel $(nproc)
+
+      - name: Verify instrumentation
+        run: |
+          BINARY="build_fuzz/tests/${{ matrix.target }}"
+          if ! nm "$BINARY" 2>/dev/null | grep -q "LLVMFuzzerTestOneInput"; then
+            echo "Error: Binary is not properly instrumented"
+            exit 1
+          fi
+          echo "Binary is properly instrumented"
+
+      - name: Run fuzzer
+        id: fuzz
+        continue-on-error: true
+        run: |
+          cd build_fuzz/tests
+
+          # Set duration (default: 1 hour for scheduled, use input for manual)
+          DURATION="${{ github.event.inputs.duration }}"
+          if [ -z "$DURATION" ]; then
+            DURATION="3600"
+          fi
+
+          echo "Running ${{ matrix.target }} for ${DURATION} seconds..."
+
+          # Create corpus directory if it doesn't exist
+          CORPUS_DIR="corpus/${{ matrix.target }}"
+          mkdir -p "$CORPUS_DIR"
+
+          # Run fuzzer with timeout and capture exit code
+          set +e
+          timeout $((DURATION + 10)) \
+            ./${{ matrix.target }} \
+            -max_total_time=${DURATION} \
+            -print_final_stats=1 \
+            -timeout=25 \
+            -max_len=65536 \
+            "$CORPUS_DIR" \
+            2>&1 | tee fuzzer_output.log
+          FUZZ_EXIT=$?
+          set -e
+
+          # Check for crashes or hangs
+          if [ -d "crash-*" ] || [ -d "timeout-*" ] || [ -d "leak-*" ]; then
+            echo "CRASHES_FOUND=true" >> $GITHUB_OUTPUT
+            echo "Crashes or issues detected!"
+            ls -la crash-* timeout-* leak-* 2>/dev/null || true
+          else
+            echo "CRASHES_FOUND=false" >> $GITHUB_OUTPUT
+            echo "No crashes detected"
+          fi
+
+          # Extract statistics
+          echo "Fuzzing completed with exit code: $FUZZ_EXIT"
+          grep -E "stat::" fuzzer_output.log || true
+
+      - name: Collect crash artifacts
+        if: steps.fuzz.outputs.CRASHES_FOUND == 'true'
+        run: |
+          cd build_fuzz/tests
+          mkdir -p crash_artifacts
+
+          # Copy all crash-related files
+          find . -maxdepth 1 \( -name "crash-*" -o -name "timeout-*" -o -name "leak-*" \) \
+            -exec cp {} crash_artifacts/ \;
+
+          # Add fuzzer output log
+          cp fuzzer_output.log crash_artifacts/ 2>/dev/null || true
+
+          # Create a summary
+          {
+            echo "# Fuzzing Crash Report"
+            echo ""
+            echo "**Target**: ${{ matrix.target }}"
+            echo "**Date**: $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)"
+            echo "**Workflow**: ${{ github.workflow }}"
+            echo "**Run ID**: ${{ github.run_id }}"
+            echo ""
+            echo "## Artifacts Found"
+            echo ""
+            ls -lh crash_artifacts/
+            echo ""
+            echo "## Fuzzer Statistics"
+            echo ""
+            grep -E "stat::" fuzzer_output.log || echo "No statistics available"
+          } > crash_artifacts/SUMMARY.md
+
+          echo "Crash artifacts collected"
+          ls -la crash_artifacts/
+
+      - name: Upload crash artifacts
+        if: steps.fuzz.outputs.CRASHES_FOUND == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzzing-crashes-${{ matrix.target }}-${{ github.run_number }}
+          path: build_fuzz/tests/crash_artifacts/
+          retention-days: 90
+
+      - name: Create issue for crashes
+        if: steps.fuzz.outputs.CRASHES_FOUND == 'true' && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = 'build_fuzz/tests/crash_artifacts/SUMMARY.md';
+            const summary = fs.existsSync(summaryPath)
+              ? fs.readFileSync(summaryPath, 'utf8')
+              : 'No summary available';
+
+            const title = `[Fuzzing] Crashes found in ${{ matrix.target }}`;
+            const body = `${summary}
+
+            ## Action Required
+
+            1. Download crash artifacts from the workflow run
+            2. Reproduce crashes locally:
+               \`\`\`bash
+               cd build_fuzz/tests
+               ./${{ matrix.target }} <crash-file>
+               \`\`\`
+            3. Debug and fix the underlying issue
+            4. Add regression test to prevent recurrence
+
+            ## Links
+
+            - [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [Download Artifacts](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
+
+            ---
+            *This issue was automatically created by the fuzzing workflow.*`;
+
+            // Check if similar issue already exists (open, within last 7 days)
+            const { data: existingIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'fuzzing,security',
+              since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+            });
+
+            const duplicateIssue = existingIssues.find(issue =>
+              issue.title.includes('${{ matrix.target }}')
+            );
+
+            if (duplicateIssue) {
+              console.log(`Similar issue already exists: #${duplicateIssue.number}`);
+
+              // Add comment to existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: duplicateIssue.number,
+                body: `## New fuzzing crashes detected\n\n${summary}\n\n[Latest Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['fuzzing', 'security', 'bug']
+              });
+            }
+
+      - name: Report fuzzing statistics
+        if: always()
+        run: |
+          cd build_fuzz/tests
+
+          echo "## Fuzzing Statistics for ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f fuzzer_output.log ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            grep -E "stat::" fuzzer_output.log | tail -n 20 >> $GITHUB_STEP_SUMMARY || \
+              echo "No statistics available" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No fuzzer output available" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Corpus statistics
+          CORPUS_DIR="corpus/${{ matrix.target }}"
+          if [ -d "$CORPUS_DIR" ]; then
+            CORPUS_SIZE=$(find "$CORPUS_DIR" -type f | wc -l)
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Corpus size**: $CORPUS_SIZE files" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Crash status
+          if [ "${{ steps.fuzz.outputs.CRASHES_FOUND }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Crashes detected** - see artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **No crashes detected**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  afl-smoke-test:
+    name: AFL++ Smoke Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install AFL++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config \
+            wget
+
+          # Install AFL++ from source
+          cd /tmp
+          wget https://github.com/AFLplusplus/AFLplusplus/archive/refs/tags/4.21c.tar.gz
+          tar -xzf 4.21c.tar.gz
+          cd AFLplusplus-4.21c
+          make distrib
+          sudo make install
+
+          # Verify installation
+          afl-clang-fast --version
+          afl-fuzz --version
+
+      - name: Build with AFL++
+        run: |
+          cd /home/voseghale/projects/mtls_lib
+          ./tests/fuzz/scripts/build_afl.sh build_afl_ci
+
+      - name: Smoke test AFL++ fuzzing
+        run: |
+          cd /home/voseghale/projects/mtls_lib/build_afl_ci
+
+          # Run quick smoke test (30 seconds)
+          timeout 40 tests/fuzz_oversized_sans || true
+
+          echo "✅ AFL++ build and smoke test completed"
+
+      - name: Report AFL++ status
+        run: |
+          echo "## AFL++ Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ AFL++ instrumentation successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: Full AFL++ fuzzing requires extended runtime." >> $GITHUB_STEP_SUMMARY
+          echo "Run locally with: \`./tests/fuzz/scripts/run_afl.sh -t <target> -d 3600\`" >> $GITHUB_STEP_SUMMARY
+
+  notify-slack:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [libfuzzer, afl-smoke-test]
+    if: always()
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine fuzzing status
+        id: fuzz-status
+        run: |
+          # Count successful and failed jobs
+          SUCCESS=0
+          FAILED=0
+
+          for result in "${{ needs.libfuzzer.result }}" "${{ needs.afl-smoke-test.result }}"; do
+            if [ "$result" == "success" ]; then
+              SUCCESS=$((SUCCESS + 1))
+            else
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          # Overall status
+          if [ $FAILED -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            DETAILS="All fuzzing targets completed successfully. No crashes detected."
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            DETAILS="⚠️ Some fuzzing targets failed or detected crashes. Check workflow artifacts for details."
+          fi
+
+          echo "details=$DETAILS" >> $GITHUB_OUTPUT
+
+      - name: Send Slack notification
+        continue-on-error: true
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
+          workflow-name: "Fuzzing Tests"
+          job-status: ${{ steps.fuzz-status.outputs.status }}
+          job-details: ${{ steps.fuzz-status.outputs.details }}

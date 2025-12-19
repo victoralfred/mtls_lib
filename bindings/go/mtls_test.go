@@ -394,9 +394,16 @@ func TestMatchSAN(t *testing.T) {
 		{"example.com", "other.com", false},
 		{"example.com", "*.other.com", false},
 
-		// SPIFFE ID
+		// SPIFFE ID exact match
 		{"spiffe://example.com/service", "spiffe://example.com/service", true},
 		{"spiffe://example.com/service", "spiffe://other.com/service", false},
+
+		// SPIFFE ID wildcard (prefix matching)
+		{"spiffe://example.com/service/api", "spiffe://example.com/*", true},
+		{"spiffe://example.com/client/frontend", "spiffe://example.com/client/*", true},
+		{"spiffe://example.com/service", "spiffe://example.com/*", true},
+		{"spiffe://example.com/service", "spiffe://example.com/client/*", false},
+		{"spiffe://other.com/service", "spiffe://example.com/*", false},
 	}
 
 	for _, tt := range tests {
@@ -404,6 +411,65 @@ func TestMatchSAN(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("matchSAN(%q, %q) = %v, want %v", tt.san, tt.pattern, got, tt.want)
 		}
+	}
+}
+
+func TestValidateSANsWithSPIFFEWildcard(t *testing.T) {
+	// Test that SPIFFE ID wildcards work correctly
+	identity := &PeerIdentity{
+		CommonName: "test",
+		SANs:       []string{"client.example.com"},
+		SPIFFEID:   "spiffe://example.com/client/frontend",
+		NotBefore:  time.Now().Add(-24 * time.Hour),
+		NotAfter:   time.Now().Add(24 * time.Hour),
+	}
+
+	// Test SPIFFE wildcard matching
+	allowed := []string{
+		"spiffe://example.com/client/*", // Should match
+		"*.example.com",                 // DNS wildcard
+	}
+	if !ValidateSANs(identity, allowed) {
+		t.Error("ValidateSANs should match SPIFFE wildcard pattern")
+	}
+
+	// Test non-matching SPIFFE wildcard
+	allowed2 := []string{
+		"spiffe://example.com/service/*", // Should not match
+	}
+	if ValidateSANs(identity, allowed2) {
+		t.Error("ValidateSANs should not match different SPIFFE wildcard pattern")
+	}
+
+	// Test exact SPIFFE match
+	allowed3 := []string{
+		"spiffe://example.com/client/frontend", // Exact match
+	}
+	if !ValidateSANs(identity, allowed3) {
+		t.Error("ValidateSANs should match exact SPIFFE ID")
+	}
+
+	// Test that wildcard does NOT match base SPIFFE ID without path
+	identity2 := &PeerIdentity{
+		CommonName: "test",
+		SANs:       []string{},
+		SPIFFEID:   "spiffe://example.com", // No path component
+		NotBefore:  time.Now().Add(-24 * time.Hour),
+		NotAfter:   time.Now().Add(24 * time.Hour),
+	}
+	allowed4 := []string{
+		"spiffe://example.com/*", // Wildcard should NOT match base ID
+	}
+	if ValidateSANs(identity2, allowed4) {
+		t.Error("SPIFFE wildcard pattern should not match base SPIFFE ID without path")
+	}
+
+	// Test that exact match still works for base SPIFFE ID
+	allowed5 := []string{
+		"spiffe://example.com", // Exact match should work
+	}
+	if !ValidateSANs(identity2, allowed5) {
+		t.Error("Exact match should work for base SPIFFE ID")
 	}
 }
 

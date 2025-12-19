@@ -207,6 +207,10 @@ func (c *Conn) ValidatePeerSANs(allowedSANs []string) (bool, error) {
 // This is a standalone function that can be used for custom validation logic.
 // The function is optimized to use O(1) lookups for exact matches while
 // falling back to linear matching for wildcard patterns.
+//
+// Supported wildcard patterns:
+//   - DNS wildcards: *.example.com (matches subdomains)
+//   - SPIFFE ID wildcards: spiffe://example.com/* (matches paths under the prefix)
 func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 	if identity == nil || len(allowedSANs) == 0 {
 		return false
@@ -214,11 +218,16 @@ func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 
 	// Separate exact matches (for O(1) lookup) from wildcard patterns
 	exactMatches := make(map[string]struct{}, len(allowedSANs))
-	var wildcardPatterns []string
+	var dnsWildcardPatterns []string    // Patterns starting with *.
+	var spiffeWildcardPatterns []string // Patterns ending with /*
 
 	for _, san := range allowedSANs {
 		if len(san) > 2 && san[0] == '*' && san[1] == '.' {
-			wildcardPatterns = append(wildcardPatterns, san)
+			// DNS wildcard: *.example.com
+			dnsWildcardPatterns = append(dnsWildcardPatterns, san)
+		} else if len(san) > 2 && san[len(san)-2:] == "/*" {
+			// SPIFFE ID wildcard: spiffe://example.com/*
+			spiffeWildcardPatterns = append(spiffeWildcardPatterns, san)
 		} else {
 			exactMatches[san] = struct{}{}
 		}
@@ -230,9 +239,15 @@ func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 		if _, ok := exactMatches[peerSAN]; ok {
 			return true
 		}
-		// Slow path: wildcard matching
-		for _, pattern := range wildcardPatterns {
+		// DNS wildcard matching
+		for _, pattern := range dnsWildcardPatterns {
 			if matchWildcard(peerSAN, pattern) {
+				return true
+			}
+		}
+		// SPIFFE ID wildcard matching
+		for _, pattern := range spiffeWildcardPatterns {
+			if matchSPIFFEWildcard(peerSAN, pattern) {
 				return true
 			}
 		}
@@ -243,8 +258,15 @@ func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 		if _, ok := exactMatches[identity.SPIFFEID]; ok {
 			return true
 		}
-		for _, pattern := range wildcardPatterns {
+		// DNS wildcard matching (unlikely but possible)
+		for _, pattern := range dnsWildcardPatterns {
 			if matchWildcard(identity.SPIFFEID, pattern) {
+				return true
+			}
+		}
+		// SPIFFE ID wildcard matching
+		for _, pattern := range spiffeWildcardPatterns {
+			if matchSPIFFEWildcard(identity.SPIFFEID, pattern) {
 				return true
 			}
 		}
@@ -254,15 +276,24 @@ func ValidateSANs(identity *PeerIdentity, allowedSANs []string) bool {
 }
 
 // matchSAN checks if a SAN matches an allowed pattern.
-// Supports exact match and wildcard DNS matching (*.example.com).
+// Supports exact match, DNS wildcard matching (*.example.com), and
+// SPIFFE ID wildcard matching (spiffe://example.com/*).
 func matchSAN(san, pattern string) bool {
 	if san == pattern {
 		return true
 	}
-	return matchWildcard(san, pattern)
+	// Try DNS wildcard first
+	if len(pattern) > 2 && pattern[0] == '*' && pattern[1] == '.' {
+		return matchWildcard(san, pattern)
+	}
+	// Try SPIFFE ID wildcard
+	if len(pattern) > 2 && pattern[len(pattern)-2:] == "/*" {
+		return matchSPIFFEWildcard(san, pattern)
+	}
+	return false
 }
 
-// matchWildcard checks if a SAN matches a wildcard pattern (*.example.com).
+// matchWildcard checks if a SAN matches a DNS wildcard pattern (*.example.com).
 // The pattern must start with "*." for this function to be useful.
 func matchWildcard(san, pattern string) bool {
 	// Pattern should be *.something
@@ -289,5 +320,40 @@ func matchWildcard(san, pattern string) bool {
 		}
 	}
 
+	return true
+}
+
+// matchSPIFFEWildcard checks if a SAN matches a SPIFFE ID wildcard pattern (spiffe://example.com/*).
+// The pattern must end with "/*" for this function to be useful.
+func matchSPIFFEWildcard(san, pattern string) bool {
+	// Pattern should end with /*
+	if len(pattern) < 3 || pattern[len(pattern)-2:] != "/*" {
+		return false
+	}
+
+	prefix := pattern[:len(pattern)-2] // spiffe://example.com
+	// san must be at least as long as the prefix
+	if len(san) < len(prefix) {
+		return false
+	}
+
+	// Check if san starts with the prefix
+	if san[:len(prefix)] != prefix {
+		return false
+	}
+
+	// For SPIFFE IDs, the remaining part after the prefix should be a valid path
+	// (starts with / and contains no wildcards)
+	remaining := san[len(prefix):]
+	if len(remaining) == 0 {
+		// Wildcard pattern requires a path component
+		// Exact match (no path) should be handled by exact match logic, not wildcard
+		return false
+	}
+	if remaining[0] != '/' {
+		return false
+	}
+
+	// Valid SPIFFE ID path (no wildcards in the actual ID)
 	return true
 }

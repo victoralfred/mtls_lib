@@ -21,6 +21,7 @@ option(MTLS_BUILD_TESTS "Build tests" ON)
 option(MTLS_BUILD_EXAMPLES "Build examples" ON)
 option(MTLS_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(MTLS_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(MTLS_ENABLE_FUZZING "Build fuzzing targets (requires Clang)" OFF)
 
 # Platform detection
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -72,6 +73,20 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     if(MTLS_ENABLE_UBSAN)
         add_compile_options(-fsanitize=undefined)
         add_link_options(-fsanitize=undefined)
+    endif()
+
+    # Fuzzing with libFuzzer (requires Clang)
+    if(MTLS_ENABLE_FUZZING)
+        if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+            message(FATAL_ERROR "Fuzzing requires Clang compiler (use: CC=clang cmake -DMTLS_ENABLE_FUZZING=ON ..)")
+        endif()
+
+        message(STATUS "Enabling fuzzing with libFuzzer")
+        # Note: Fuzzing flags are applied per-target in tests/fuzz/CMakeLists.txt
+        # to avoid conflicts with regular tests that have main() functions
+
+        # Force tests to be enabled for fuzzing
+        set(MTLS_BUILD_TESTS ON CACHE BOOL "Enable tests for fuzzing" FORCE)
     endif()
 
 elseif(MSVC)

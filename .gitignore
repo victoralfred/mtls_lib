@@ -362,3 +362,9 @@ dev_plan_pm
 error.txt
 error2.txt
 .c*/*
+bindings/rust/target
+bindings/java/target
+build_fuzz
+tests/fuzz/FUZZING_FINDINGS.md
+tests/fuzz/corpus/fuzz_pem_parsing/truncated.pem
+tests/fuzz/corpus/fuzz_pem_parsing/valid_cert.pem

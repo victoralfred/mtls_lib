@@ -60,7 +60,9 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
-        event.duration_us = platform_get_time_us() - start_time;
+        event.error_code = MTLS_ERR_KILL_SWITCH_ENABLED;
+        event.timestamp_us = platform_get_time_us();
+        event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(ctx, &event);
 
         return NULL;
@@ -88,6 +90,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
     if (platform_parse_addr(addr, &conn->remote_addr, err) < 0) {
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = err ? (int)err->code : MTLS_ERR_INVALID_ADDRESS;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -103,6 +106,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Unsupported address family");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_INVALID_ADDRESS;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -114,6 +118,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
     if (conn->sock == MTLS_INVALID_SOCKET) {
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = err ? (int)err->code : MTLS_ERR_SOCKET_CREATE_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -172,6 +177,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_CTX_NOT_INITIALIZED, "TLS context not initialized");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_CTX_NOT_INITIALIZED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -185,6 +191,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to create SSL object");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_TLS_INIT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -199,6 +206,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
         MTLS_ERR_SET(err, MTLS_ERR_TLS_INIT_FAILED, "Failed to attach socket to SSL");
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_TLS_INIT_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -251,6 +259,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
                 MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid characters in hostname");
                 /* Emit CONNECT_FAILURE event */
                 event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.conn = conn;
                 event.error_code = MTLS_ERR_INVALID_ADDRESS;
                 event.timestamp_us = platform_get_time_us();
                 event.duration_us = event.timestamp_us - start_time;
@@ -268,6 +277,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
                              "Failed to set hostname for verification: %s", hostname);
                 /* Emit CONNECT_FAILURE event */
                 event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.conn = conn;
                 event.error_code = MTLS_ERR_HOSTNAME_MISMATCH;
                 event.timestamp_us = platform_get_time_us();
                 event.duration_us = event.timestamp_us - start_time;
@@ -282,6 +292,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
             MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Hostname too long");
             /* Emit CONNECT_FAILURE event */
             event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.conn = conn;
             event.error_code = MTLS_ERR_INVALID_ADDRESS;
             event.timestamp_us = platform_get_time_us();
             event.duration_us = event.timestamp_us - start_time;
@@ -298,6 +309,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
     /* Emit HANDSHAKE_START event */
     event.type = MTLS_EVENT_HANDSHAKE_START;
+    /* event.conn already set earlier at line 171 */
     event.timestamp_us = platform_get_time_us();
     mtls_emit_event(ctx, &event);
 
@@ -311,6 +323,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
         /* Emit HANDSHAKE_FAILURE event */
         event.type = MTLS_EVENT_HANDSHAKE_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_TLS_HANDSHAKE_FAILED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - handshake_start;
@@ -318,6 +331,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.duration_us = event.timestamp_us - start_time;
         mtls_emit_event(ctx, &event);
 
@@ -329,6 +343,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
     /* Emit HANDSHAKE_SUCCESS event */
     event.type = MTLS_EVENT_HANDSHAKE_SUCCESS;
+    event.conn = conn;
     event.error_code = 0;
     event.timestamp_us = platform_get_time_us();
     event.duration_us = event.timestamp_us - handshake_start;
@@ -347,6 +362,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 
         /* Emit CONNECT_FAILURE event */
         event.type = MTLS_EVENT_CONNECT_FAILURE;
+        event.conn = conn;
         event.error_code = MTLS_ERR_CERT_UNTRUSTED;
         event.timestamp_us = platform_get_time_us();
         event.duration_us = event.timestamp_us - start_time;
@@ -381,6 +397,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
                              "Peer identity not in allowed SANs list");
                 /* Emit CONNECT_FAILURE event */
                 event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.conn = conn;
                 event.error_code = MTLS_ERR_IDENTITY_MISMATCH;
                 event.timestamp_us = platform_get_time_us();
                 event.duration_us = event.timestamp_us - start_time;
@@ -396,6 +413,7 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
                          "Failed to extract peer identity for validation");
             /* Emit CONNECT_FAILURE event */
             event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.conn = conn;
             event.error_code = MTLS_ERR_IDENTITY_MISMATCH;
             event.timestamp_us = platform_get_time_us();
             event.duration_us = event.timestamp_us - start_time;

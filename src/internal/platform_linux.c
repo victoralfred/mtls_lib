@@ -330,6 +330,57 @@ int platform_socket_shutdown(mtls_socket_t sock, int how)
     return shutdown(sock, how);
 }
 
+/**
+ * Validate hostname format to prevent DNS DoS attacks
+ *
+ * Checks for:
+ * - Control characters (0x00-0x1F, 0x7F)
+ * - Invalid hostname characters
+ * - Problematic TLDs that trigger slow mDNS resolution
+ *
+ * @param hostname Hostname to validate (null-terminated)
+ * @param len Length of hostname
+ * @return 0 if valid, -1 if invalid
+ */
+static int validate_hostname(const char *hostname, size_t len)
+{
+    if (!hostname || len == 0) {
+        return -1;
+    }
+
+    /* Check each character */
+    for (size_t i = 0; i < len; i++) {
+        unsigned char chr = (unsigned char)hostname[i];
+
+        /* Reject control characters (0x00-0x1F, 0x7F) */
+        if (chr < 0x20 || chr == 0x7F) {
+            return -1;
+        }
+
+        /* Allow: alphanumeric, hyphen, dot, underscore */
+        bool valid_char = (chr >= 'a' && chr <= 'z') || (chr >= 'A' && chr <= 'Z') ||
+                          (chr >= '0' && chr <= '9') || (chr == '-') || (chr == '.') ||
+                          (chr == '_');
+
+        if (!valid_char) {
+            return -1;
+        }
+    }
+
+    /* Check for problematic TLDs that trigger slow mDNS resolution
+     * .local is used for multicast DNS (Bonjour) and can cause 20+ second timeouts
+     */
+    if (len >= 6) {
+        const char *suffix = hostname + len - 6;
+        if (strcmp(suffix, ".local") == 0) {
+            /* Reject .local TLD to prevent mDNS timeout */
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
 {
     if (!addr_str || !addr) {
@@ -404,6 +455,14 @@ int platform_parse_addr(const char *addr_str, mtls_addr *addr, mtls_err *err)
     unsigned long port_num = strtoul(port, &port_end, 10);
     if (errno == ERANGE || *port_end != '\0' || port_num == 0 || port_num > MTLS_MAX_PORT) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS, "Invalid port number");
+        return -1;
+    }
+
+    /* Validate hostname format before DNS resolution to prevent DoS attacks
+     * This prevents expensive getaddrinfo() calls for malformed hostnames */
+    if (validate_hostname(host, strlen(host)) != 0) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ADDRESS,
+                     "Invalid hostname format (contains control characters or problematic TLD)");
         return -1;
     }
 

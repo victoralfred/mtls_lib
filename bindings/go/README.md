@@ -175,9 +175,10 @@ config.KeyPEM = keyBytes
 ```go
 // Restrict connections to specific SANs
 config.AllowedSANs = []string{
-    "spiffe://example.com/service/api",
-    "*.example.com",  // Wildcard matching
-    "service.example.com",
+    "spiffe://example.com/service/api",     // Exact SPIFFE ID match
+    "spiffe://example.com/client/*",        // SPIFFE ID wildcard (matches all paths under /client)
+    "*.example.com",                       // DNS wildcard (matches subdomains)
+    "service.example.com",                  // Exact DNS match
 }
 ```
 
@@ -291,10 +292,15 @@ ctx.SetObserver(mtls.MetricsCallback(metrics))
 
 // ... perform operations ...
 
-// Read metrics (thread-safe)
+// Read metrics (thread-safe methods)
 fmt.Printf("Connection success rate: %.2f%%\n", metrics.ConnectionSuccessRate()*100)
 fmt.Printf("Average connect time: %v\n", metrics.AverageConnectDuration())
 fmt.Printf("Average handshake time: %v\n", metrics.AverageHandshakeDuration())
+
+// Note: Direct field access (metrics.BytesRead, metrics.BytesWritten) is not
+// thread-safe if Record() is being called concurrently. For thread-safe access,
+// access these fields only when Record() is not being called, or use the Record()
+// method's mutex protection.
 fmt.Printf("Bytes read: %d\n", metrics.BytesRead)
 fmt.Printf("Bytes written: %d\n", metrics.BytesWritten)
 ```
@@ -340,7 +346,11 @@ fmt.Printf("TTL: %v\n", identity.TTL())
 
 ```go
 // Check if peer SANs match allowed list
-allowed := []string{"*.example.com", "spiffe://example.com/service"}
+allowed := []string{
+    "*.example.com",                        // DNS wildcard
+    "spiffe://example.com/service",         // Exact SPIFFE ID
+    "spiffe://example.com/client/*",        // SPIFFE ID wildcard
+}
 valid, err := conn.ValidatePeerSANs(allowed)
 if err != nil {
     log.Fatalf("Validation error: %v", err)
@@ -419,7 +429,19 @@ if err != nil {
 - `Context` is safe for concurrent use after creation
 - `Conn` and `Listener` are NOT safe for concurrent use
 - Use separate `Conn` instances for different goroutines
-- `EventMetrics` is thread-safe for concurrent reads and writes
+- `EventMetrics` methods (ConnectionSuccessRate, AverageConnectDuration, etc.) are thread-safe
+- Direct field access to `EventMetrics` fields should only be done when `Record()` is not being called concurrently
+
+## Examples
+
+Complete example programs are available in the `examples/` directory:
+
+- **simple_client** - Basic client that connects and exchanges messages
+- **simple_server** - Basic server that accepts connections
+- **echo_server** - Echo server with SAN-based authorization
+- **advanced_client** - Advanced client with retry logic and context support
+
+See [examples/README.md](examples/README.md) for detailed instructions.
 
 ## Testing
 

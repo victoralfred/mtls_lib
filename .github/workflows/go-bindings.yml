@@ -1,0 +1,281 @@
+name: Go Bindings CI
+
+on:
+  push:
+    branches: [ main, develop, master ]
+    paths:
+      - 'bindings/go/**'
+      - 'src/**'
+      - 'include/**'
+      - '.github/workflows/go-bindings.yml'
+  pull_request:
+    branches: [ main, develop, master ]
+    paths:
+      - 'bindings/go/**'
+      - 'src/**'
+      - 'include/**'
+      - '.github/workflows/go-bindings.yml'
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  test-go-bindings:
+    name: Test Go Bindings
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.21', '1.22', '1.23']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: bindings/go/go.sum
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake openssl@3 pkg-config
+
+      - name: Build C library (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=OFF \
+            -DMTLS_BUILD_EXAMPLES=OFF
+          cmake --build . --parallel $(nproc)
+
+      - name: Build C library (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p build
+          cd build
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=OFF \
+            -DMTLS_BUILD_EXAMPLES=OFF \
+            -DOPENSSL_ROOT_DIR="${OPENSSL_PREFIX}" \
+            -DOPENSSL_INCLUDE_DIR="${OPENSSL_PREFIX}/include" \
+            -DOPENSSL_CRYPTO_LIBRARY="${OPENSSL_PREFIX}/lib/libcrypto.dylib" \
+            -DOPENSSL_SSL_LIBRARY="${OPENSSL_PREFIX}/lib/libssl.dylib"
+          cmake --build . --parallel $(sysctl -n hw.ncpu)
+
+      - name: Set library path (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
+
+      - name: Set library path (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          echo "DYLD_LIBRARY_PATH=${{ github.workspace }}/build:${OPENSSL_PREFIX}/lib" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build:${OPENSSL_PREFIX}/lib" >> $GITHUB_ENV
+
+      - name: Set CGO environment variables (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "CGO_CFLAGS=-I${{ github.workspace }}/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${{ github.workspace }}/build -lmtls -lssl -lcrypto" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+
+      - name: Set CGO environment variables (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Get OpenSSL paths from Homebrew
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          echo "CGO_CFLAGS=-I${{ github.workspace }}/include -I${OPENSSL_PREFIX}/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${{ github.workspace }}/build -L${OPENSSL_PREFIX}/lib -lmtls -lssl -lcrypto" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+          # Also set PKG_CONFIG_PATH for cmake
+          echo "PKG_CONFIG_PATH=${OPENSSL_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
+
+      - name: Run Go tests
+        working-directory: bindings/go
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22'
+        uses: codecov/codecov-action@v4
+        with:
+          file: bindings/go/coverage.out
+          flags: go
+          name: go-bindings-coverage
+          fail_ci_if_error: false
+
+      - name: Run Go tests with stress tag (Linux only)
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22'
+        working-directory: bindings/go
+        env:
+          MTLS_STRESS_TEST: "1"
+          MTLS_STRESS_CONNECTIONS: "100"
+          MTLS_STRESS_WORKERS: "8"
+        run: |
+          go test -v -tags stress -run TestStressConnections -timeout 120s || true
+
+      - name: Check Go formatting
+        working-directory: bindings/go
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted. Run 'gofmt -s -w .'"
+            gofmt -s -d .
+            exit 1
+          fi
+
+      - name: Run golint
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22'
+        working-directory: bindings/go
+        run: |
+          go install golang.org/x/lint/golint@latest || true
+          golint ./... || true
+
+      - name: Run staticcheck
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22'
+        working-directory: bindings/go
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest || true
+          staticcheck ./... || true
+
+  build-go-examples:
+    name: Build Go Examples
+    runs-on: ubuntu-latest
+    needs: test-go-bindings
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libssl-dev \
+            pkg-config
+
+      - name: Build C library
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DMTLS_BUILD_TESTS=OFF \
+            -DMTLS_BUILD_EXAMPLES=OFF
+          cmake --build . --parallel $(nproc)
+
+      - name: Set library path
+        run: |
+          echo "LD_LIBRARY_PATH=${{ github.workspace }}/build" >> $GITHUB_ENV
+
+      - name: Set CGO environment variables
+        run: |
+          echo "CGO_CFLAGS=-I${{ github.workspace }}/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${{ github.workspace }}/build -lmtls -lssl -lcrypto" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+
+      - name: Build examples
+        working-directory: bindings/go/examples
+        run: |
+          for dir in simple_client simple_server echo_server advanced_client; do
+            if [ -d "$dir" ]; then
+              echo "Building $dir..."
+              (cd "$dir" && go build -v .)
+            fi
+          done
+
+      - name: Upload example binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-examples-${{ github.sha }}
+          path: |
+            bindings/go/examples/**/simple_client
+            bindings/go/examples/**/simple_server
+            bindings/go/examples/**/echo_server
+            bindings/go/examples/**/advanced_client
+          retention-days: 7
+
+  summary:
+    name: Go Bindings Summary
+    runs-on: ubuntu-latest
+    needs: [test-go-bindings, build-go-examples]
+    if: always()
+    
+    steps:
+      - name: Create summary
+        run: |
+          echo "## Go Bindings Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test-go-bindings.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Examples Build | ${{ needs.build-go-examples.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Matrix" >> $GITHUB_STEP_SUMMARY
+          echo "- OS: ubuntu-latest, macos-latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Go Versions: 1.21, 1.22, 1.23" >> $GITHUB_STEP_SUMMARY
+
+  notify-slack:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [test-go-bindings, build-go-examples]
+    if: always()
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine build status
+        id: build-status
+        run: |
+          if [ "${{ needs.test-go-bindings.result }}" == "success" ] && \
+             [ "${{ needs.build-go-examples.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification
+        continue-on-error: true
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
+          workflow-name: "Go Bindings"
+          job-status: ${{ steps.build-status.outputs.status }}

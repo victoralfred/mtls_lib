@@ -263,10 +263,13 @@ jobs:
     needs: [create-release]
     if: always()
     environment: production
-    
+
     steps:
-      - name: Determine version
-        id: version
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version and details
+        id: release-info
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
@@ -274,52 +277,23 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+          # Build release details
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/v${VERSION}"
+          DETAILS="**Release Version:** v${VERSION}\n**Release URL:** ${RELEASE_URL}\n**Status:** ${{ needs.create-release.result }}"
+
+          echo "details<<EOF" >> $GITHUB_OUTPUT
+          echo "$DETAILS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v1
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "🎉 New Release: v${{ steps.version.outputs.version }}",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "🎉 New Release: v${{ steps.version.outputs.version }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "fields": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Repository:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}|${GITHUB_REPOSITORY}>"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Version:*\nv${{ steps.version.outputs.version }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Release:*\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${{ steps.version.outputs.version }}|View Release>"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Status:*\n${{ needs.create-release.result }}"
-                    }
-                  ]
-                }
-              ],
-              "attachments": [
-                {
-                  "color": "good",
-                  "footer": "GitHub Actions",
-                  "ts": ${{ github.run_number }}
-                }
-              ]
-            }
+        continue-on-error: true
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
+          workflow-name: "Release v${{ steps.release-info.outputs.version }}"
+          job-status: ${{ needs.create-release.result }}
+          job-details: ${{ steps.release-info.outputs.details }}

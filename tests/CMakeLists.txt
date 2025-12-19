@@ -60,3 +60,8 @@ endif()
 # mtls_add_test(test_config)
 # mtls_add_test(test_context)
 # mtls_add_test(test_connection)
+
+# Fuzzing targets (libFuzzer)
+if(MTLS_ENABLE_FUZZING)
+    add_subdirectory(fuzz)
+endif()

@@ -91,16 +91,55 @@ SSL_CTX *mtls_tls_get_ssl_ctx(void *tls_ctx); // NOLINT(misc-include-cleaner)
  * 5. All pointers in the mtls_event structure are valid only for the
  *    duration of the callback. Copy data if persistence is needed.
  *
+ * 6. The callback MUST NOT throw exceptions (C++) or call longjmp/setjmp
+ *    as this can corrupt library state. For C++ bindings, wrap callbacks
+ *    in try-catch blocks at the binding layer.
+ *
  * SAFE USAGE PATTERN:
  *   - Set observers before creating any connections
  *   - Do not modify observers until all connections are closed
  *   - Use thread-safe logging/metrics in the callback
+ *   - Keep callbacks lightweight and non-blocking
+ *   - Validate all event data in callbacks before use
  */
 static inline void mtls_emit_event(mtls_ctx *ctx, const mtls_event *event)
 {
-    if (ctx && ctx->observers.on_event) {
-        ctx->observers.on_event(event, ctx->observers.userdata);
+    if (!ctx || !event) {
+        return;
     }
+
+    /* Load observer callback to local variable to minimize window for data race.
+     * This provides a best-effort protection against reading partially-written
+     * observer data if observers are modified concurrently (which is undefined
+     * behavior but we try to be defensive).
+     */
+    mtls_event_callback callback = ctx->observers.on_event;
+    void *userdata = ctx->observers.userdata;
+
+    if (!callback) {
+        return;
+    }
+
+    /* Validate event data before invoking callback to prevent callback issues
+     * from invalid event types or corrupted data.
+     */
+    if (event->type < MTLS_EVENT_CONNECT_START || event->type > MTLS_EVENT_KILL_SWITCH_TRIGGERED) {
+        /* Invalid event type - skip emission to prevent callback issues.
+         * This should never happen in normal operation, but protects against
+         * memory corruption or programming errors.
+         */
+        return;
+    }
+
+    /* Invoke callback.
+     * NOTE: Callback failures (exceptions, crashes) will propagate to the caller.
+     * For production use, ensure callbacks are robust and don't throw exceptions.
+     * C++ bindings should wrap callbacks in try-catch at the binding layer.
+     * This is standard practice for C callback APIs - the library cannot protect
+     * against callback failures without platform-specific exception handling which
+     * would add complexity and portability issues.
+     */
+    callback(event, userdata);
 }
 
 #ifdef __cplusplus

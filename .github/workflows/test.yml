@@ -511,7 +511,7 @@ jobs:
     needs: [test-summary, test-linux, test-linux-sanitizers, test-macos, test-windows, test-static-analysis, test-integration]
     if: always()
     environment: production
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -527,159 +527,53 @@ jobs:
              [ "${{ needs.test-static-analysis.result }}" == "success" ] && \
              [ "${{ needs.test-integration.result }}" == "success" ]; then
             echo "status=success" >> "$GITHUB_OUTPUT"
-            echo "color=good" >> "$GITHUB_OUTPUT"
-            echo "emoji=✅" >> "$GITHUB_OUTPUT"
           else
             echo "status=failure" >> "$GITHUB_OUTPUT"
-            echo "color=danger" >> "$GITHUB_OUTPUT"
-            echo "emoji=❌" >> "$GITHUB_OUTPUT"
           fi
-          
-          # Collect detailed job statuses for verbose output
-          echo "linux_status=${{ needs.test-linux.result }}" >> "$GITHUB_OUTPUT"
-          echo "sanitizers_status=${{ needs.test-linux-sanitizers.result }}" >> "$GITHUB_OUTPUT"
-          echo "macos_status=${{ needs.test-macos.result }}" >> "$GITHUB_OUTPUT"
-          echo "windows_status=${{ needs.test-windows.result }}" >> "$GITHUB_OUTPUT"
-          echo "static_analysis_status=${{ needs.test-static-analysis.result }}" >> "$GITHUB_OUTPUT"
-          echo "integration_status=${{ needs.test-integration.result }}" >> "$GITHUB_OUTPUT"
 
-
-      - name: Get commit info
-        id: commit-info
-        run: |
-          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "message=$(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_OUTPUT
-          echo "author=$(git log -1 --pretty=%an)" >> $GITHUB_OUTPUT
-          echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
-
-      - name: Get test results summary
-        id: test-results
+      - name: Build detailed test results
+        id: test-details
         run: |
           # Get job status emojis
           get_status_emoji() {
-            if [ "$1" == "success" ]; then
-              echo "✅"
-            elif [ "$1" == "failure" ]; then
-              echo "❌"
-            elif [ "$1" == "cancelled" ]; then
-              echo "⏹️"
-            else
-              echo "⏳"
-            fi
+            case "$1" in
+              success) echo "✅" ;;
+              failure) echo "❌" ;;
+              cancelled) echo "⚠️" ;;
+              *) echo "⏳" ;;
+            esac
           }
-          
+
           LINUX_EMOJI=$(get_status_emoji "${{ needs.test-linux.result }}")
           SANITIZERS_EMOJI=$(get_status_emoji "${{ needs.test-linux-sanitizers.result }}")
           MACOS_EMOJI=$(get_status_emoji "${{ needs.test-macos.result }}")
           WINDOWS_EMOJI=$(get_status_emoji "${{ needs.test-windows.result }}")
           STATIC_EMOJI=$(get_status_emoji "${{ needs.test-static-analysis.result }}")
           INTEGRATION_EMOJI=$(get_status_emoji "${{ needs.test-integration.result }}")
-          
-          echo "linux_emoji=$LINUX_EMOJI" >> "$GITHUB_OUTPUT"
-          echo "sanitizers_emoji=$SANITIZERS_EMOJI" >> "$GITHUB_OUTPUT"
-          echo "macos_emoji=$MACOS_EMOJI" >> "$GITHUB_OUTPUT"
-          echo "windows_emoji=$WINDOWS_EMOJI" >> "$GITHUB_OUTPUT"
-          echo "static_emoji=$STATIC_EMOJI" >> "$GITHUB_OUTPUT"
-          echo "integration_emoji=$INTEGRATION_EMOJI" >> "$GITHUB_OUTPUT"
-          
-          # Build detailed status text
-          DETAILED_STATUS="*Test Results:*\\n"
-          DETAILED_STATUS="${DETAILED_STATUS}${LINUX_EMOJI} Linux Tests: ${{ needs.test-linux.result }}\\n"
-          DETAILED_STATUS="${DETAILED_STATUS}${SANITIZERS_EMOJI} Sanitizers: ${{ needs.test-linux-sanitizers.result }}\\n"
-          DETAILED_STATUS="${DETAILED_STATUS}${MACOS_EMOJI} macOS Tests: ${{ needs.test-macos.result }}\\n"
-          DETAILED_STATUS="${DETAILED_STATUS}${WINDOWS_EMOJI} Windows Tests: ${{ needs.test-windows.result }}\\n"
-          DETAILED_STATUS="${DETAILED_STATUS}${STATIC_EMOJI} Static Analysis: ${{ needs.test-static-analysis.result }}\\n"
-          DETAILED_STATUS="${DETAILED_STATUS}${INTEGRATION_EMOJI} Integration Tests: ${{ needs.test-integration.result }}"
-          
-          {
-            echo "detailed_status<<EOF"
-            printf "%b" "$DETAILED_STATUS"
-            echo ""
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+
+          # Build detailed status (properly escaped for JSON)
+          cat > /tmp/details.txt <<EOF
+          **Test Results:**
+          ${LINUX_EMOJI} Linux Tests: \`${{ needs.test-linux.result }}\`
+          ${SANITIZERS_EMOJI} Sanitizers: \`${{ needs.test-linux-sanitizers.result }}\`
+          ${MACOS_EMOJI} macOS Tests: \`${{ needs.test-macos.result }}\`
+          ${WINDOWS_EMOJI} Windows Tests: \`${{ needs.test-windows.result }}\`
+          ${STATIC_EMOJI} Static Analysis: \`${{ needs.test-static-analysis.result }}\`
+          ${INTEGRATION_EMOJI} Integration Tests: \`${{ needs.test-integration.result }}\`
+          EOF
+
+          echo "details<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/details.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Send Slack notification
         continue-on-error: true
         if: ${{ env.SLACK_WEBHOOK_URL != '' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        uses: slackapi/slack-github-action@v1
+        uses: ./.github/actions/slack-notify
         with:
           webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "${{ steps.build-status.outputs.emoji }} Test Suite ${{ steps.build-status.outputs.status }}",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "${{ steps.build-status.outputs.emoji }} Test Suite ${{ steps.build-status.outputs.status }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "fields": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Repository:*\n<https://github.com/${{ github.repository }}|${{ github.repository }}>"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Branch:*\n${{ steps.commit-info.outputs.branch }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Commit:*\n<https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ steps.commit-info.outputs.sha }}>"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Author:*\n${{ steps.commit-info.outputs.author }}"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Workflow Run:*\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|#${{ github.run_number }}>"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Overall Status:*\n${{ steps.build-status.outputs.status }}"
-                    }
-                  ]
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "${{ steps.test-results.outputs.detailed_status }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Commit Message:*\n```${{ steps.commit-info.outputs.message }}```"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "View Workflow"
-                      },
-                      "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                    },
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "View Commit"
-                      },
-                      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-                    }
-                  ]
-                }
-              ]
-            }
+          workflow-name: "Test Suite"
+          job-status: ${{ steps.build-status.outputs.status }}
+          job-details: ${{ steps.test-details.outputs.details }}
