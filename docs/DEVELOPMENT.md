@@ -417,6 +417,40 @@ cd build/tests
 5. **Initialize variables** before use
 6. **Free allocated memory** in all paths
 7. **Use const** for read-only parameters
+8. **Use constant-time comparisons** for security-sensitive data
+
+### Constant-Time Operations
+
+For security-sensitive comparisons (credentials, tokens, cryptographic data), use the constant-time functions to prevent timing attacks:
+
+```c
+#include "internal/platform.h"
+
+// For memory comparison (recommended for most cases)
+int platform_consttime_memcmp(const void *lhs, const void *rhs, size_t len);
+
+// For string comparison
+int platform_consttime_strcmp(const char *lhs, const char *rhs);
+```
+
+**When to use constant-time:**
+- Password/token verification
+- Cryptographic key comparison
+- Certificate/identity validation
+- Any comparison where timing could leak information
+
+**Example:**
+```c
+// Good: Constant-time comparison
+if (platform_consttime_memcmp(user_token, expected_token, TOKEN_LEN) == 0) {
+    // Authenticated
+}
+
+// Bad: Standard comparison leaks timing information
+if (memcmp(user_token, expected_token, TOKEN_LEN) == 0) {
+    // Timing attack possible
+}
+```
 
 ---
 

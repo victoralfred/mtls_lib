@@ -1,0 +1,91 @@
+# Valgrind Suppression File for mTLS Library
+# These suppressions handle false positives from system libraries
+
+# OpenSSL initialization - allocates memory that persists for process lifetime
+{
+   openssl_init_ssl
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:OPENSSL_init_ssl
+}
+
+{
+   openssl_init_crypto
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:OPENSSL_init_crypto
+}
+
+# OpenSSL error state - thread-local storage not freed on thread exit
+{
+   openssl_err_state
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:ERR_get_state
+}
+
+# OpenSSL CRYPTO_malloc - internal allocations
+{
+   openssl_crypto_malloc
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:CRYPTO_malloc
+}
+
+# OpenSSL BIO operations
+{
+   openssl_bio_new
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:BIO_new
+}
+
+# OpenSSL SSL_CTX creation
+{
+   openssl_ssl_ctx_new
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:SSL_CTX_new
+}
+
+# glibc getaddrinfo - caches DNS results
+{
+   glibc_getaddrinfo
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:getaddrinfo
+}
+
+# glibc nss modules - loaded dynamically
+{
+   glibc_nss_load
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:__nss_lookup_function
+}
+
+# pthread thread-local storage
+{
+   pthread_tls
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:pthread_create*
+}
+
+# dlopen for dynamic library loading
+{
+   dlopen_leak
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:dlopen*
+}
