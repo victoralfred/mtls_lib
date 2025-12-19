@@ -24,53 +24,59 @@
  * Note: On Windows, SIGUSR1 is not available. Use Ctrl+C to stop.
  */
 
+/* Feature test macros must come before any includes */
 #ifndef _WIN32
-#define _DEFAULT_SOURCE
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
+#    define _DEFAULT_SOURCE 1
 #endif
 
 #include "mtls/mtls.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
 #include <time.h>
 
 /* Platform-specific includes and definitions */
 #ifdef _WIN32
-    #include <windows.h>
-    #define sleep_ms(ms) Sleep(ms)
-    #define get_process_id() GetCurrentProcessId()
-    /* Windows doesn't have SIGUSR1 */
-    #ifndef SIGUSR1
-        #define SIGUSR1 -1
-    #endif
+#    include <windows.h>
+#    define sleep_ms(ms) Sleep(ms)
+#    define get_process_id() GetCurrentProcessId()
+/* Windows doesn't have SIGUSR1 */
+#    ifndef SIGUSR1
+#        define SIGUSR1 (-1)
+#    endif
 #else
-    #include <unistd.h>
-    #define sleep_ms(ms) usleep((ms) * 1000)
-    #define get_process_id() getpid()
+#    include <unistd.h>
+#    define sleep_ms(ms) usleep((ms) * 1000)
+#    define get_process_id() getpid()
 #endif
 
-#define BUFFER_SIZE 4096
+/* Buffer size constant */
+enum { BUFFER_SIZE = 4096 };
 
-static volatile int keep_running = 1;
-static volatile int reload_requested = 0;
-static mtls_ctx* global_ctx = NULL;
+/* Volatile sig_atomic_t for async-signal-safe flag access */
+static volatile sig_atomic_t keep_running = 1;
+static volatile sig_atomic_t reload_requested = 0;
 
 #ifndef _WIN32
-static void signal_handler_reload(int signum) {
+static void signal_handler_reload(int signum)
+{
     (void)signum;
-    printf("\n[SIGNAL] Received SIGUSR1 - Certificate reload requested\n");
+    /* Only set flag - printf is not async-signal-safe */
     reload_requested = 1;
 }
 #endif
 
-static void signal_handler_shutdown(int signum) {
+static void signal_handler_shutdown(int signum)
+{
     (void)signum;
-    printf("\n[SIGNAL] Received shutdown signal\n");
+    /* Only set flag - printf is not async-signal-safe */
     keep_running = 0;
 }
 
-static void print_usage(const char* prog_name) {
+static void print_usage(const char *prog_name)
+{
     fprintf(stderr, "Usage: %s <bind:port> <ca_cert> <server_cert> <server_key>\n", prog_name);
     fprintf(stderr, "\n");
     fprintf(stderr, "Example:\n");
@@ -84,7 +90,19 @@ static void print_usage(const char* prog_name) {
     fprintf(stderr, "\n");
 }
 
-static void print_cert_info(mtls_ctx* ctx) {
+static void format_time(char *buf, size_t buf_size, const time_t *timep)
+{
+#ifdef _WIN32
+    ctime_s(buf, buf_size, timep);
+#else
+    (void)buf_size; /* ctime_r doesn't use size, but Windows ctime_s does */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) - ctime_r is thread-safe */
+    ctime_r(timep, buf);
+#endif
+}
+
+static void print_cert_info(mtls_ctx *ctx)
+{
     printf("═══════════════════════════════════════════════════════\n");
     printf("  Certificate Status\n");
     printf("═══════════════════════════════════════════════════════\n");
@@ -96,18 +114,15 @@ static void print_cert_info(mtls_ctx* ctx) {
     (void)ctx; /* Suppress unused warning */
 
     time_t now = time(NULL);
-#ifdef _WIN32
     char time_buf[26];
-    ctime_s(time_buf, sizeof(time_buf), &now);
+    format_time(time_buf, sizeof(time_buf), &now);
     printf("  Last check: %s", time_buf);
-#else
-    printf("  Last check: %s", ctime(&now));
-#endif
     printf("═══════════════════════════════════════════════════════\n");
     printf("\n");
 }
 
-static void handle_reload(mtls_ctx* ctx) {
+static void handle_reload(mtls_ctx *ctx)
+{
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
     printf("  RELOADING CERTIFICATES\n");
@@ -140,7 +155,8 @@ static void handle_reload(mtls_ctx* ctx) {
     }
 }
 
-static void handle_client(mtls_conn* conn, int conn_num) {
+static void handle_client(mtls_conn *conn, int conn_num)
+{
     mtls_err err;
     mtls_err_init(&err);
 
@@ -177,19 +193,12 @@ static void handle_client(mtls_conn* conn, int conn_num) {
 
         /* Send response (limit echo to avoid truncation) */
         time_t now = time(NULL);
-
-        /* Get time string (ctime_s on Windows, ctime on POSIX) */
-        const char* time_str;
-#ifdef _WIN32
         char time_buf[26];
-        ctime_s(time_buf, sizeof(time_buf), &now);
-        time_str = time_buf;
-#else
-        time_str = ctime(&now);
-#endif
+        format_time(time_buf, sizeof(time_buf), &now);
 
         /* Use fixed-size echo buffer to avoid format truncation warnings */
-        /* Max echo size: BUFFER_SIZE - ("Echo from cert_reload_demo: " + "\nServer time: " + ctime (26 chars) + null) */
+        /* Max echo size: BUFFER_SIZE - ("Echo from cert_reload_demo: " + "\nServer time: " +
+         * ctime (26 chars) + null) */
         /* 4096 - (29 + 14 + 26 + 1) = 4096 - 70 = 4026 */
         char safe_echo[4026];
         size_t buffer_len = strlen(buffer);
@@ -198,9 +207,8 @@ static void handle_client(mtls_conn* conn, int conn_num) {
         safe_echo[copy_len] = '\0';
 
         char response[BUFFER_SIZE];
-        snprintf(response, sizeof(response),
-                 "Echo from cert_reload_demo: %s\nServer time: %s",
-                 safe_echo, time_str);
+        snprintf(response, sizeof(response), "Echo from cert_reload_demo: %s\nServer time: %s",
+                 safe_echo, time_buf);
 
         ssize_t sent = mtls_write(conn, response, strlen(response), &err);
         if (sent > 0) {
@@ -217,22 +225,29 @@ static void handle_client(mtls_conn* conn, int conn_num) {
     printf("[Connection #%d] Completed\n", conn_num);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
     if (argc != 5) {
         print_usage(argv[0]);
         return 1;
     }
 
-    const char* bind_addr = argv[1];
-    const char* ca_cert = argv[2];
-    const char* server_cert = argv[3];
-    const char* server_key = argv[4];
+    const char *bind_addr = argv[1];
+    const char *ca_cert = argv[2];
+    const char *server_cert = argv[3];
+    const char *server_key = argv[4];
 
-    /* Setup signal handlers */
-    signal(SIGINT, signal_handler_shutdown);
-    signal(SIGTERM, signal_handler_shutdown);
+    /* Setup signal handlers - check return values */
+    if (signal(SIGINT, signal_handler_shutdown) == SIG_ERR) {
+        fprintf(stderr, "Warning: Failed to set SIGINT handler\n");
+    }
+    if (signal(SIGTERM, signal_handler_shutdown) == SIG_ERR) {
+        fprintf(stderr, "Warning: Failed to set SIGTERM handler\n");
+    }
 #ifndef _WIN32
-    signal(SIGUSR1, signal_handler_reload);
+    if (signal(SIGUSR1, signal_handler_reload) == SIG_ERR) {
+        fprintf(stderr, "Warning: Failed to set SIGUSR1 handler\n");
+    }
 #endif
 
     printf("═══════════════════════════════════════════════════════\n");
@@ -263,18 +278,17 @@ int main(int argc, char* argv[]) {
     }
 
     /* Create context */
-    mtls_ctx* ctx = mtls_ctx_create(&config, &err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
     if (!ctx) {
         fprintf(stderr, "✗ Failed to create context: %s\n", err.message);
         return 1;
     }
 
-    global_ctx = ctx;
     printf("✓ Context created\n");
     print_cert_info(ctx);
 
     /* Create listener */
-    mtls_listener* listener = mtls_listen(ctx, bind_addr, &err);
+    mtls_listener *listener = mtls_listen(ctx, bind_addr, &err);
     if (!listener) {
         fprintf(stderr, "✗ Failed to listen: %s\n", err.message);
         mtls_ctx_free(ctx);
@@ -306,7 +320,8 @@ int main(int argc, char* argv[]) {
         if (reload_requested) {
             reload_requested = 0;
             reload_count++;
-            printf("\n[RELOAD #%d]\n", reload_count);
+            printf("\n[SIGNAL] Received SIGUSR1 - Certificate reload requested\n");
+            printf("[RELOAD #%d]\n", reload_count);
             handle_reload(ctx);
             printf("Ready for connections...\n");
         }
@@ -316,17 +331,28 @@ int main(int argc, char* argv[]) {
          * for better control. For this demo, we use a simple approach. */
 
         mtls_err_init(&err);
-        mtls_conn* conn = mtls_accept(listener, &err);
+        mtls_conn *conn = mtls_accept(listener, &err);
 
         if (!conn) {
             if (!keep_running) {
                 break;
             }
 
-            /* For this demo, we just continue on errors */
-            /* In production, you'd want better error handling */
-            if (err.code != MTLS_ERR_UNKNOWN) {
-                fprintf(stderr, "✗ Accept failed: %s\n", err.message);
+            /* Handle accept errors appropriately based on error category */
+            if (err.code == MTLS_ERR_UNKNOWN) {
+                /* Timeout or no pending connection - normal operation */
+            } else if (mtls_err_is_tls(err.code)) {
+                /* TLS/certificate errors - client handshake or cert issue */
+                fprintf(stderr, "⚠ TLS error: %s\n", err.message);
+            } else if (mtls_err_is_network(err.code)) {
+                /* Network error - connection or socket issue */
+                fprintf(stderr, "⚠ Network error: %s\n", err.message);
+            } else if (mtls_err_is_io(err.code)) {
+                /* I/O error - read/write issue */
+                fprintf(stderr, "⚠ I/O error: %s\n", err.message);
+            } else {
+                /* Other errors - log with full details */
+                fprintf(stderr, "✗ Accept failed (code=%d): %s\n", err.code, err.message);
             }
             sleep_ms(100); /* 100ms to avoid tight loop */
             continue;
@@ -337,10 +363,10 @@ int main(int argc, char* argv[]) {
         mtls_close(conn);
     }
 
-    printf("\n[SHUTDOWN] Cleaning up...\n");
+    printf("\n[SIGNAL] Received shutdown signal\n");
+    printf("[SHUTDOWN] Cleaning up...\n");
     mtls_listener_close(listener);
     mtls_ctx_free(ctx);
-    global_ctx = NULL;
 
     printf("✓ Server stopped cleanly\n");
     printf("  Total connections: %d\n", connection_count);
