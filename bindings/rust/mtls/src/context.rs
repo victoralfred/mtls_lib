@@ -189,6 +189,38 @@ impl Context {
         unsafe { mtls_sys::mtls_ctx_is_kill_switch_enabled(self.inner.ptr.as_ptr()) }
     }
 
+    /// Reload certificates from the paths specified in the original configuration.
+    ///
+    /// This is useful for certificate rotation without restarting the application.
+    /// New connections will use the reloaded certificates, while existing connections
+    /// continue to use their established TLS sessions.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method should not be called concurrently with itself. While multiple
+    /// threads can safely use the context for connections, certificate reloading
+    /// should be serialized.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // After updating certificate files on disk
+    /// ctx.reload_certs()?;
+    /// // New connections will use the updated certificates
+    /// ```
+    pub fn reload_certs(&self) -> Result<()> {
+        let mut err = init_c_err();
+
+        let result =
+            unsafe { mtls_sys::mtls_ctx_reload_certs(self.inner.ptr.as_ptr(), &mut err) };
+
+        if result != 0 || !is_c_err_ok(&err) {
+            return Err(Error::from_c_err(&err));
+        }
+
+        Ok(())
+    }
+
     /// Get the raw context pointer for advanced use.
     ///
     /// # Safety
