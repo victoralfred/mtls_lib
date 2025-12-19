@@ -359,8 +359,9 @@ impl Error {
             None
         };
 
+        #[allow(clippy::useless_conversion)] // c_ulong is u32 on Windows, u64 on Linux
         let tls_error: Option<u64> = if c_err.ssl_err != 0 {
-            Some(c_err.ssl_err)
+            Some(c_err.ssl_err.into())
         } else {
             None
         };
