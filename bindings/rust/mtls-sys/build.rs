@@ -15,7 +15,29 @@ fn main() {
         .to_path_buf();
 
     let include_dir = project_root.join("include");
-    let build_dir = project_root.join("build");
+
+    // Use MTLS_LIB_DIR if set (from CI), otherwise use default build directory
+    let build_dir = if let Ok(lib_dir) = env::var("MTLS_LIB_DIR") {
+        PathBuf::from(lib_dir)
+    } else {
+        // On Windows, CMake creates build/Release or build/Debug
+        // Try to detect which one exists
+        let base_build_dir = project_root.join("build");
+        if cfg!(target_os = "windows") {
+            let release_dir = base_build_dir.join("Release");
+            let debug_dir = base_build_dir.join("Debug");
+
+            if release_dir.exists() {
+                release_dir
+            } else if debug_dir.exists() {
+                debug_dir
+            } else {
+                base_build_dir
+            }
+        } else {
+            base_build_dir
+        }
+    };
 
     // Tell cargo to look for libraries in the build directory
     println!("cargo:rustc-link-search=native={}", build_dir.display());
