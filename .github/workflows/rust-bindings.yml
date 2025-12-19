@@ -86,44 +86,35 @@ jobs:
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          choco install openssl -y
-          Start-Sleep -Seconds 5
-
-          # Find OpenSSL installation
-          $possiblePaths = @(
-            "C:\Program Files\OpenSSL-Win64",
-            "C:\Program Files\OpenSSL",
-            "C:\OpenSSL-Win64",
-            "C:\OpenSSL"
-          )
-
-          $opensslRoot = $null
-          foreach ($path in $possiblePaths) {
-            if (Test-Path $path) {
-              Write-Host "Found OpenSSL at: $path"
-              $opensslRoot = $path
-              break
-            }
+          # Install vcpkg if not present
+          if (-not (Test-Path "$env:VCPKG_INSTALLATION_ROOT")) {
+            git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+            C:\vcpkg\bootstrap-vcpkg.bat
+            echo "VCPKG_INSTALLATION_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           }
 
-          if (-not $opensslRoot) {
-            Write-Error "OpenSSL not found in any expected location"
-            exit 1
-          }
+          # Install OpenSSL via vcpkg (static linking for easier distribution)
+          vcpkg install openssl:x64-windows-static
+          vcpkg integrate install
 
-          # Find library files
-          $cryptoLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libcrypto*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $sslLib = Get-ChildItem "$opensslRoot" -Recurse -Include "libssl*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Set OpenSSL paths for CMake and build.rs
+          $opensslRoot = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static"
+          $libDir = "$opensslRoot\lib"
 
-          if ($cryptoLib) {
-            echo "OPENSSL_CRYPTO_LIBRARY=$($cryptoLib.FullName)" >> $env:GITHUB_ENV
-          }
-          if ($sslLib) {
-            echo "OPENSSL_SSL_LIBRARY=$($sslLib.FullName)" >> $env:GITHUB_ENV
-          }
-
+          echo "OPENSSL_DIR=$opensslRoot" >> $env:GITHUB_ENV
           echo "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=$opensslRoot\include" >> $env:GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$libDir" >> $env:GITHUB_ENV
+
+          # Debug: Show what's in the lib directory
+          Write-Host "OpenSSL lib directory: $libDir"
+          if (Test-Path $libDir) {
+            Write-Host "Contents of lib directory:"
+            Get-ChildItem $libDir | Format-Table Name, Length -AutoSize
+          } else {
+            Write-Error "OpenSSL lib directory not found: $libDir"
+            exit 1
+          }
         shell: pwsh
 
       - name: Setup MSBuild (Windows)

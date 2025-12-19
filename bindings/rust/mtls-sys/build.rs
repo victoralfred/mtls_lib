@@ -52,6 +52,13 @@ fn main() {
     if cfg!(target_os = "windows") {
         println!("cargo:rustc-link-lib=libssl");
         println!("cargo:rustc-link-lib=libcrypto");
+
+        // When statically linking OpenSSL on Windows, we need to link Windows system libraries
+        println!("cargo:rustc-link-lib=crypt32");  // Windows Cryptography API
+        println!("cargo:rustc-link-lib=ws2_32");   // Windows Sockets
+        println!("cargo:rustc-link-lib=advapi32"); // Advanced Windows API
+        println!("cargo:rustc-link-lib=user32");   // Windows User API
+
         // Windows doesn't use pthread
     } else {
         println!("cargo:rustc-link-lib=ssl");
