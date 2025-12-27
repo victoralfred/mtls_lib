@@ -211,8 +211,7 @@ impl Context {
     pub fn reload_certs(&self) -> Result<()> {
         let mut err = init_c_err();
 
-        let result =
-            unsafe { mtls_sys::mtls_ctx_reload_certs(self.inner.ptr.as_ptr(), &mut err) };
+        let result = unsafe { mtls_sys::mtls_ctx_reload_certs(self.inner.ptr.as_ptr(), &mut err) };
 
         if result != 0 || !is_c_err_ok(&err) {
             return Err(Error::from_c_err(&err));
