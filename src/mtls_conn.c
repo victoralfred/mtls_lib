@@ -7,6 +7,9 @@
 #include "mtls/mtls_types.h"
 #include "mtls/mtls_error.h"
 #include "mtls/mtls_config.h"
+#include "mtls/mtls_ocsp.h"
+#include "mtls/mtls_pinning.h"
+#include "mtls/mtls_ct.h"
 #include "internal/mtls_internal.h"
 #include "internal/platform.h"
 #include <stdlib.h>
@@ -18,11 +21,13 @@
 #    include <sys/socket.h>
 #    include <netinet/in.h>
 #endif
+#include <openssl/bio.h>
+#include <openssl/err.h>
 #include <openssl/opensslv.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
-#include <openssl/err.h>
 
 mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
 {
@@ -372,6 +377,244 @@ mtls_conn *mtls_connect(mtls_ctx *ctx, const char *addr, mtls_err *err)
         platform_socket_close(conn->sock);
         free(conn);
         return NULL;
+    }
+
+    /* =========================================================================
+     * Post-handshake certificate validation (OCSP/CRL, Pinning, CT)
+     * ========================================================================= */
+
+    /* OCSP/CRL Revocation Checking */
+    if (ctx->config.enable_ocsp || ctx->config.enable_crl) {
+        /* Emit revocation check start event */
+        if (ctx->config.enable_ocsp) {
+            event.type = MTLS_EVENT_OCSP_CHECK_START;
+            event.timestamp_us = platform_get_time_us();
+            mtls_emit_event(ctx, &event);
+        }
+        if (ctx->config.enable_crl) {
+            event.type = MTLS_EVENT_CRL_CHECK_START;
+            event.timestamp_us = platform_get_time_us();
+            mtls_emit_event(ctx, &event);
+        }
+
+        /* Get peer certificate and issuer for revocation check */
+        X509 *peer_cert = SSL_get_peer_certificate(conn->ssl);
+        if (peer_cert) {
+            /* Get certificate chain to find issuer */
+            STACK_OF(X509) *chain = SSL_get_peer_cert_chain(conn->ssl);
+            X509 *issuer = NULL;
+            if (chain && sk_X509_num(chain) > 1) {
+                issuer = sk_X509_value(chain, 1); /* Issuer is second in chain */
+            }
+
+            /* Convert certificates to PEM for revocation check */
+            BIO *cert_bio = BIO_new(BIO_s_mem());
+            BIO *issuer_bio = NULL;
+            if (cert_bio && PEM_write_bio_X509(cert_bio, peer_cert)) {
+                char *cert_pem_data = NULL;
+                long cert_pem_len = BIO_get_mem_data(cert_bio, &cert_pem_data);
+
+                const uint8_t *issuer_pem_data = NULL;
+                size_t issuer_pem_len = 0;
+
+                if (issuer) {
+                    issuer_bio = BIO_new(BIO_s_mem());
+                    if (issuer_bio && PEM_write_bio_X509(issuer_bio, issuer)) {
+                        char *issuer_data = NULL;
+                        issuer_pem_len = (size_t)BIO_get_mem_data(issuer_bio, &issuer_data);
+                        issuer_pem_data = (const uint8_t *)issuer_data;
+                    }
+                }
+
+                /* Perform revocation check */
+                mtls_revocation_result rev_result;
+                memset(&rev_result, 0, sizeof(rev_result));
+
+                int rev_status =
+                    mtls_check_revocation(ctx, (const uint8_t *)cert_pem_data, (size_t)cert_pem_len,
+                                          issuer_pem_data, issuer_pem_len, &rev_result, err);
+
+                /* Emit success/failure events */
+                if (ctx->config.enable_ocsp && rev_result.ocsp_checked) {
+                    event.type = (rev_result.ocsp_status == MTLS_OCSP_STATUS_GOOD)
+                                     ? MTLS_EVENT_OCSP_CHECK_SUCCESS
+                                     : MTLS_EVENT_OCSP_CHECK_FAILURE;
+                    event.error_code = (rev_result.ocsp_status == MTLS_OCSP_STATUS_GOOD)
+                                           ? 0
+                                           : MTLS_ERR_OCSP_FAILED;
+                    event.timestamp_us = platform_get_time_us();
+                    mtls_emit_event(ctx, &event);
+                }
+                if (ctx->config.enable_crl && rev_result.crl_checked) {
+                    event.type = (rev_result.crl_status == MTLS_CRL_STATUS_GOOD)
+                                     ? MTLS_EVENT_CRL_CHECK_SUCCESS
+                                     : MTLS_EVENT_CRL_CHECK_FAILURE;
+                    event.error_code =
+                        (rev_result.crl_status == MTLS_CRL_STATUS_GOOD) ? 0 : MTLS_ERR_CRL_FAILED;
+                    event.timestamp_us = platform_get_time_us();
+                    mtls_emit_event(ctx, &event);
+                }
+
+                if (issuer_bio) {
+                    BIO_free(issuer_bio);
+                }
+
+                /* Handle revocation check failure */
+                if (rev_status != 0) {
+                    bool should_fail = false;
+                    if (ctx->config.require_ocsp &&
+                        rev_result.ocsp_status != MTLS_OCSP_STATUS_GOOD) {
+                        should_fail = true;
+                    }
+                    if (ctx->config.require_crl && rev_result.crl_status != MTLS_CRL_STATUS_GOOD) {
+                        should_fail = true;
+                    }
+                    /* Certificate is revoked */
+                    if (rev_result.ocsp_status == MTLS_OCSP_STATUS_REVOKED ||
+                        rev_result.crl_status == MTLS_CRL_STATUS_REVOKED) {
+                        should_fail = true;
+                        MTLS_ERR_SET(err, MTLS_ERR_CERT_REVOKED, "Certificate has been revoked");
+                    }
+
+                    if (should_fail) {
+                        BIO_free(cert_bio);
+                        X509_free(peer_cert);
+                        event.type = MTLS_EVENT_CONNECT_FAILURE;
+                        event.conn = conn;
+                        event.error_code = err ? (int)err->code : MTLS_ERR_OCSP_FAILED;
+                        event.timestamp_us = platform_get_time_us();
+                        event.duration_us = event.timestamp_us - start_time;
+                        mtls_emit_event(ctx, &event);
+                        SSL_free(conn->ssl);
+                        platform_socket_close(conn->sock);
+                        free(conn);
+                        return NULL;
+                    }
+                }
+            }
+            if (cert_bio) {
+                BIO_free(cert_bio);
+            }
+            X509_free(peer_cert);
+        }
+    }
+
+    /* Certificate Pinning Validation */
+    if (ctx->config.pin_spki_sha256_count > 0 || ctx->config.pin_cert_sha256_count > 0) {
+        /* Emit pin check start event */
+        event.type = MTLS_EVENT_PIN_CHECK_START;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(ctx, &event);
+
+        /* Build pin set from configuration */
+        mtls_pin_set pin_set;
+        mtls_pin_set_init(&pin_set);
+        pin_set.require_match = ctx->config.pin_require_match;
+        pin_set.include_leaf_only = ctx->config.pin_include_leaf_only;
+
+        /* Add SPKI pins */
+        for (size_t i = 0; i < ctx->config.pin_spki_sha256_count; i++) {
+            if (mtls_pin_set_add_spki_sha256(&pin_set, ctx->config.pin_spki_sha256[i], NULL) != 0) {
+                /* Log warning but continue with other pins */
+            }
+        }
+
+        /* Add cert pins */
+        for (size_t i = 0; i < ctx->config.pin_cert_sha256_count; i++) {
+            if (mtls_pin_set_add_cert_sha256(&pin_set, ctx->config.pin_cert_sha256[i], NULL) != 0) {
+                /* Log warning but continue with other pins */
+            }
+        }
+
+        /* Validate connection against pin set */
+        if (mtls_pin_validate_conn(conn, &pin_set, err) != 0) {
+            /* Pin validation failed */
+            event.type = MTLS_EVENT_PIN_CHECK_FAILURE;
+            event.error_code = MTLS_ERR_PIN_VALIDATION_FAILED;
+            event.timestamp_us = platform_get_time_us();
+            mtls_emit_event(ctx, &event);
+
+            event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.conn = conn;
+            event.error_code = MTLS_ERR_PIN_VALIDATION_FAILED;
+            event.duration_us = event.timestamp_us - start_time;
+            mtls_emit_event(ctx, &event);
+
+            SSL_free(conn->ssl);
+            platform_socket_close(conn->sock);
+            free(conn);
+            return NULL;
+        }
+
+        /* Pin validation succeeded */
+        event.type = MTLS_EVENT_PIN_CHECK_SUCCESS;
+        event.error_code = 0;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(ctx, &event);
+    }
+
+    /* Certificate Transparency Validation */
+    if (ctx->config.enable_ct) {
+        /* Emit CT check start event */
+        event.type = MTLS_EVENT_CT_CHECK_START;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(ctx, &event);
+
+        /* Load CT log list if configured */
+        mtls_ct_log_list log_list;
+        mtls_ct_log_list_init(&log_list);
+        bool log_list_loaded = false;
+
+        if (ctx->config.ct_log_list_json && ctx->config.ct_log_list_json_len > 0) {
+            if (mtls_ct_log_list_load_json(&log_list, ctx->config.ct_log_list_json,
+                                           ctx->config.ct_log_list_json_len, NULL) == 0) {
+                log_list_loaded = true;
+            }
+        } else if (ctx->config.ct_log_list_path) {
+            if (mtls_ct_log_list_load_file(&log_list, ctx->config.ct_log_list_path, NULL) == 0) {
+                log_list_loaded = true;
+            }
+        }
+
+        /* Determine minimum SCTs required */
+        size_t min_scts = ctx->config.ct_min_scts > 0 ? ctx->config.ct_min_scts : 2;
+
+        /* Validate CT for connection */
+        mtls_ct_report ct_report;
+        memset(&ct_report, 0, sizeof(ct_report));
+
+        int ct_status = mtls_ct_validate_conn(conn, log_list_loaded ? &log_list : NULL, min_scts,
+                                              ctx->config.ct_allow_unknown_logs, &ct_report, err);
+
+        mtls_ct_log_list_free(&log_list);
+
+        if (ct_status != 0) {
+            /* CT validation failed */
+            event.type = MTLS_EVENT_CT_CHECK_FAILURE;
+            event.error_code = MTLS_ERR_CT_VALIDATION_FAILED;
+            event.timestamp_us = platform_get_time_us();
+            mtls_emit_event(ctx, &event);
+
+            if (ctx->config.require_ct) {
+                event.type = MTLS_EVENT_CONNECT_FAILURE;
+                event.conn = conn;
+                event.error_code = MTLS_ERR_CT_VALIDATION_FAILED;
+                event.duration_us = event.timestamp_us - start_time;
+                mtls_emit_event(ctx, &event);
+
+                SSL_free(conn->ssl);
+                platform_socket_close(conn->sock);
+                free(conn);
+                return NULL;
+            }
+            /* CT not required - continue with warning */
+        } else {
+            /* CT validation succeeded */
+            event.type = MTLS_EVENT_CT_CHECK_SUCCESS;
+            event.error_code = 0;
+            event.timestamp_us = platform_get_time_us();
+            mtls_emit_event(ctx, &event);
+        }
     }
 
     /* Get local address */
