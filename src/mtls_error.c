@@ -201,6 +201,18 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_PIN_INVALID_FORMAT";
     case MTLS_ERR_PIN_COMPUTE_FAILED:
         return "MTLS_ERR_PIN_COMPUTE_FAILED";
+    case MTLS_ERR_CT_VALIDATION_FAILED:
+        return "MTLS_ERR_CT_VALIDATION_FAILED";
+    case MTLS_ERR_CT_NO_SCTS:
+        return "MTLS_ERR_CT_NO_SCTS";
+    case MTLS_ERR_CT_INSUFFICIENT_SCTS:
+        return "MTLS_ERR_CT_INSUFFICIENT_SCTS";
+    case MTLS_ERR_CT_INVALID_SCT:
+        return "MTLS_ERR_CT_INVALID_SCT";
+    case MTLS_ERR_CT_UNKNOWN_LOG:
+        return "MTLS_ERR_CT_UNKNOWN_LOG";
+    case MTLS_ERR_CT_LOG_LIST_PARSE:
+        return "MTLS_ERR_CT_LOG_LIST_PARSE";
 
     /* Identity errors */
     case MTLS_ERR_IDENTITY_MISMATCH:

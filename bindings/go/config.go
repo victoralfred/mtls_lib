@@ -76,6 +76,14 @@ type Config struct {
 	PinCertSHA256      []string // Certificate SHA-256 pins (base64-encoded)
 	PinRequireMatch    bool     // Require at least one pin match (default: true if pins set)
 	PinIncludeLeafOnly bool     // Only check leaf certificate (default: false)
+
+	// Certificate Transparency settings
+	EnableCT           bool   // Enable CT verification
+	RequireCT          bool   // Fail if CT verification fails
+	CTMinSCTs          int    // Minimum valid SCTs required (default: 2)
+	CTLogListPath      string // Path to CT log list JSON file
+	CTLogListJSON      []byte // CT log list JSON data in memory
+	CTAllowUnknownLogs bool   // Allow SCTs from unknown logs (default: false)
 }
 
 // Validate checks the configuration for errors.
@@ -308,6 +316,26 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	cConfig.pin_require_match = C.bool(c.PinRequireMatch)
 	cConfig.pin_include_leaf_only = C.bool(c.PinIncludeLeafOnly)
+
+	// Certificate Transparency settings
+	cConfig.enable_ct = C.bool(c.EnableCT)
+	cConfig.require_ct = C.bool(c.RequireCT)
+	if c.CTMinSCTs > 0 {
+		cConfig.ct_min_scts = C.size_t(c.CTMinSCTs)
+	}
+	if c.CTLogListPath != "" {
+		cStr := C.CString(c.CTLogListPath)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.ct_log_list_path = cStr
+	}
+	if len(c.CTLogListJSON) > 0 {
+		jsonCopy := C.malloc(C.size_t(len(c.CTLogListJSON)))
+		allocations = append(allocations, jsonCopy)
+		C.memcpy(jsonCopy, unsafe.Pointer(&c.CTLogListJSON[0]), C.size_t(len(c.CTLogListJSON)))
+		cConfig.ct_log_list_json = (*C.uint8_t)(jsonCopy)
+		cConfig.ct_log_list_json_len = C.size_t(len(c.CTLogListJSON))
+	}
+	cConfig.ct_allow_unknown_logs = C.bool(c.CTAllowUnknownLogs)
 
 	return &cConfig, allocations
 }

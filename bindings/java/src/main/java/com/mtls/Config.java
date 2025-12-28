@@ -54,6 +54,14 @@ public class Config {
     private final boolean pinRequireMatch;
     private final boolean pinIncludeLeafOnly;
 
+    // Certificate Transparency settings
+    private final boolean enableCt;
+    private final boolean requireCt;
+    private final int ctMinScts;
+    private final String ctLogListPath;
+    private final byte[] ctLogListJson;
+    private final boolean ctAllowUnknownLogs;
+
     /**
      * TLS version enumeration.
      */
@@ -106,6 +114,13 @@ public class Config {
         this.pinCertSha256 = new ArrayList<>(builder.pinCertSha256);
         this.pinRequireMatch = builder.pinRequireMatch;
         this.pinIncludeLeafOnly = builder.pinIncludeLeafOnly;
+        // Certificate Transparency settings
+        this.enableCt = builder.enableCt;
+        this.requireCt = builder.requireCt;
+        this.ctMinScts = builder.ctMinScts;
+        this.ctLogListPath = builder.ctLogListPath;
+        this.ctLogListJson = builder.ctLogListJson;
+        this.ctAllowUnknownLogs = builder.ctAllowUnknownLogs;
     }
 
     // Getters
@@ -146,6 +161,14 @@ public class Config {
     public List<String> getPinCertSha256() { return List.copyOf(pinCertSha256); }
     public boolean isPinRequireMatch() { return pinRequireMatch; }
     public boolean isPinIncludeLeafOnly() { return pinIncludeLeafOnly; }
+
+    // Certificate Transparency getters
+    public boolean isEnableCt() { return enableCt; }
+    public boolean isRequireCt() { return requireCt; }
+    public int getCtMinScts() { return ctMinScts; }
+    public String getCtLogListPath() { return ctLogListPath; }
+    public byte[] getCtLogListJson() { return ctLogListJson; }
+    public boolean isCtAllowUnknownLogs() { return ctAllowUnknownLogs; }
 
     /**
      * Validates the configuration.
@@ -204,6 +227,13 @@ public class Config {
         private final List<String> pinCertSha256 = new ArrayList<>();
         private boolean pinRequireMatch = false;
         private boolean pinIncludeLeafOnly = false;
+        // Certificate Transparency settings
+        private boolean enableCt = false;
+        private boolean requireCt = false;
+        private int ctMinScts = 2;
+        private String ctLogListPath;
+        private byte[] ctLogListJson;
+        private boolean ctAllowUnknownLogs = false;
 
         /**
          * Set the CA certificate file path.
@@ -544,6 +574,74 @@ public class Config {
          */
         public Builder pinIncludeLeafOnly(boolean pinIncludeLeafOnly) {
             this.pinIncludeLeafOnly = pinIncludeLeafOnly;
+            return this;
+        }
+
+        // Certificate Transparency builder methods
+
+        /**
+         * Enable or disable Certificate Transparency verification.
+         *
+         * @param enableCt true to enable CT verification
+         * @return this builder
+         */
+        public Builder enableCt(boolean enableCt) {
+            this.enableCt = enableCt;
+            return this;
+        }
+
+        /**
+         * Require CT verification to pass (fail connection if CT fails).
+         *
+         * @param requireCt true to require CT success
+         * @return this builder
+         */
+        public Builder requireCt(boolean requireCt) {
+            this.requireCt = requireCt;
+            return this;
+        }
+
+        /**
+         * Set the minimum number of valid SCTs required.
+         *
+         * @param ctMinScts minimum number of SCTs (default: 2)
+         * @return this builder
+         */
+        public Builder ctMinScts(int ctMinScts) {
+            this.ctMinScts = ctMinScts;
+            return this;
+        }
+
+        /**
+         * Set the path to CT log list JSON file.
+         *
+         * @param ctLogListPath path to CT log list file
+         * @return this builder
+         */
+        public Builder ctLogListPath(String ctLogListPath) {
+            this.ctLogListPath = ctLogListPath;
+            return this;
+        }
+
+        /**
+         * Set the CT log list JSON data in memory.
+         *
+         * @param ctLogListJson CT log list JSON bytes
+         * @return this builder
+         */
+        public Builder ctLogListJson(byte[] ctLogListJson) {
+            this.ctLogListJson = ctLogListJson;
+            return this;
+        }
+
+        /**
+         * Allow SCTs from unknown CT logs.
+         *
+         * @param ctAllowUnknownLogs true to allow unknown logs (default: false)
+         * @return this builder
+         */
+        public Builder ctAllowUnknownLogs(boolean ctAllowUnknownLogs) {
+            this.ctAllowUnknownLogs = ctAllowUnknownLogs;
             return this;
         }
 

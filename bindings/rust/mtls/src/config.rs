@@ -81,6 +81,14 @@ pub struct Config {
     pub(crate) pin_cert_sha256: Vec<String>,
     pub(crate) pin_require_match: bool,
     pub(crate) pin_include_leaf_only: bool,
+
+    // Certificate Transparency settings
+    pub(crate) enable_ct: bool,
+    pub(crate) require_ct: bool,
+    pub(crate) ct_min_scts: usize,
+    pub(crate) ct_log_list_path: Option<String>,
+    pub(crate) ct_log_list_json: Option<Vec<u8>>,
+    pub(crate) ct_allow_unknown_logs: bool,
 }
 
 impl Default for Config {
@@ -122,6 +130,14 @@ impl Default for Config {
             pin_cert_sha256: Vec::new(),
             pin_require_match: false,
             pin_include_leaf_only: false,
+
+            // Certificate Transparency settings
+            enable_ct: false,
+            require_ct: false,
+            ct_min_scts: 2,
+            ct_log_list_path: None,
+            ct_log_list_json: None,
+            ct_allow_unknown_logs: false,
         }
     }
 }
@@ -304,6 +320,21 @@ impl Config {
 
         guard.config.pin_require_match = self.pin_require_match;
         guard.config.pin_include_leaf_only = self.pin_include_leaf_only;
+
+        // Certificate Transparency settings
+        guard.config.enable_ct = self.enable_ct;
+        guard.config.require_ct = self.require_ct;
+        guard.config.ct_min_scts = self.ct_min_scts;
+        if let Some(ref path) = self.ct_log_list_path {
+            let c_str = to_c_string(path)?;
+            guard.config.ct_log_list_path = c_str.as_ptr();
+            guard.allocations.push(c_str);
+        }
+        if let Some(ref json) = self.ct_log_list_json {
+            guard.config.ct_log_list_json = json.as_ptr();
+            guard.config.ct_log_list_json_len = json.len();
+        }
+        guard.config.ct_allow_unknown_logs = self.ct_allow_unknown_logs;
 
         Ok(guard)
     }
@@ -521,6 +552,44 @@ impl ConfigBuilder {
     /// Only check leaf certificate (default: false, checks entire chain).
     pub fn pin_include_leaf_only(mut self, leaf_only: bool) -> Self {
         self.config.pin_include_leaf_only = leaf_only;
+        self
+    }
+
+    /// Enable or disable Certificate Transparency verification.
+    pub fn enable_ct(mut self, enabled: bool) -> Self {
+        self.config.enable_ct = enabled;
+        self
+    }
+
+    /// Require CT verification to pass (fail connection if CT fails).
+    pub fn require_ct(mut self, require: bool) -> Self {
+        self.config.require_ct = require;
+        self
+    }
+
+    /// Set minimum number of valid SCTs required (default: 2).
+    pub fn ct_min_scts(mut self, min: usize) -> Self {
+        self.config.ct_min_scts = min;
+        self
+    }
+
+    /// Set CT log list file path (Chrome/Apple JSON format).
+    pub fn ct_log_list_path(mut self, path: impl AsRef<Path>) -> Self {
+        self.config.ct_log_list_path = Some(path.as_ref().to_string_lossy().into_owned());
+        self.config.ct_log_list_json = None;
+        self
+    }
+
+    /// Set CT log list JSON data in memory.
+    pub fn ct_log_list_json(mut self, json: impl Into<Vec<u8>>) -> Self {
+        self.config.ct_log_list_json = Some(json.into());
+        self.config.ct_log_list_path = None;
+        self
+    }
+
+    /// Allow SCTs from unknown logs (default: false).
+    pub fn ct_allow_unknown_logs(mut self, allow: bool) -> Self {
+        self.config.ct_allow_unknown_logs = allow;
         self
     }
 

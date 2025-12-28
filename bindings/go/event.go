@@ -65,6 +65,18 @@ const (
 	EventPinCheckFailure EventType = 62
 )
 
+// Certificate Transparency events (80-83)
+const (
+	// EventCTCheckStart is emitted when CT verification begins.
+	EventCTCheckStart EventType = 80
+	// EventCTCheckSuccess is emitted when CT verification succeeds.
+	EventCTCheckSuccess EventType = 81
+	// EventCTCheckFailure is emitted when CT verification fails.
+	EventCTCheckFailure EventType = 82
+	// EventCTSCTValidated is emitted when an SCT is validated.
+	EventCTSCTValidated EventType = 83
+)
+
 // String returns a human-readable name for the event type.
 func (t EventType) String() string {
 	switch t {
@@ -114,6 +126,14 @@ func (t EventType) String() string {
 		return "PinCheckSuccess"
 	case EventPinCheckFailure:
 		return "PinCheckFailure"
+	case EventCTCheckStart:
+		return "CTCheckStart"
+	case EventCTCheckSuccess:
+		return "CTCheckSuccess"
+	case EventCTCheckFailure:
+		return "CTCheckFailure"
+	case EventCTSCTValidated:
+		return "CTSCTValidated"
 	default:
 		return "Unknown"
 	}
@@ -124,14 +144,15 @@ func (t EventType) IsSuccess() bool {
 	return t == EventConnectSuccess || t == EventHandshakeSuccess ||
 		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
 		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess ||
-		t == EventPinCheckSuccess
+		t == EventPinCheckSuccess || t == EventCTCheckSuccess
 }
 
 // IsFailure returns true if the event type indicates failure.
 func (t EventType) IsFailure() bool {
 	return t == EventConnectFailure || t == EventHandshakeFailure ||
 		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
-		t == EventCRLDownloadFailure || t == EventPinCheckFailure
+		t == EventCRLDownloadFailure || t == EventPinCheckFailure ||
+		t == EventCTCheckFailure
 }
 
 // IsIO returns true if the event type is an I/O event.
@@ -157,6 +178,11 @@ func (t EventType) IsRevocation() bool {
 // IsPinning returns true if the event type is a certificate pinning event.
 func (t EventType) IsPinning() bool {
 	return t >= EventPinCheckStart && t <= EventPinCheckFailure
+}
+
+// IsCT returns true if the event type is a Certificate Transparency event.
+func (t EventType) IsCT() bool {
+	return t >= EventCTCheckStart && t <= EventCTSCTValidated
 }
 
 // Event represents an mTLS event emitted by the library.

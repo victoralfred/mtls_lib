@@ -102,6 +102,15 @@ typedef struct mtls_config {
     bool pin_require_match;       /* Require at least one pin match (default: true if pins set) */
     bool pin_include_leaf_only;   /* Only check leaf certificate (default: false) */
 
+    /* Certificate Transparency configuration */
+    bool enable_ct;                  /* Enable CT verification */
+    bool require_ct;                 /* Fail if CT verification fails */
+    size_t ct_min_scts;              /* Minimum valid SCTs required (default: 2) */
+    const char *ct_log_list_path;    /* Path to CT log list JSON file */
+    const uint8_t *ct_log_list_json; /* CT log list JSON data in memory */
+    size_t ct_log_list_json_len;     /* Length of CT log list JSON data */
+    bool ct_allow_unknown_logs;      /* Allow SCTs from unknown logs (default: false) */
+
     /* Observability */
     mtls_observers observers; /* Event callbacks */
 } mtls_config;

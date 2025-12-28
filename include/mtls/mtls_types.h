@@ -152,7 +152,13 @@ typedef enum mtls_event_type {
     /* Certificate pinning events (60-62) */
     MTLS_EVENT_PIN_CHECK_START = 60,
     MTLS_EVENT_PIN_CHECK_SUCCESS = 61,
-    MTLS_EVENT_PIN_CHECK_FAILURE = 62
+    MTLS_EVENT_PIN_CHECK_FAILURE = 62,
+
+    /* Certificate Transparency events (80-83) */
+    MTLS_EVENT_CT_CHECK_START = 80,
+    MTLS_EVENT_CT_CHECK_SUCCESS = 81,
+    MTLS_EVENT_CT_CHECK_FAILURE = 82,
+    MTLS_EVENT_CT_SCT_VALIDATED = 83
 } mtls_event_type;
 
 /*

@@ -69,6 +69,12 @@ const (
 	ErrPinValidationFailed  ErrorCode = 320
 	ErrPinInvalidFormat     ErrorCode = 321
 	ErrPinComputeFailed     ErrorCode = 322
+	ErrCTValidationFailed   ErrorCode = 323
+	ErrCTNoSCTs             ErrorCode = 324
+	ErrCTInsufficientSCTs   ErrorCode = 325
+	ErrCTInvalidSCT         ErrorCode = 326
+	ErrCTUnknownLog         ErrorCode = 327
+	ErrCTLogListParse       ErrorCode = 328
 
 	// Identity/verification errors (4xx)
 	ErrIdentityMismatch  ErrorCode = 400

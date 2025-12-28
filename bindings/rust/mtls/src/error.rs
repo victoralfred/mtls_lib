@@ -74,6 +74,12 @@ pub enum ErrorCode {
     PinValidationFailed = 320,
     PinInvalidFormat = 321,
     PinComputeFailed = 322,
+    CtValidationFailed = 323,
+    CtNoScts = 324,
+    CtInsufficientScts = 325,
+    CtInvalidSct = 326,
+    CtUnknownLog = 327,
+    CtLogListParse = 328,
 
     // Identity errors (4xx)
     IdentityMismatch = 400,
@@ -164,6 +170,12 @@ impl ErrorCode {
             320 => ErrorCode::PinValidationFailed,
             321 => ErrorCode::PinInvalidFormat,
             322 => ErrorCode::PinComputeFailed,
+            323 => ErrorCode::CtValidationFailed,
+            324 => ErrorCode::CtNoScts,
+            325 => ErrorCode::CtInsufficientScts,
+            326 => ErrorCode::CtInvalidSct,
+            327 => ErrorCode::CtUnknownLog,
+            328 => ErrorCode::CtLogListParse,
             // Identity errors
             400 => ErrorCode::IdentityMismatch,
             401 => ErrorCode::SanNotAllowed,
@@ -278,6 +290,19 @@ impl ErrorCode {
         )
     }
 
+    /// Returns true if this is a Certificate Transparency error.
+    pub fn is_ct(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::CtValidationFailed
+                | ErrorCode::CtNoScts
+                | ErrorCode::CtInsufficientScts
+                | ErrorCode::CtInvalidSct
+                | ErrorCode::CtUnknownLog
+                | ErrorCode::CtLogListParse
+        )
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -328,6 +353,12 @@ impl ErrorCode {
             ErrorCode::PinValidationFailed => "PIN_VALIDATION_FAILED",
             ErrorCode::PinInvalidFormat => "PIN_INVALID_FORMAT",
             ErrorCode::PinComputeFailed => "PIN_COMPUTE_FAILED",
+            ErrorCode::CtValidationFailed => "CT_VALIDATION_FAILED",
+            ErrorCode::CtNoScts => "CT_NO_SCTS",
+            ErrorCode::CtInsufficientScts => "CT_INSUFFICIENT_SCTS",
+            ErrorCode::CtInvalidSct => "CT_INVALID_SCT",
+            ErrorCode::CtUnknownLog => "CT_UNKNOWN_LOG",
+            ErrorCode::CtLogListParse => "CT_LOG_LIST_PARSE",
             ErrorCode::IdentityMismatch => "IDENTITY_MISMATCH",
             ErrorCode::SanNotAllowed => "SAN_NOT_ALLOWED",
             ErrorCode::SpiffeParseFailed => "SPIFFE_PARSE_FAILED",
@@ -540,6 +571,11 @@ impl Error {
     pub fn is_pinning(&self) -> bool {
         self.code.is_pinning()
     }
+
+    /// Returns true if this is a Certificate Transparency error.
+    pub fn is_ct(&self) -> bool {
+        self.code.is_ct()
+    }
 }
 
 impl fmt::Display for Error {
@@ -665,5 +701,41 @@ mod tests {
         assert_eq!(ErrorCode::CrlDownloadFailed.name(), "CRL_DOWNLOAD_FAILED");
         assert_eq!(ErrorCode::CrlExpired.name(), "CRL_EXPIRED");
         assert_eq!(ErrorCode::CrlParseFailed.name(), "CRL_PARSE_FAILED");
+    }
+
+    #[test]
+    fn test_ct_error_codes() {
+        // Test CT error categorization
+        assert!(ErrorCode::CtValidationFailed.is_ct());
+        assert!(ErrorCode::CtNoScts.is_ct());
+        assert!(ErrorCode::CtInsufficientScts.is_ct());
+        assert!(ErrorCode::CtInvalidSct.is_ct());
+        assert!(ErrorCode::CtUnknownLog.is_ct());
+        assert!(ErrorCode::CtLogListParse.is_ct());
+        assert!(!ErrorCode::ConnectFailed.is_ct());
+
+        // All CT errors are TLS errors
+        assert!(ErrorCode::CtValidationFailed.is_tls());
+        assert!(ErrorCode::CtNoScts.is_tls());
+    }
+
+    #[test]
+    fn test_ct_error_from_i32() {
+        assert_eq!(ErrorCode::from_i32(323), ErrorCode::CtValidationFailed);
+        assert_eq!(ErrorCode::from_i32(324), ErrorCode::CtNoScts);
+        assert_eq!(ErrorCode::from_i32(325), ErrorCode::CtInsufficientScts);
+        assert_eq!(ErrorCode::from_i32(326), ErrorCode::CtInvalidSct);
+        assert_eq!(ErrorCode::from_i32(327), ErrorCode::CtUnknownLog);
+        assert_eq!(ErrorCode::from_i32(328), ErrorCode::CtLogListParse);
+    }
+
+    #[test]
+    fn test_ct_error_names() {
+        assert_eq!(ErrorCode::CtValidationFailed.name(), "CT_VALIDATION_FAILED");
+        assert_eq!(ErrorCode::CtNoScts.name(), "CT_NO_SCTS");
+        assert_eq!(ErrorCode::CtInsufficientScts.name(), "CT_INSUFFICIENT_SCTS");
+        assert_eq!(ErrorCode::CtInvalidSct.name(), "CT_INVALID_SCT");
+        assert_eq!(ErrorCode::CtUnknownLog.name(), "CT_UNKNOWN_LOG");
+        assert_eq!(ErrorCode::CtLogListParse.name(), "CT_LOG_LIST_PARSE");
     }
 }

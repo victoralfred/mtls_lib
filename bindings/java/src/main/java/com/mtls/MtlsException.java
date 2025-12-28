@@ -34,6 +34,20 @@ public class MtlsException extends Exception {
     /** Failed to compute pin hash */
     public static final int ERR_PIN_COMPUTE_FAILED = 322;
 
+    // Certificate Transparency error code constants
+    /** CT validation failed */
+    public static final int ERR_CT_VALIDATION_FAILED = 323;
+    /** No SCTs found in certificate */
+    public static final int ERR_CT_NO_SCTS = 324;
+    /** Insufficient valid SCTs */
+    public static final int ERR_CT_INSUFFICIENT_SCTS = 325;
+    /** Invalid SCT format or signature */
+    public static final int ERR_CT_INVALID_SCT = 326;
+    /** SCT from unknown CT log */
+    public static final int ERR_CT_UNKNOWN_LOG = 327;
+    /** Failed to parse CT log list */
+    public static final int ERR_CT_LOG_LIST_PARSE = 328;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -218,6 +232,15 @@ public class MtlsException extends Exception {
      */
     public boolean isPinningError() {
         return errorCode >= ERR_PIN_VALIDATION_FAILED && errorCode <= ERR_PIN_COMPUTE_FAILED;
+    }
+
+    /**
+     * Check if this is a Certificate Transparency error.
+     *
+     * @return true if this is a CT error
+     */
+    public boolean isCtError() {
+        return errorCode >= ERR_CT_VALIDATION_FAILED && errorCode <= ERR_CT_LOG_LIST_PARSE;
     }
 
     @Override

@@ -60,6 +60,15 @@ pub enum EventType {
     PinCheckSuccess = 61,
     /// Pin check failed.
     PinCheckFailure = 62,
+    // Certificate Transparency events (80-83)
+    /// CT check started.
+    CtCheckStart = 80,
+    /// CT check succeeded.
+    CtCheckSuccess = 81,
+    /// CT check failed.
+    CtCheckFailure = 82,
+    /// SCT validated.
+    CtSctValidated = 83,
     /// Unknown event type.
     Unknown = 0,
 }
@@ -99,6 +108,10 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_START => EventType::PinCheckStart,
             mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_SUCCESS => EventType::PinCheckSuccess,
             mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_FAILURE => EventType::PinCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_START => EventType::CtCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_SUCCESS => EventType::CtCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_FAILURE => EventType::CtCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_SCT_VALIDATED => EventType::CtSctValidated,
         }
     }
 
@@ -112,6 +125,7 @@ impl EventType {
                 | EventType::CrlCheckFailure
                 | EventType::CrlDownloadFailure
                 | EventType::PinCheckFailure
+                | EventType::CtCheckFailure
         )
     }
 
@@ -126,6 +140,7 @@ impl EventType {
                 | EventType::CrlCheckSuccess
                 | EventType::CrlDownloadSuccess
                 | EventType::PinCheckSuccess
+                | EventType::CtCheckSuccess
         )
     }
 
@@ -184,6 +199,17 @@ impl EventType {
             EventType::PinCheckStart | EventType::PinCheckSuccess | EventType::PinCheckFailure
         )
     }
+
+    /// Check if this is a Certificate Transparency event.
+    pub fn is_ct(&self) -> bool {
+        matches!(
+            self,
+            EventType::CtCheckStart
+                | EventType::CtCheckSuccess
+                | EventType::CtCheckFailure
+                | EventType::CtSctValidated
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -212,6 +238,10 @@ impl std::fmt::Display for EventType {
             EventType::PinCheckStart => "PinCheckStart",
             EventType::PinCheckSuccess => "PinCheckSuccess",
             EventType::PinCheckFailure => "PinCheckFailure",
+            EventType::CtCheckStart => "CtCheckStart",
+            EventType::CtCheckSuccess => "CtCheckSuccess",
+            EventType::CtCheckFailure => "CtCheckFailure",
+            EventType::CtSctValidated => "CtSctValidated",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)
@@ -495,5 +525,27 @@ mod tests {
         assert!(id > 0);
 
         unregister_callback(id);
+    }
+
+    #[test]
+    fn test_ct_event_categories() {
+        // CT events
+        assert!(EventType::CtCheckStart.is_ct());
+        assert!(EventType::CtCheckSuccess.is_ct());
+        assert!(EventType::CtCheckFailure.is_ct());
+        assert!(EventType::CtSctValidated.is_ct());
+        assert!(!EventType::ConnectStart.is_ct());
+
+        // Success/error categorization
+        assert!(EventType::CtCheckSuccess.is_success());
+        assert!(EventType::CtCheckFailure.is_error());
+    }
+
+    #[test]
+    fn test_ct_event_display() {
+        assert_eq!(format!("{}", EventType::CtCheckStart), "CtCheckStart");
+        assert_eq!(format!("{}", EventType::CtCheckSuccess), "CtCheckSuccess");
+        assert_eq!(format!("{}", EventType::CtCheckFailure), "CtCheckFailure");
+        assert_eq!(format!("{}", EventType::CtSctValidated), "CtSctValidated");
     }
 }

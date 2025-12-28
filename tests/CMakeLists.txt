@@ -68,6 +68,9 @@ endif()
 # Certificate pinning tests
 mtls_add_test(test_pinning)
 
+# Certificate Transparency tests
+mtls_add_test(test_ct)
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)
