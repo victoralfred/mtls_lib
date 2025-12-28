@@ -328,6 +328,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "libc",
+ "log",
  "mtls-sys",
  "rcgen",
  "tempfile",

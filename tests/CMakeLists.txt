@@ -50,6 +50,9 @@ mtls_add_test(fuzz_oversized_sans)
 # Memory safety and bug fix validation tests
 mtls_add_test(test_memory_safety)
 
+# Certificate reload tests
+mtls_add_test(test_cert_reload)
+
 # Observability layer tests (pthread-dependent, Unix only)
 if(UNIX)
     mtls_add_test(test_observability)
