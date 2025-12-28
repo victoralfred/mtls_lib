@@ -60,6 +60,15 @@ pub enum EventType {
     PinCheckSuccess = 61,
     /// Pin check failed.
     PinCheckFailure = 62,
+    // HSM events (70-73)
+    /// HSM initialization started.
+    HsmInitStart = 70,
+    /// HSM initialization succeeded.
+    HsmInitSuccess = 71,
+    /// HSM initialization failed.
+    HsmInitFailure = 72,
+    /// HSM key loaded.
+    HsmKeyLoaded = 73,
     // Certificate Transparency events (80-83)
     /// CT check started.
     CtCheckStart = 80,
@@ -108,6 +117,10 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_START => EventType::PinCheckStart,
             mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_SUCCESS => EventType::PinCheckSuccess,
             mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_FAILURE => EventType::PinCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_INIT_START => EventType::HsmInitStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_INIT_SUCCESS => EventType::HsmInitSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_INIT_FAILURE => EventType::HsmInitFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_KEY_LOADED => EventType::HsmKeyLoaded,
             mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_START => EventType::CtCheckStart,
             mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_SUCCESS => EventType::CtCheckSuccess,
             mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_FAILURE => EventType::CtCheckFailure,
@@ -125,6 +138,7 @@ impl EventType {
                 | EventType::CrlCheckFailure
                 | EventType::CrlDownloadFailure
                 | EventType::PinCheckFailure
+                | EventType::HsmInitFailure
                 | EventType::CtCheckFailure
         )
     }
@@ -140,6 +154,7 @@ impl EventType {
                 | EventType::CrlCheckSuccess
                 | EventType::CrlDownloadSuccess
                 | EventType::PinCheckSuccess
+                | EventType::HsmInitSuccess
                 | EventType::CtCheckSuccess
         )
     }
@@ -210,6 +225,17 @@ impl EventType {
                 | EventType::CtSctValidated
         )
     }
+
+    /// Check if this is an HSM event.
+    pub fn is_hsm(&self) -> bool {
+        matches!(
+            self,
+            EventType::HsmInitStart
+                | EventType::HsmInitSuccess
+                | EventType::HsmInitFailure
+                | EventType::HsmKeyLoaded
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -238,6 +264,10 @@ impl std::fmt::Display for EventType {
             EventType::PinCheckStart => "PinCheckStart",
             EventType::PinCheckSuccess => "PinCheckSuccess",
             EventType::PinCheckFailure => "PinCheckFailure",
+            EventType::HsmInitStart => "HsmInitStart",
+            EventType::HsmInitSuccess => "HsmInitSuccess",
+            EventType::HsmInitFailure => "HsmInitFailure",
+            EventType::HsmKeyLoaded => "HsmKeyLoaded",
             EventType::CtCheckStart => "CtCheckStart",
             EventType::CtCheckSuccess => "CtCheckSuccess",
             EventType::CtCheckFailure => "CtCheckFailure",
@@ -547,5 +577,27 @@ mod tests {
         assert_eq!(format!("{}", EventType::CtCheckSuccess), "CtCheckSuccess");
         assert_eq!(format!("{}", EventType::CtCheckFailure), "CtCheckFailure");
         assert_eq!(format!("{}", EventType::CtSctValidated), "CtSctValidated");
+    }
+
+    #[test]
+    fn test_hsm_event_categories() {
+        // HSM events
+        assert!(EventType::HsmInitStart.is_hsm());
+        assert!(EventType::HsmInitSuccess.is_hsm());
+        assert!(EventType::HsmInitFailure.is_hsm());
+        assert!(EventType::HsmKeyLoaded.is_hsm());
+        assert!(!EventType::ConnectStart.is_hsm());
+
+        // Success/error categorization
+        assert!(EventType::HsmInitSuccess.is_success());
+        assert!(EventType::HsmInitFailure.is_error());
+    }
+
+    #[test]
+    fn test_hsm_event_display() {
+        assert_eq!(format!("{}", EventType::HsmInitStart), "HsmInitStart");
+        assert_eq!(format!("{}", EventType::HsmInitSuccess), "HsmInitSuccess");
+        assert_eq!(format!("{}", EventType::HsmInitFailure), "HsmInitFailure");
+        assert_eq!(format!("{}", EventType::HsmKeyLoaded), "HsmKeyLoaded");
     }
 }

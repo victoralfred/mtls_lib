@@ -71,6 +71,11 @@ mtls_add_test(test_pinning)
 # Certificate Transparency tests
 mtls_add_test(test_ct)
 
+# HSM integration tests (Unix only due to dlopen)
+if(UNIX)
+    mtls_add_test(test_hsm)
+endif()
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

@@ -27,9 +27,16 @@ const (
 	ErrCACertParseFailed ErrorCode = 105
 	ErrCertParseFailed   ErrorCode = 106
 	ErrKeyParseFailed    ErrorCode = 107
-	ErrCertKeyMismatch   ErrorCode = 108
-	ErrOutOfMemory       ErrorCode = 109
-	ErrCtxNotInitialized ErrorCode = 110
+	ErrCertKeyMismatch     ErrorCode = 108
+	ErrOutOfMemory         ErrorCode = 109
+	ErrCtxNotInitialized   ErrorCode = 110
+	ErrHSMInitFailed       ErrorCode = 111
+	ErrHSMPinRequired      ErrorCode = 112
+	ErrHSMPinInvalid       ErrorCode = 113
+	ErrHSMKeyNotFound      ErrorCode = 114
+	ErrHSMOperationFailed  ErrorCode = 115
+	ErrHSMSlotNotFound     ErrorCode = 116
+	ErrHSMModuleNotFound   ErrorCode = 117
 
 	// Connection/network errors (2xx)
 	ErrConnectFailed      ErrorCode = 200

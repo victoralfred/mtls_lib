@@ -35,6 +35,13 @@ pub enum ErrorCode {
     CertKeyMismatch = 108,
     OutOfMemory = 109,
     CtxNotInitialized = 110,
+    HsmInitFailed = 111,
+    HsmPinRequired = 112,
+    HsmPinInvalid = 113,
+    HsmKeyNotFound = 114,
+    HsmOperationFailed = 115,
+    HsmSlotNotFound = 116,
+    HsmModuleNotFound = 117,
 
     // Network errors (2xx)
     ConnectFailed = 200,
@@ -133,6 +140,13 @@ impl ErrorCode {
             108 => ErrorCode::CertKeyMismatch,
             109 => ErrorCode::OutOfMemory,
             110 => ErrorCode::CtxNotInitialized,
+            111 => ErrorCode::HsmInitFailed,
+            112 => ErrorCode::HsmPinRequired,
+            113 => ErrorCode::HsmPinInvalid,
+            114 => ErrorCode::HsmKeyNotFound,
+            115 => ErrorCode::HsmOperationFailed,
+            116 => ErrorCode::HsmSlotNotFound,
+            117 => ErrorCode::HsmModuleNotFound,
             // Network errors
             200 => ErrorCode::ConnectFailed,
             201 => ErrorCode::ConnectTimeout,
@@ -303,6 +317,20 @@ impl ErrorCode {
         )
     }
 
+    /// Returns true if this is an HSM error.
+    pub fn is_hsm(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::HsmInitFailed
+                | ErrorCode::HsmPinRequired
+                | ErrorCode::HsmPinInvalid
+                | ErrorCode::HsmKeyNotFound
+                | ErrorCode::HsmOperationFailed
+                | ErrorCode::HsmSlotNotFound
+                | ErrorCode::HsmModuleNotFound
+        )
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -318,6 +346,13 @@ impl ErrorCode {
             ErrorCode::CertKeyMismatch => "CERT_KEY_MISMATCH",
             ErrorCode::OutOfMemory => "OUT_OF_MEMORY",
             ErrorCode::CtxNotInitialized => "CTX_NOT_INITIALIZED",
+            ErrorCode::HsmInitFailed => "HSM_INIT_FAILED",
+            ErrorCode::HsmPinRequired => "HSM_PIN_REQUIRED",
+            ErrorCode::HsmPinInvalid => "HSM_PIN_INVALID",
+            ErrorCode::HsmKeyNotFound => "HSM_KEY_NOT_FOUND",
+            ErrorCode::HsmOperationFailed => "HSM_OPERATION_FAILED",
+            ErrorCode::HsmSlotNotFound => "HSM_SLOT_NOT_FOUND",
+            ErrorCode::HsmModuleNotFound => "HSM_MODULE_NOT_FOUND",
             ErrorCode::ConnectFailed => "CONNECT_FAILED",
             ErrorCode::ConnectTimeout => "CONNECT_TIMEOUT",
             ErrorCode::DnsFailed => "DNS_FAILED",
@@ -576,6 +611,11 @@ impl Error {
     pub fn is_ct(&self) -> bool {
         self.code.is_ct()
     }
+
+    /// Returns true if this is an HSM error.
+    pub fn is_hsm(&self) -> bool {
+        self.code.is_hsm()
+    }
 }
 
 impl fmt::Display for Error {
@@ -737,5 +777,44 @@ mod tests {
         assert_eq!(ErrorCode::CtInvalidSct.name(), "CT_INVALID_SCT");
         assert_eq!(ErrorCode::CtUnknownLog.name(), "CT_UNKNOWN_LOG");
         assert_eq!(ErrorCode::CtLogListParse.name(), "CT_LOG_LIST_PARSE");
+    }
+
+    #[test]
+    fn test_hsm_error_codes() {
+        // Test HSM error categorization
+        assert!(ErrorCode::HsmInitFailed.is_hsm());
+        assert!(ErrorCode::HsmPinRequired.is_hsm());
+        assert!(ErrorCode::HsmPinInvalid.is_hsm());
+        assert!(ErrorCode::HsmKeyNotFound.is_hsm());
+        assert!(ErrorCode::HsmOperationFailed.is_hsm());
+        assert!(ErrorCode::HsmSlotNotFound.is_hsm());
+        assert!(ErrorCode::HsmModuleNotFound.is_hsm());
+        assert!(!ErrorCode::ConnectFailed.is_hsm());
+
+        // All HSM errors are config errors (1xx range)
+        assert!(ErrorCode::HsmInitFailed.is_config());
+        assert!(ErrorCode::HsmPinRequired.is_config());
+    }
+
+    #[test]
+    fn test_hsm_error_from_i32() {
+        assert_eq!(ErrorCode::from_i32(111), ErrorCode::HsmInitFailed);
+        assert_eq!(ErrorCode::from_i32(112), ErrorCode::HsmPinRequired);
+        assert_eq!(ErrorCode::from_i32(113), ErrorCode::HsmPinInvalid);
+        assert_eq!(ErrorCode::from_i32(114), ErrorCode::HsmKeyNotFound);
+        assert_eq!(ErrorCode::from_i32(115), ErrorCode::HsmOperationFailed);
+        assert_eq!(ErrorCode::from_i32(116), ErrorCode::HsmSlotNotFound);
+        assert_eq!(ErrorCode::from_i32(117), ErrorCode::HsmModuleNotFound);
+    }
+
+    #[test]
+    fn test_hsm_error_names() {
+        assert_eq!(ErrorCode::HsmInitFailed.name(), "HSM_INIT_FAILED");
+        assert_eq!(ErrorCode::HsmPinRequired.name(), "HSM_PIN_REQUIRED");
+        assert_eq!(ErrorCode::HsmPinInvalid.name(), "HSM_PIN_INVALID");
+        assert_eq!(ErrorCode::HsmKeyNotFound.name(), "HSM_KEY_NOT_FOUND");
+        assert_eq!(ErrorCode::HsmOperationFailed.name(), "HSM_OPERATION_FAILED");
+        assert_eq!(ErrorCode::HsmSlotNotFound.name(), "HSM_SLOT_NOT_FOUND");
+        assert_eq!(ErrorCode::HsmModuleNotFound.name(), "HSM_MODULE_NOT_FOUND");
     }
 }

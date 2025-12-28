@@ -127,6 +127,20 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_OUT_OF_MEMORY";
     case MTLS_ERR_CTX_NOT_INITIALIZED:
         return "MTLS_ERR_CTX_NOT_INITIALIZED";
+    case MTLS_ERR_HSM_INIT_FAILED:
+        return "MTLS_ERR_HSM_INIT_FAILED";
+    case MTLS_ERR_HSM_PIN_REQUIRED:
+        return "MTLS_ERR_HSM_PIN_REQUIRED";
+    case MTLS_ERR_HSM_PIN_INVALID:
+        return "MTLS_ERR_HSM_PIN_INVALID";
+    case MTLS_ERR_HSM_KEY_NOT_FOUND:
+        return "MTLS_ERR_HSM_KEY_NOT_FOUND";
+    case MTLS_ERR_HSM_OPERATION_FAILED:
+        return "MTLS_ERR_HSM_OPERATION_FAILED";
+    case MTLS_ERR_HSM_SLOT_NOT_FOUND:
+        return "MTLS_ERR_HSM_SLOT_NOT_FOUND";
+    case MTLS_ERR_HSM_MODULE_NOT_FOUND:
+        return "MTLS_ERR_HSM_MODULE_NOT_FOUND";
 
     /* Connection errors */
     case MTLS_ERR_CONNECT_FAILED:

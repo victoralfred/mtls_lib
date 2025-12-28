@@ -65,6 +65,18 @@ const (
 	EventPinCheckFailure EventType = 62
 )
 
+// HSM events (70-73)
+const (
+	// EventHSMInitStart is emitted when HSM initialization begins.
+	EventHSMInitStart EventType = 70
+	// EventHSMInitSuccess is emitted when HSM initialization succeeds.
+	EventHSMInitSuccess EventType = 71
+	// EventHSMInitFailure is emitted when HSM initialization fails.
+	EventHSMInitFailure EventType = 72
+	// EventHSMKeyLoaded is emitted when a key is loaded from HSM.
+	EventHSMKeyLoaded EventType = 73
+)
+
 // Certificate Transparency events (80-83)
 const (
 	// EventCTCheckStart is emitted when CT verification begins.
@@ -126,6 +138,14 @@ func (t EventType) String() string {
 		return "PinCheckSuccess"
 	case EventPinCheckFailure:
 		return "PinCheckFailure"
+	case EventHSMInitStart:
+		return "HSMInitStart"
+	case EventHSMInitSuccess:
+		return "HSMInitSuccess"
+	case EventHSMInitFailure:
+		return "HSMInitFailure"
+	case EventHSMKeyLoaded:
+		return "HSMKeyLoaded"
 	case EventCTCheckStart:
 		return "CTCheckStart"
 	case EventCTCheckSuccess:
@@ -144,7 +164,8 @@ func (t EventType) IsSuccess() bool {
 	return t == EventConnectSuccess || t == EventHandshakeSuccess ||
 		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
 		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess ||
-		t == EventPinCheckSuccess || t == EventCTCheckSuccess
+		t == EventPinCheckSuccess || t == EventHSMInitSuccess ||
+		t == EventCTCheckSuccess
 }
 
 // IsFailure returns true if the event type indicates failure.
@@ -152,7 +173,7 @@ func (t EventType) IsFailure() bool {
 	return t == EventConnectFailure || t == EventHandshakeFailure ||
 		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
 		t == EventCRLDownloadFailure || t == EventPinCheckFailure ||
-		t == EventCTCheckFailure
+		t == EventHSMInitFailure || t == EventCTCheckFailure
 }
 
 // IsIO returns true if the event type is an I/O event.
@@ -178,6 +199,11 @@ func (t EventType) IsRevocation() bool {
 // IsPinning returns true if the event type is a certificate pinning event.
 func (t EventType) IsPinning() bool {
 	return t >= EventPinCheckStart && t <= EventPinCheckFailure
+}
+
+// IsHSM returns true if the event type is an HSM event.
+func (t EventType) IsHSM() bool {
+	return t >= EventHSMInitStart && t <= EventHSMKeyLoaded
 }
 
 // IsCT returns true if the event type is a Certificate Transparency event.

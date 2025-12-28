@@ -62,6 +62,39 @@ public class Config {
     private final byte[] ctLogListJson;
     private final boolean ctAllowUnknownLogs;
 
+    // HSM settings
+    private final boolean hsmEnabled;
+    private final HsmType hsmType;
+    private final String hsmModulePath;
+    private final String hsmSlotId;
+    private final String hsmTokenLabel;
+    private final String hsmKeyId;
+    private final String hsmKeyLabel;
+    private final String hsmPin;
+    private final String hsmEngineId;
+
+    /**
+     * HSM type enumeration.
+     */
+    public enum HsmType {
+        /** No HSM (default) */
+        NONE(0),
+        /** PKCS#11 interface */
+        PKCS11(1),
+        /** OpenSSL ENGINE interface */
+        ENGINE(2);
+
+        private final int value;
+
+        HsmType(int value) {
+            this.value = value;
+        }
+
+        public int getValue() {
+            return value;
+        }
+    }
+
     /**
      * TLS version enumeration.
      */
@@ -121,6 +154,16 @@ public class Config {
         this.ctLogListPath = builder.ctLogListPath;
         this.ctLogListJson = builder.ctLogListJson;
         this.ctAllowUnknownLogs = builder.ctAllowUnknownLogs;
+        // HSM settings
+        this.hsmEnabled = builder.hsmEnabled;
+        this.hsmType = builder.hsmType;
+        this.hsmModulePath = builder.hsmModulePath;
+        this.hsmSlotId = builder.hsmSlotId;
+        this.hsmTokenLabel = builder.hsmTokenLabel;
+        this.hsmKeyId = builder.hsmKeyId;
+        this.hsmKeyLabel = builder.hsmKeyLabel;
+        this.hsmPin = builder.hsmPin;
+        this.hsmEngineId = builder.hsmEngineId;
     }
 
     // Getters
@@ -169,6 +212,17 @@ public class Config {
     public String getCtLogListPath() { return ctLogListPath; }
     public byte[] getCtLogListJson() { return ctLogListJson; }
     public boolean isCtAllowUnknownLogs() { return ctAllowUnknownLogs; }
+
+    // HSM getters
+    public boolean isHsmEnabled() { return hsmEnabled; }
+    public HsmType getHsmType() { return hsmType; }
+    public String getHsmModulePath() { return hsmModulePath; }
+    public String getHsmSlotId() { return hsmSlotId; }
+    public String getHsmTokenLabel() { return hsmTokenLabel; }
+    public String getHsmKeyId() { return hsmKeyId; }
+    public String getHsmKeyLabel() { return hsmKeyLabel; }
+    public String getHsmPin() { return hsmPin; }
+    public String getHsmEngineId() { return hsmEngineId; }
 
     /**
      * Validates the configuration.
@@ -234,6 +288,16 @@ public class Config {
         private String ctLogListPath;
         private byte[] ctLogListJson;
         private boolean ctAllowUnknownLogs = false;
+        // HSM settings
+        private boolean hsmEnabled = false;
+        private HsmType hsmType = HsmType.NONE;
+        private String hsmModulePath;
+        private String hsmSlotId;
+        private String hsmTokenLabel;
+        private String hsmKeyId;
+        private String hsmKeyLabel;
+        private String hsmPin;
+        private String hsmEngineId;
 
         /**
          * Set the CA certificate file path.
@@ -642,6 +706,107 @@ public class Config {
          */
         public Builder ctAllowUnknownLogs(boolean ctAllowUnknownLogs) {
             this.ctAllowUnknownLogs = ctAllowUnknownLogs;
+            return this;
+        }
+
+        // HSM builder methods
+
+        /**
+         * Enable or disable HSM for private key operations.
+         *
+         * @param hsmEnabled true to enable HSM
+         * @return this builder
+         */
+        public Builder hsmEnabled(boolean hsmEnabled) {
+            this.hsmEnabled = hsmEnabled;
+            return this;
+        }
+
+        /**
+         * Set the HSM type.
+         *
+         * @param hsmType HSM type (PKCS11 or ENGINE)
+         * @return this builder
+         */
+        public Builder hsmType(HsmType hsmType) {
+            this.hsmType = hsmType;
+            return this;
+        }
+
+        /**
+         * Set the path to the PKCS#11 module (.so/.dll).
+         *
+         * @param hsmModulePath path to PKCS#11 module
+         * @return this builder
+         */
+        public Builder hsmModulePath(String hsmModulePath) {
+            this.hsmModulePath = hsmModulePath;
+            return this;
+        }
+
+        /**
+         * Set the HSM slot ID.
+         *
+         * @param hsmSlotId slot ID
+         * @return this builder
+         */
+        public Builder hsmSlotId(String hsmSlotId) {
+            this.hsmSlotId = hsmSlotId;
+            return this;
+        }
+
+        /**
+         * Set the HSM token label (alternative to slot ID).
+         *
+         * @param hsmTokenLabel token label
+         * @return this builder
+         */
+        public Builder hsmTokenLabel(String hsmTokenLabel) {
+            this.hsmTokenLabel = hsmTokenLabel;
+            return this;
+        }
+
+        /**
+         * Set the HSM key ID (hex string).
+         *
+         * @param hsmKeyId key ID in hex format
+         * @return this builder
+         */
+        public Builder hsmKeyId(String hsmKeyId) {
+            this.hsmKeyId = hsmKeyId;
+            return this;
+        }
+
+        /**
+         * Set the HSM key label (alternative to key ID).
+         *
+         * @param hsmKeyLabel key label
+         * @return this builder
+         */
+        public Builder hsmKeyLabel(String hsmKeyLabel) {
+            this.hsmKeyLabel = hsmKeyLabel;
+            return this;
+        }
+
+        /**
+         * Set the HSM PIN for login.
+         *
+         * @param hsmPin HSM PIN
+         * @return this builder
+         */
+        public Builder hsmPin(String hsmPin) {
+            this.hsmPin = hsmPin;
+            return this;
+        }
+
+        /**
+         * Set the OpenSSL ENGINE ID (for ENGINE mode).
+         *
+         * @param hsmEngineId ENGINE ID
+         * @return this builder
+         */
+        public Builder hsmEngineId(String hsmEngineId) {
+            this.hsmEngineId = hsmEngineId;
             return this;
         }
 

@@ -48,6 +48,22 @@ public class MtlsException extends Exception {
     /** Failed to parse CT log list */
     public static final int ERR_CT_LOG_LIST_PARSE = 328;
 
+    // HSM error code constants
+    /** HSM initialization failed */
+    public static final int ERR_HSM_INIT_FAILED = 111;
+    /** HSM PIN is required */
+    public static final int ERR_HSM_PIN_REQUIRED = 112;
+    /** HSM PIN is invalid */
+    public static final int ERR_HSM_PIN_INVALID = 113;
+    /** HSM key not found */
+    public static final int ERR_HSM_KEY_NOT_FOUND = 114;
+    /** HSM operation failed */
+    public static final int ERR_HSM_OPERATION_FAILED = 115;
+    /** HSM slot not found */
+    public static final int ERR_HSM_SLOT_NOT_FOUND = 116;
+    /** HSM module not found */
+    public static final int ERR_HSM_MODULE_NOT_FOUND = 117;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -241,6 +257,15 @@ public class MtlsException extends Exception {
      */
     public boolean isCtError() {
         return errorCode >= ERR_CT_VALIDATION_FAILED && errorCode <= ERR_CT_LOG_LIST_PARSE;
+    }
+
+    /**
+     * Check if this is an HSM error.
+     *
+     * @return true if this is an HSM error
+     */
+    public boolean isHsmError() {
+        return errorCode >= ERR_HSM_INIT_FAILED && errorCode <= ERR_HSM_MODULE_NOT_FOUND;
     }
 
     @Override

@@ -137,6 +137,7 @@ set(MTLS_SOURCES
     src/mtls_ocsp.c
     src/mtls_pinning.c
     src/mtls_ct.c
+    src/mtls_hsm.c
 )
 
 # Platform-specific sources

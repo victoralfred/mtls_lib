@@ -84,7 +84,30 @@ type Config struct {
 	CTLogListPath      string // Path to CT log list JSON file
 	CTLogListJSON      []byte // CT log list JSON data in memory
 	CTAllowUnknownLogs bool   // Allow SCTs from unknown logs (default: false)
+
+	// HSM settings
+	HSMEnabled    bool   // Use HSM for private key operations
+	HSMType       HSMType // HSM type (PKCS11 or ENGINE)
+	HSMModulePath string // Path to PKCS#11 module (.so/.dll)
+	HSMSlotID     string // Slot ID
+	HSMTokenLabel string // Token label (alternative to slot ID)
+	HSMKeyID      string // Key ID (hex string)
+	HSMKeyLabel   string // Key label (alternative to key ID)
+	HSMPIN        string // PIN for login
+	HSMEngineID   string // ENGINE ID (for ENGINE mode)
 }
+
+// HSMType represents the HSM interface type.
+type HSMType int
+
+const (
+	// HSMNone indicates no HSM (use file-based keys).
+	HSMNone HSMType = 0
+	// HSMPKCS11 indicates PKCS#11 interface.
+	HSMPKCS11 HSMType = 1
+	// HSMEngine indicates OpenSSL ENGINE interface.
+	HSMEngine HSMType = 2
+)
 
 // Validate checks the configuration for errors.
 //
@@ -336,6 +359,45 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		cConfig.ct_log_list_json_len = C.size_t(len(c.CTLogListJSON))
 	}
 	cConfig.ct_allow_unknown_logs = C.bool(c.CTAllowUnknownLogs)
+
+	// HSM settings
+	cConfig.hsm_enabled = C.bool(c.HSMEnabled)
+	cConfig.hsm_type = C.int(c.HSMType)
+	if c.HSMModulePath != "" {
+		cStr := C.CString(c.HSMModulePath)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_module_path = cStr
+	}
+	if c.HSMSlotID != "" {
+		cStr := C.CString(c.HSMSlotID)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_slot_id = cStr
+	}
+	if c.HSMTokenLabel != "" {
+		cStr := C.CString(c.HSMTokenLabel)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_token_label = cStr
+	}
+	if c.HSMKeyID != "" {
+		cStr := C.CString(c.HSMKeyID)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_key_id = cStr
+	}
+	if c.HSMKeyLabel != "" {
+		cStr := C.CString(c.HSMKeyLabel)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_key_label = cStr
+	}
+	if c.HSMPIN != "" {
+		cStr := C.CString(c.HSMPIN)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_pin = cStr
+	}
+	if c.HSMEngineID != "" {
+		cStr := C.CString(c.HSMEngineID)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_engine_id = cStr
+	}
 
 	return &cConfig, allocations
 }

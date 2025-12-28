@@ -154,6 +154,12 @@ typedef enum mtls_event_type {
     MTLS_EVENT_PIN_CHECK_SUCCESS = 61,
     MTLS_EVENT_PIN_CHECK_FAILURE = 62,
 
+    /* HSM events (70-73) */
+    MTLS_EVENT_HSM_INIT_START = 70,
+    MTLS_EVENT_HSM_INIT_SUCCESS = 71,
+    MTLS_EVENT_HSM_INIT_FAILURE = 72,
+    MTLS_EVENT_HSM_KEY_LOADED = 73,
+
     /* Certificate Transparency events (80-83) */
     MTLS_EVENT_CT_CHECK_START = 80,
     MTLS_EVENT_CT_CHECK_SUCCESS = 81,

@@ -20,6 +20,7 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct mtls_err mtls_err;
+typedef struct mtls_hsm_ctx mtls_hsm_ctx;
 
 /*
  * Maximum number of allowed SANs in configuration
@@ -110,6 +111,18 @@ typedef struct mtls_config {
     const uint8_t *ct_log_list_json; /* CT log list JSON data in memory */
     size_t ct_log_list_json_len;     /* Length of CT log list JSON data */
     bool ct_allow_unknown_logs;      /* Allow SCTs from unknown logs (default: false) */
+
+    /* HSM configuration */
+    bool hsm_enabled;            /* Use HSM for private key operations */
+    int hsm_type;                /* HSM type (MTLS_HSM_PKCS11 or MTLS_HSM_ENGINE) */
+    const char *hsm_module_path; /* Path to PKCS#11 module (.so/.dll) */
+    const char *hsm_slot_id;     /* Slot ID or label */
+    const char *hsm_token_label; /* Token label (alternative to slot_id) */
+    const char *hsm_key_id;      /* Key ID (hex string) */
+    const char *hsm_key_label;   /* Key label (alternative to key_id) */
+    const char *hsm_pin;         /* PIN for login (NULL = use callback) */
+    const char *hsm_engine_id;   /* ENGINE ID (for ENGINE mode) */
+    mtls_hsm_ctx *hsm_ctx;       /* Pre-initialized HSM context (optional) */
 
     /* Observability */
     mtls_observers observers; /* Event callbacks */
