@@ -32,6 +32,27 @@ pub enum EventType {
     Close = 9,
     /// Kill switch triggered.
     KillSwitchTriggered = 10,
+    // OCSP/CRL events (11-20)
+    /// OCSP check started.
+    OcspCheckStart = 11,
+    /// OCSP check succeeded.
+    OcspCheckSuccess = 12,
+    /// OCSP check failed.
+    OcspCheckFailure = 13,
+    /// OCSP staple verified.
+    OcspStapleVerified = 14,
+    /// CRL check started.
+    CrlCheckStart = 15,
+    /// CRL check succeeded.
+    CrlCheckSuccess = 16,
+    /// CRL check failed.
+    CrlCheckFailure = 17,
+    /// CRL download started.
+    CrlDownloadStart = 18,
+    /// CRL download succeeded.
+    CrlDownloadSuccess = 19,
+    /// CRL download failed.
+    CrlDownloadFailure = 20,
     /// Unknown event type.
     Unknown = 0,
 }
@@ -52,12 +73,48 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_KILL_SWITCH_TRIGGERED => {
                 EventType::KillSwitchTriggered
             }
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_CHECK_START => EventType::OcspCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_CHECK_SUCCESS => EventType::OcspCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_CHECK_FAILURE => EventType::OcspCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_STAPLE_VERIFIED => {
+                EventType::OcspStapleVerified
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_CHECK_START => EventType::CrlCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_CHECK_SUCCESS => EventType::CrlCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_CHECK_FAILURE => EventType::CrlCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_START => EventType::CrlDownloadStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_SUCCESS => {
+                EventType::CrlDownloadSuccess
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_FAILURE => {
+                EventType::CrlDownloadFailure
+            }
         }
     }
 
     /// Check if this is an error-related event.
     pub fn is_error(&self) -> bool {
-        matches!(self, EventType::ConnectFailure | EventType::HandshakeFailed)
+        matches!(
+            self,
+            EventType::ConnectFailure
+                | EventType::HandshakeFailed
+                | EventType::OcspCheckFailure
+                | EventType::CrlCheckFailure
+                | EventType::CrlDownloadFailure
+        )
+    }
+
+    /// Check if this is a success event.
+    pub fn is_success(&self) -> bool {
+        matches!(
+            self,
+            EventType::ConnectSuccess
+                | EventType::HandshakeSuccess
+                | EventType::OcspCheckSuccess
+                | EventType::OcspStapleVerified
+                | EventType::CrlCheckSuccess
+                | EventType::CrlDownloadSuccess
+        )
     }
 
     /// Check if this is a connection lifecycle event.
@@ -72,6 +129,40 @@ impl EventType {
                 | EventType::HandshakeFailed
                 | EventType::Close
         )
+    }
+
+    /// Check if this is an OCSP event.
+    pub fn is_ocsp(&self) -> bool {
+        matches!(
+            self,
+            EventType::OcspCheckStart
+                | EventType::OcspCheckSuccess
+                | EventType::OcspCheckFailure
+                | EventType::OcspStapleVerified
+        )
+    }
+
+    /// Check if this is a CRL event.
+    pub fn is_crl(&self) -> bool {
+        matches!(
+            self,
+            EventType::CrlCheckStart
+                | EventType::CrlCheckSuccess
+                | EventType::CrlCheckFailure
+                | EventType::CrlDownloadStart
+                | EventType::CrlDownloadSuccess
+                | EventType::CrlDownloadFailure
+        )
+    }
+
+    /// Check if this is a revocation event (OCSP or CRL).
+    pub fn is_revocation(&self) -> bool {
+        self.is_ocsp() || self.is_crl()
+    }
+
+    /// Check if this is an I/O event.
+    pub fn is_io(&self) -> bool {
+        matches!(self, EventType::Read | EventType::Write)
     }
 }
 
@@ -88,6 +179,16 @@ impl std::fmt::Display for EventType {
             EventType::Write => "Write",
             EventType::Close => "Close",
             EventType::KillSwitchTriggered => "KillSwitchTriggered",
+            EventType::OcspCheckStart => "OcspCheckStart",
+            EventType::OcspCheckSuccess => "OcspCheckSuccess",
+            EventType::OcspCheckFailure => "OcspCheckFailure",
+            EventType::OcspStapleVerified => "OcspStapleVerified",
+            EventType::CrlCheckStart => "CrlCheckStart",
+            EventType::CrlCheckSuccess => "CrlCheckSuccess",
+            EventType::CrlCheckFailure => "CrlCheckFailure",
+            EventType::CrlDownloadStart => "CrlDownloadStart",
+            EventType::CrlDownloadSuccess => "CrlDownloadSuccess",
+            EventType::CrlDownloadFailure => "CrlDownloadFailure",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)
@@ -316,6 +417,53 @@ mod tests {
         assert!(EventType::HandshakeFailed.is_error());
         assert!(EventType::ConnectStart.is_connection_event());
         assert!(!EventType::Read.is_connection_event());
+    }
+
+    #[test]
+    fn test_ocsp_crl_event_categories() {
+        // OCSP events
+        assert!(EventType::OcspCheckStart.is_ocsp());
+        assert!(EventType::OcspCheckSuccess.is_ocsp());
+        assert!(EventType::OcspCheckFailure.is_ocsp());
+        assert!(EventType::OcspStapleVerified.is_ocsp());
+        assert!(!EventType::CrlCheckStart.is_ocsp());
+
+        // CRL events
+        assert!(EventType::CrlCheckStart.is_crl());
+        assert!(EventType::CrlCheckSuccess.is_crl());
+        assert!(EventType::CrlCheckFailure.is_crl());
+        assert!(EventType::CrlDownloadStart.is_crl());
+        assert!(EventType::CrlDownloadSuccess.is_crl());
+        assert!(EventType::CrlDownloadFailure.is_crl());
+        assert!(!EventType::OcspCheckStart.is_crl());
+
+        // Revocation (either OCSP or CRL)
+        assert!(EventType::OcspCheckStart.is_revocation());
+        assert!(EventType::CrlCheckStart.is_revocation());
+        assert!(!EventType::ConnectStart.is_revocation());
+
+        // Success/error categorization
+        assert!(EventType::OcspCheckSuccess.is_success());
+        assert!(EventType::OcspStapleVerified.is_success());
+        assert!(EventType::CrlCheckSuccess.is_success());
+        assert!(EventType::CrlDownloadSuccess.is_success());
+
+        assert!(EventType::OcspCheckFailure.is_error());
+        assert!(EventType::CrlCheckFailure.is_error());
+        assert!(EventType::CrlDownloadFailure.is_error());
+    }
+
+    #[test]
+    fn test_ocsp_crl_event_display() {
+        assert_eq!(format!("{}", EventType::OcspCheckStart), "OcspCheckStart");
+        assert_eq!(format!("{}", EventType::CrlDownloadSuccess), "CrlDownloadSuccess");
+    }
+
+    #[test]
+    fn test_io_event_category() {
+        assert!(EventType::Read.is_io());
+        assert!(EventType::Write.is_io());
+        assert!(!EventType::ConnectStart.is_io());
     }
 
     #[test]

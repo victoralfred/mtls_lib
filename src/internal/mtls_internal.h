@@ -20,6 +20,9 @@
 extern "C" {
 #endif
 
+/* Forward declaration for revocation cache */
+struct mtls_revocation_cache;
+
 /*
  * Internal context structure
  */
@@ -34,7 +37,14 @@ struct mtls_ctx {
     char *cert_path;
     char *key_path;
     char *crl_path;
+    char *ocsp_url;
+    char *crl_url;
     char **allowed_sans;
+
+    /* Revocation checking */
+    struct mtls_revocation_cache *revocation_cache; /* OCSP/CRL response cache */
+    void *crl_data;                                 /* Cached CRL data */
+    size_t crl_data_len;                            /* Length of CRL data */
 };
 
 /*
@@ -123,7 +133,9 @@ static inline void mtls_emit_event(mtls_ctx *ctx, const mtls_event *event)
     /* Validate event data before invoking callback to prevent callback issues
      * from invalid event types or corrupted data.
      */
-    if (event->type < MTLS_EVENT_CONNECT_START || event->type > MTLS_EVENT_KILL_SWITCH_TRIGGERED) {
+    bool valid_event =
+        (event->type >= MTLS_EVENT_CONNECT_START && event->type <= MTLS_EVENT_CRL_DOWNLOAD_FAILURE);
+    if (!valid_event) {
         /* Invalid event type - skip emission to prevent callback issues.
          * This should never happen in normal operation, but protects against
          * memory corruption or programming errors.

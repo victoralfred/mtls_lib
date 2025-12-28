@@ -31,6 +31,30 @@ const (
 	EventKillSwitch
 )
 
+// OCSP/CRL events (11-20)
+const (
+	// EventOCSPCheckStart is emitted when OCSP check begins.
+	EventOCSPCheckStart EventType = 11
+	// EventOCSPCheckSuccess is emitted when OCSP check succeeds.
+	EventOCSPCheckSuccess EventType = 12
+	// EventOCSPCheckFailure is emitted when OCSP check fails.
+	EventOCSPCheckFailure EventType = 13
+	// EventOCSPStapleVerified is emitted when OCSP staple is verified.
+	EventOCSPStapleVerified EventType = 14
+	// EventCRLCheckStart is emitted when CRL check begins.
+	EventCRLCheckStart EventType = 15
+	// EventCRLCheckSuccess is emitted when CRL check succeeds.
+	EventCRLCheckSuccess EventType = 16
+	// EventCRLCheckFailure is emitted when CRL check fails.
+	EventCRLCheckFailure EventType = 17
+	// EventCRLDownloadStart is emitted when CRL download begins.
+	EventCRLDownloadStart EventType = 18
+	// EventCRLDownloadSuccess is emitted when CRL download succeeds.
+	EventCRLDownloadSuccess EventType = 19
+	// EventCRLDownloadFailure is emitted when CRL download fails.
+	EventCRLDownloadFailure EventType = 20
+)
+
 // String returns a human-readable name for the event type.
 func (t EventType) String() string {
 	switch t {
@@ -54,6 +78,26 @@ func (t EventType) String() string {
 		return "Close"
 	case EventKillSwitch:
 		return "KillSwitch"
+	case EventOCSPCheckStart:
+		return "OCSPCheckStart"
+	case EventOCSPCheckSuccess:
+		return "OCSPCheckSuccess"
+	case EventOCSPCheckFailure:
+		return "OCSPCheckFailure"
+	case EventOCSPStapleVerified:
+		return "OCSPStapleVerified"
+	case EventCRLCheckStart:
+		return "CRLCheckStart"
+	case EventCRLCheckSuccess:
+		return "CRLCheckSuccess"
+	case EventCRLCheckFailure:
+		return "CRLCheckFailure"
+	case EventCRLDownloadStart:
+		return "CRLDownloadStart"
+	case EventCRLDownloadSuccess:
+		return "CRLDownloadSuccess"
+	case EventCRLDownloadFailure:
+		return "CRLDownloadFailure"
 	default:
 		return "Unknown"
 	}
@@ -61,17 +105,36 @@ func (t EventType) String() string {
 
 // IsSuccess returns true if the event type indicates success.
 func (t EventType) IsSuccess() bool {
-	return t == EventConnectSuccess || t == EventHandshakeSuccess
+	return t == EventConnectSuccess || t == EventHandshakeSuccess ||
+		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
+		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess
 }
 
 // IsFailure returns true if the event type indicates failure.
 func (t EventType) IsFailure() bool {
-	return t == EventConnectFailure || t == EventHandshakeFailure
+	return t == EventConnectFailure || t == EventHandshakeFailure ||
+		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
+		t == EventCRLDownloadFailure
 }
 
 // IsIO returns true if the event type is an I/O event.
 func (t EventType) IsIO() bool {
 	return t == EventRead || t == EventWrite
+}
+
+// IsOCSP returns true if the event type is an OCSP event.
+func (t EventType) IsOCSP() bool {
+	return t >= EventOCSPCheckStart && t <= EventOCSPStapleVerified
+}
+
+// IsCRL returns true if the event type is a CRL event.
+func (t EventType) IsCRL() bool {
+	return t >= EventCRLCheckStart && t <= EventCRLDownloadFailure
+}
+
+// IsRevocation returns true if the event type is a revocation check event (OCSP or CRL).
+func (t EventType) IsRevocation() bool {
+	return t.IsOCSP() || t.IsCRL()
 }
 
 // Event represents an mTLS event emitted by the library.

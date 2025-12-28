@@ -59,6 +59,13 @@ const (
 	ErrNoPeerCert           ErrorCode = 310
 	ErrHostnameMismatch     ErrorCode = 311
 	ErrTLSShutdownFailed    ErrorCode = 312
+	ErrOCSPFailed           ErrorCode = 313
+	ErrOCSPTimeout          ErrorCode = 314
+	ErrOCSPResponderError   ErrorCode = 315
+	ErrCRLFailed            ErrorCode = 316
+	ErrCRLDownloadFailed    ErrorCode = 317
+	ErrCRLExpired           ErrorCode = 318
+	ErrCRLParseFailed       ErrorCode = 319
 
 	// Identity/verification errors (4xx)
 	ErrIdentityMismatch  ErrorCode = 400

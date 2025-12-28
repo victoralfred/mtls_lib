@@ -58,6 +58,13 @@ if(UNIX)
     mtls_add_test(test_observability)
 endif()
 
+# OCSP/CRL revocation tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_revocation_cache)
+    mtls_add_test(test_ocsp)
+    mtls_add_test(test_crl)
+endif()
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

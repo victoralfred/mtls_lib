@@ -64,6 +64,13 @@ pub enum ErrorCode {
     NoPeerCert = 310,
     HostnameMismatch = 311,
     TlsShutdownFailed = 312,
+    OcspFailed = 313,
+    OcspTimeout = 314,
+    OcspResponderError = 315,
+    CrlFailed = 316,
+    CrlDownloadFailed = 317,
+    CrlExpired = 318,
+    CrlParseFailed = 319,
 
     // Identity errors (4xx)
     IdentityMismatch = 400,
@@ -144,6 +151,13 @@ impl ErrorCode {
             310 => ErrorCode::NoPeerCert,
             311 => ErrorCode::HostnameMismatch,
             312 => ErrorCode::TlsShutdownFailed,
+            313 => ErrorCode::OcspFailed,
+            314 => ErrorCode::OcspTimeout,
+            315 => ErrorCode::OcspResponderError,
+            316 => ErrorCode::CrlFailed,
+            317 => ErrorCode::CrlDownloadFailed,
+            318 => ErrorCode::CrlExpired,
+            319 => ErrorCode::CrlParseFailed,
             // Identity errors
             400 => ErrorCode::IdentityMismatch,
             401 => ErrorCode::SanNotAllowed,
@@ -224,6 +238,30 @@ impl ErrorCode {
         )
     }
 
+    /// Returns true if this is an OCSP error.
+    pub fn is_ocsp(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::OcspFailed | ErrorCode::OcspTimeout | ErrorCode::OcspResponderError
+        )
+    }
+
+    /// Returns true if this is a CRL error.
+    pub fn is_crl(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::CrlFailed
+                | ErrorCode::CrlDownloadFailed
+                | ErrorCode::CrlExpired
+                | ErrorCode::CrlParseFailed
+        )
+    }
+
+    /// Returns true if this is a revocation error (OCSP or CRL).
+    pub fn is_revocation(&self) -> bool {
+        self.is_ocsp() || self.is_crl()
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -264,6 +302,13 @@ impl ErrorCode {
             ErrorCode::NoPeerCert => "NO_PEER_CERT",
             ErrorCode::HostnameMismatch => "HOSTNAME_MISMATCH",
             ErrorCode::TlsShutdownFailed => "TLS_SHUTDOWN_FAILED",
+            ErrorCode::OcspFailed => "OCSP_FAILED",
+            ErrorCode::OcspTimeout => "OCSP_TIMEOUT",
+            ErrorCode::OcspResponderError => "OCSP_RESPONDER_ERROR",
+            ErrorCode::CrlFailed => "CRL_FAILED",
+            ErrorCode::CrlDownloadFailed => "CRL_DOWNLOAD_FAILED",
+            ErrorCode::CrlExpired => "CRL_EXPIRED",
+            ErrorCode::CrlParseFailed => "CRL_PARSE_FAILED",
             ErrorCode::IdentityMismatch => "IDENTITY_MISMATCH",
             ErrorCode::SanNotAllowed => "SAN_NOT_ALLOWED",
             ErrorCode::SpiffeParseFailed => "SPIFFE_PARSE_FAILED",
@@ -456,6 +501,21 @@ impl Error {
     pub fn is_recoverable(&self) -> bool {
         self.code.is_recoverable()
     }
+
+    /// Returns true if this is an OCSP error.
+    pub fn is_ocsp(&self) -> bool {
+        self.code.is_ocsp()
+    }
+
+    /// Returns true if this is a CRL error.
+    pub fn is_crl(&self) -> bool {
+        self.code.is_crl()
+    }
+
+    /// Returns true if this is a revocation error (OCSP or CRL).
+    pub fn is_revocation(&self) -> bool {
+        self.code.is_revocation()
+    }
 }
 
 impl fmt::Display for Error {
@@ -534,5 +594,52 @@ mod tests {
         let err = Error::new(ErrorCode::ConnectTimeout, "timeout");
         let io_err: io::Error = err.into();
         assert_eq!(io_err.kind(), io::ErrorKind::TimedOut);
+    }
+
+    #[test]
+    fn test_ocsp_crl_error_codes() {
+        // Test OCSP error categorization
+        assert!(ErrorCode::OcspFailed.is_ocsp());
+        assert!(ErrorCode::OcspTimeout.is_ocsp());
+        assert!(ErrorCode::OcspResponderError.is_ocsp());
+        assert!(!ErrorCode::CrlFailed.is_ocsp());
+
+        // Test CRL error categorization
+        assert!(ErrorCode::CrlFailed.is_crl());
+        assert!(ErrorCode::CrlDownloadFailed.is_crl());
+        assert!(ErrorCode::CrlExpired.is_crl());
+        assert!(ErrorCode::CrlParseFailed.is_crl());
+        assert!(!ErrorCode::OcspFailed.is_crl());
+
+        // Test revocation (either OCSP or CRL)
+        assert!(ErrorCode::OcspFailed.is_revocation());
+        assert!(ErrorCode::CrlFailed.is_revocation());
+        assert!(!ErrorCode::ConnectFailed.is_revocation());
+
+        // All OCSP/CRL errors are TLS errors
+        assert!(ErrorCode::OcspFailed.is_tls());
+        assert!(ErrorCode::CrlFailed.is_tls());
+    }
+
+    #[test]
+    fn test_ocsp_crl_error_from_i32() {
+        assert_eq!(ErrorCode::from_i32(313), ErrorCode::OcspFailed);
+        assert_eq!(ErrorCode::from_i32(314), ErrorCode::OcspTimeout);
+        assert_eq!(ErrorCode::from_i32(315), ErrorCode::OcspResponderError);
+        assert_eq!(ErrorCode::from_i32(316), ErrorCode::CrlFailed);
+        assert_eq!(ErrorCode::from_i32(317), ErrorCode::CrlDownloadFailed);
+        assert_eq!(ErrorCode::from_i32(318), ErrorCode::CrlExpired);
+        assert_eq!(ErrorCode::from_i32(319), ErrorCode::CrlParseFailed);
+    }
+
+    #[test]
+    fn test_ocsp_crl_error_names() {
+        assert_eq!(ErrorCode::OcspFailed.name(), "OCSP_FAILED");
+        assert_eq!(ErrorCode::OcspTimeout.name(), "OCSP_TIMEOUT");
+        assert_eq!(ErrorCode::OcspResponderError.name(), "OCSP_RESPONDER_ERROR");
+        assert_eq!(ErrorCode::CrlFailed.name(), "CRL_FAILED");
+        assert_eq!(ErrorCode::CrlDownloadFailed.name(), "CRL_DOWNLOAD_FAILED");
+        assert_eq!(ErrorCode::CrlExpired.name(), "CRL_EXPIRED");
+        assert_eq!(ErrorCode::CrlParseFailed.name(), "CRL_PARSE_FAILED");
     }
 }

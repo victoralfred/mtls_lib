@@ -31,6 +31,23 @@ public class Config {
     private final int readTimeoutMs;
     private final int writeTimeoutMs;
 
+    // OCSP settings
+    private final boolean enableOcsp;
+    private final boolean enableOcspStapling;
+    private final String ocspUrl;
+    private final int ocspTimeoutMs;
+    private final boolean requireOcsp;
+
+    // CRL settings
+    private final boolean enableCrl;
+    private final String crlUrl;
+    private final int crlRefreshSeconds;
+    private final boolean requireCrl;
+
+    // Revocation cache settings
+    private final int revocationCacheTtlSeconds;
+    private final int revocationCacheMaxEntries;
+
     /**
      * TLS version enumeration.
      */
@@ -64,6 +81,20 @@ public class Config {
         this.connectTimeoutMs = builder.connectTimeoutMs;
         this.readTimeoutMs = builder.readTimeoutMs;
         this.writeTimeoutMs = builder.writeTimeoutMs;
+        // OCSP settings
+        this.enableOcsp = builder.enableOcsp;
+        this.enableOcspStapling = builder.enableOcspStapling;
+        this.ocspUrl = builder.ocspUrl;
+        this.ocspTimeoutMs = builder.ocspTimeoutMs;
+        this.requireOcsp = builder.requireOcsp;
+        // CRL settings
+        this.enableCrl = builder.enableCrl;
+        this.crlUrl = builder.crlUrl;
+        this.crlRefreshSeconds = builder.crlRefreshSeconds;
+        this.requireCrl = builder.requireCrl;
+        // Revocation cache settings
+        this.revocationCacheTtlSeconds = builder.revocationCacheTtlSeconds;
+        this.revocationCacheMaxEntries = builder.revocationCacheMaxEntries;
     }
 
     // Getters
@@ -81,6 +112,23 @@ public class Config {
     public int getConnectTimeoutMs() { return connectTimeoutMs; }
     public int getReadTimeoutMs() { return readTimeoutMs; }
     public int getWriteTimeoutMs() { return writeTimeoutMs; }
+
+    // OCSP getters
+    public boolean isEnableOcsp() { return enableOcsp; }
+    public boolean isEnableOcspStapling() { return enableOcspStapling; }
+    public String getOcspUrl() { return ocspUrl; }
+    public int getOcspTimeoutMs() { return ocspTimeoutMs; }
+    public boolean isRequireOcsp() { return requireOcsp; }
+
+    // CRL getters
+    public boolean isEnableCrl() { return enableCrl; }
+    public String getCrlUrl() { return crlUrl; }
+    public int getCrlRefreshSeconds() { return crlRefreshSeconds; }
+    public boolean isRequireCrl() { return requireCrl; }
+
+    // Revocation cache getters
+    public int getRevocationCacheTtlSeconds() { return revocationCacheTtlSeconds; }
+    public int getRevocationCacheMaxEntries() { return revocationCacheMaxEntries; }
 
     /**
      * Validates the configuration.
@@ -120,6 +168,20 @@ public class Config {
         private int connectTimeoutMs = 5000;
         private int readTimeoutMs = 30000;
         private int writeTimeoutMs = 30000;
+        // OCSP settings
+        private boolean enableOcsp = false;
+        private boolean enableOcspStapling = false;
+        private String ocspUrl;
+        private int ocspTimeoutMs = 5000;
+        private boolean requireOcsp = false;
+        // CRL settings
+        private boolean enableCrl = false;
+        private String crlUrl;
+        private int crlRefreshSeconds = 86400;
+        private boolean requireCrl = false;
+        // Revocation cache settings
+        private int revocationCacheTtlSeconds = 3600;
+        private int revocationCacheMaxEntries = 10000;
 
         /**
          * Set the CA certificate file path.
@@ -265,6 +327,133 @@ public class Config {
          */
         public Builder writeTimeoutMs(int writeTimeoutMs) {
             this.writeTimeoutMs = writeTimeoutMs;
+            return this;
+        }
+
+        // OCSP builder methods
+
+        /**
+         * Enable or disable OCSP checking.
+         *
+         * @param enableOcsp true to enable OCSP
+         * @return this builder
+         */
+        public Builder enableOcsp(boolean enableOcsp) {
+            this.enableOcsp = enableOcsp;
+            return this;
+        }
+
+        /**
+         * Enable or disable OCSP stapling.
+         *
+         * @param enableOcspStapling true to enable OCSP stapling
+         * @return this builder
+         */
+        public Builder enableOcspStapling(boolean enableOcspStapling) {
+            this.enableOcspStapling = enableOcspStapling;
+            return this;
+        }
+
+        /**
+         * Set the explicit OCSP responder URL.
+         *
+         * @param ocspUrl OCSP responder URL
+         * @return this builder
+         */
+        public Builder ocspUrl(String ocspUrl) {
+            this.ocspUrl = ocspUrl;
+            return this;
+        }
+
+        /**
+         * Set the OCSP check timeout in milliseconds.
+         *
+         * @param ocspTimeoutMs OCSP timeout
+         * @return this builder
+         */
+        public Builder ocspTimeoutMs(int ocspTimeoutMs) {
+            this.ocspTimeoutMs = ocspTimeoutMs;
+            return this;
+        }
+
+        /**
+         * Require OCSP check to pass (fail connection if OCSP fails).
+         *
+         * @param requireOcsp true to require OCSP success
+         * @return this builder
+         */
+        public Builder requireOcsp(boolean requireOcsp) {
+            this.requireOcsp = requireOcsp;
+            return this;
+        }
+
+        // CRL builder methods
+
+        /**
+         * Enable or disable CRL checking.
+         *
+         * @param enableCrl true to enable CRL checking
+         * @return this builder
+         */
+        public Builder enableCrl(boolean enableCrl) {
+            this.enableCrl = enableCrl;
+            return this;
+        }
+
+        /**
+         * Set the CRL download URL.
+         *
+         * @param crlUrl CRL URL
+         * @return this builder
+         */
+        public Builder crlUrl(String crlUrl) {
+            this.crlUrl = crlUrl;
+            return this;
+        }
+
+        /**
+         * Set the CRL refresh interval in seconds.
+         *
+         * @param crlRefreshSeconds CRL refresh interval
+         * @return this builder
+         */
+        public Builder crlRefreshSeconds(int crlRefreshSeconds) {
+            this.crlRefreshSeconds = crlRefreshSeconds;
+            return this;
+        }
+
+        /**
+         * Require CRL check to pass (fail connection if CRL fails).
+         *
+         * @param requireCrl true to require CRL success
+         * @return this builder
+         */
+        public Builder requireCrl(boolean requireCrl) {
+            this.requireCrl = requireCrl;
+            return this;
+        }
+
+        // Revocation cache builder methods
+
+        /**
+         * Set the revocation cache TTL in seconds.
+         *
+         * @param revocationCacheTtlSeconds cache TTL
+         * @return this builder
+         */
+        public Builder revocationCacheTtlSeconds(int revocationCacheTtlSeconds) {
+            this.revocationCacheTtlSeconds = revocationCacheTtlSeconds;
+            return this;
+        }
+
+        /**
+         * Set the maximum number of revocation cache entries.
+         *
+         * @param revocationCacheMaxEntries maximum cache entries
+         * @return this builder
+         */
+        public Builder revocationCacheMaxEntries(int revocationCacheMaxEntries) {
+            this.revocationCacheMaxEntries = revocationCacheMaxEntries;
             return this;
         }
 

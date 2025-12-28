@@ -54,8 +54,22 @@ type Config struct {
 	RequireClientCert bool // Require client certificate (server mode, default: true)
 	VerifyHostname    bool // Verify hostname against certificate (default: true)
 
-	// OCSP settings (optional)
-	EnableOCSP bool // Enable OCSP stapling
+	// OCSP settings
+	EnableOCSP        bool          // Enable OCSP checking
+	EnableOCSPStapling bool         // Enable OCSP stapling
+	OCSPURL           string        // Explicit OCSP responder URL (optional)
+	OCSPTimeout       time.Duration // OCSP check timeout (default: 5s)
+	RequireOCSP       bool          // Fail if OCSP check fails
+
+	// CRL settings
+	EnableCRL         bool          // Enable CRL checking
+	CRLURL            string        // URL to download CRL from
+	CRLRefreshInterval time.Duration // CRL refresh interval (default: 24h)
+	RequireCRL        bool          // Fail if CRL check fails
+
+	// Revocation cache settings
+	RevocationCacheTTL        time.Duration // Cache TTL (default: 1h)
+	RevocationCacheMaxEntries int           // Max cache entries (default: 10000)
 }
 
 // Validate checks the configuration for errors.
@@ -221,7 +235,39 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	cConfig.kill_switch_enabled = C.bool(c.KillSwitchEnabled)
 	cConfig.require_client_cert = C.bool(c.RequireClientCert)
 	cConfig.verify_hostname = C.bool(c.VerifyHostname)
+
+	// OCSP settings
 	cConfig.enable_ocsp = C.bool(c.EnableOCSP)
+	cConfig.enable_ocsp_stapling = C.bool(c.EnableOCSPStapling)
+	if c.OCSPURL != "" {
+		cStr := C.CString(c.OCSPURL)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.ocsp_url = cStr
+	}
+	if c.OCSPTimeout > 0 {
+		cConfig.ocsp_timeout_ms = C.uint32_t(c.OCSPTimeout.Milliseconds())
+	}
+	cConfig.require_ocsp = C.bool(c.RequireOCSP)
+
+	// CRL settings
+	cConfig.enable_crl = C.bool(c.EnableCRL)
+	if c.CRLURL != "" {
+		cStr := C.CString(c.CRLURL)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.crl_url = cStr
+	}
+	if c.CRLRefreshInterval > 0 {
+		cConfig.crl_refresh_seconds = C.uint32_t(c.CRLRefreshInterval.Seconds())
+	}
+	cConfig.require_crl = C.bool(c.RequireCRL)
+
+	// Revocation cache settings
+	if c.RevocationCacheTTL > 0 {
+		cConfig.revocation_cache_ttl_seconds = C.uint32_t(c.RevocationCacheTTL.Seconds())
+	}
+	if c.RevocationCacheMaxEntries > 0 {
+		cConfig.revocation_cache_max_entries = C.size_t(c.RevocationCacheMaxEntries)
+	}
 
 	return &cConfig, allocations
 }

@@ -76,9 +76,23 @@ typedef struct mtls_config {
     bool require_client_cert; /* Require client certificate (server mode) */
     bool verify_hostname;     /* Verify hostname against certificate */
 
-    /* Revocation checking (optional, not implemented in Phase 1) */
-    bool enable_ocsp;     /* Enable OCSP stapling */
-    const char *crl_path; /* Path to CRL file */
+    /* OCSP configuration */
+    bool enable_ocsp;          /* Enable OCSP checking */
+    bool enable_ocsp_stapling; /* Request OCSP stapling from server */
+    const char *ocsp_url;      /* Override OCSP responder URL */
+    uint32_t ocsp_timeout_ms;  /* OCSP request timeout (0 = default 5000ms) */
+    bool require_ocsp;         /* Fail if OCSP check fails */
+
+    /* CRL configuration */
+    bool enable_crl;              /* Enable CRL checking */
+    const char *crl_path;         /* Path to local CRL file */
+    const char *crl_url;          /* URL to download CRL from */
+    uint32_t crl_refresh_seconds; /* CRL refresh interval (0 = default 86400s) */
+    bool require_crl;             /* Fail if CRL check fails */
+
+    /* Revocation cache configuration */
+    uint32_t revocation_cache_ttl_seconds; /* Cache TTL (0 = default 3600s) */
+    size_t revocation_cache_max_entries;   /* Max cache entries (0 = default 10000) */
 
     /* Observability */
     mtls_observers observers; /* Event callbacks */

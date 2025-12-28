@@ -6,6 +6,7 @@
 // NOLINTBEGIN(misc-include-cleaner,clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
 
 #include "mtls/mtls.h"
+#include "mtls/mtls_ocsp.h"
 #include "internal/mtls_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +37,21 @@ void mtls_config_init(mtls_config *config)
     config->kill_switch_enabled = false;
     config->require_client_cert = true; /* Fail-closed for mTLS */
     config->verify_hostname = true;
+
+    /* OCSP defaults */
     config->enable_ocsp = false;
+    config->enable_ocsp_stapling = false;
+    config->ocsp_timeout_ms = 5000; /* 5 seconds */
+    config->require_ocsp = false;
+
+    /* CRL defaults */
+    config->enable_crl = false;
+    config->crl_refresh_seconds = 86400; /* 24 hours */
+    config->require_crl = false;
+
+    /* Revocation cache defaults */
+    config->revocation_cache_ttl_seconds = 3600;  /* 1 hour */
+    config->revocation_cache_max_entries = 10000; /* 10K entries */
 }
 
 int mtls_config_validate(const mtls_config *config, mtls_err *err)
@@ -96,6 +111,14 @@ int mtls_config_validate(const mtls_config *config, mtls_err *err)
     }
     if (config->crl_path && strlen(config->crl_path) > 4096) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CRL path too long");
+        return -1;
+    }
+    if (config->ocsp_url && strlen(config->ocsp_url) > 2048) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "OCSP URL too long");
+        return -1;
+    }
+    if (config->crl_url && strlen(config->crl_url) > 2048) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_CONFIG, "CRL URL too long");
         return -1;
     }
 
@@ -202,6 +225,8 @@ mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err)
     ctx->cert_path = strdup_safe(config->cert_path);
     ctx->key_path = strdup_safe(config->key_path);
     ctx->crl_path = strdup_safe(config->crl_path);
+    ctx->ocsp_url = strdup_safe(config->ocsp_url);
+    ctx->crl_url = strdup_safe(config->crl_url);
 
     if (config->allowed_sans_count > 0) {
         ctx->allowed_sans = strarr_dup(config->allowed_sans, config->allowed_sans_count);
@@ -217,9 +242,23 @@ mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err)
     ctx->config.cert_path = ctx->cert_path;
     ctx->config.key_path = ctx->key_path;
     ctx->config.crl_path = ctx->crl_path;
+    ctx->config.ocsp_url = ctx->ocsp_url;
+    ctx->config.crl_url = ctx->crl_url;
     ctx->config.allowed_sans = (const char **)ctx->allowed_sans;
     ctx->config.observers = config->observers;
     ctx->observers = config->observers;
+
+    /* Create revocation cache if OCSP or CRL is enabled */
+    if (config->enable_ocsp || config->enable_crl) {
+        mtls_err cache_err;
+        mtls_err_init(&cache_err);
+        if (mtls_revocation_cache_create(&ctx->revocation_cache,
+                                         config->revocation_cache_max_entries,
+                                         config->revocation_cache_ttl_seconds, &cache_err) < 0) {
+            /* Non-fatal: continue without cache */
+            ctx->revocation_cache = NULL;
+        }
+    }
 
     atomic_init(&ctx->kill_switch_enabled, config->kill_switch_enabled);
 
@@ -281,11 +320,24 @@ void mtls_ctx_free(mtls_ctx *ctx)
         mtls_tls_ctx_free(ctx->tls_ctx);
     }
 
+    /* Free revocation cache */
+    if (ctx->revocation_cache) {
+        mtls_revocation_cache_free(ctx->revocation_cache);
+    }
+
+    /* Free cached CRL data */
+    if (ctx->crl_data) {
+        platform_secure_zero(ctx->crl_data, ctx->crl_data_len);
+        free(ctx->crl_data);
+    }
+
     /* Free duplicated strings */
     free(ctx->ca_cert_path);
     free(ctx->cert_path);
     free(ctx->key_path);
     free(ctx->crl_path);
+    free(ctx->ocsp_url);
+    free(ctx->crl_url);
 
     /* Free allowed SANs array */
     if (ctx->allowed_sans) {

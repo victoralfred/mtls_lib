@@ -58,7 +58,23 @@ pub struct Config {
     pub(crate) kill_switch_enabled: bool,
     pub(crate) require_client_cert: bool,
     pub(crate) verify_hostname: bool,
+
+    // OCSP settings
     pub(crate) enable_ocsp: bool,
+    pub(crate) enable_ocsp_stapling: bool,
+    pub(crate) ocsp_url: Option<String>,
+    pub(crate) ocsp_timeout: Duration,
+    pub(crate) require_ocsp: bool,
+
+    // CRL settings
+    pub(crate) enable_crl: bool,
+    pub(crate) crl_url: Option<String>,
+    pub(crate) crl_refresh_interval: Duration,
+    pub(crate) require_crl: bool,
+
+    // Revocation cache settings
+    pub(crate) revocation_cache_ttl: Duration,
+    pub(crate) revocation_cache_max_entries: usize,
 }
 
 impl Default for Config {
@@ -80,7 +96,20 @@ impl Default for Config {
             kill_switch_enabled: false,
             require_client_cert: true,
             verify_hostname: true,
+            // OCSP settings
             enable_ocsp: false,
+            enable_ocsp_stapling: false,
+            ocsp_url: None,
+            ocsp_timeout: Duration::from_secs(5),
+            require_ocsp: false,
+            // CRL settings
+            enable_crl: false,
+            crl_url: None,
+            crl_refresh_interval: Duration::from_secs(86400),
+            require_crl: false,
+            // Revocation cache settings
+            revocation_cache_ttl: Duration::from_secs(3600),
+            revocation_cache_max_entries: 10000,
         }
     }
 }
@@ -206,7 +235,31 @@ impl Config {
         guard.config.kill_switch_enabled = self.kill_switch_enabled;
         guard.config.require_client_cert = self.require_client_cert;
         guard.config.verify_hostname = self.verify_hostname;
+
+        // OCSP settings
         guard.config.enable_ocsp = self.enable_ocsp;
+        guard.config.enable_ocsp_stapling = self.enable_ocsp_stapling;
+        if let Some(ref url) = self.ocsp_url {
+            let c_str = to_c_string(url)?;
+            guard.config.ocsp_url = c_str.as_ptr();
+            guard.allocations.push(c_str);
+        }
+        guard.config.ocsp_timeout_ms = self.ocsp_timeout.as_millis().min(u32::MAX as u128) as u32;
+        guard.config.require_ocsp = self.require_ocsp;
+
+        // CRL settings
+        guard.config.enable_crl = self.enable_crl;
+        if let Some(ref url) = self.crl_url {
+            let c_str = to_c_string(url)?;
+            guard.config.crl_url = c_str.as_ptr();
+            guard.allocations.push(c_str);
+        }
+        guard.config.crl_refresh_seconds = self.crl_refresh_interval.as_secs().min(u32::MAX as u64) as u32;
+        guard.config.require_crl = self.require_crl;
+
+        // Revocation cache settings
+        guard.config.revocation_cache_ttl_seconds = self.revocation_cache_ttl.as_secs().min(u32::MAX as u64) as u32;
+        guard.config.revocation_cache_max_entries = self.revocation_cache_max_entries;
 
         Ok(guard)
     }
@@ -329,9 +382,69 @@ impl ConfigBuilder {
         self
     }
 
-    /// Enable or disable OCSP stapling.
+    /// Enable or disable OCSP checking.
     pub fn enable_ocsp(mut self, enabled: bool) -> Self {
         self.config.enable_ocsp = enabled;
+        self
+    }
+
+    /// Enable or disable OCSP stapling.
+    pub fn enable_ocsp_stapling(mut self, enabled: bool) -> Self {
+        self.config.enable_ocsp_stapling = enabled;
+        self
+    }
+
+    /// Set explicit OCSP responder URL.
+    pub fn ocsp_url(mut self, url: impl Into<String>) -> Self {
+        self.config.ocsp_url = Some(url.into());
+        self
+    }
+
+    /// Set OCSP check timeout.
+    pub fn ocsp_timeout(mut self, timeout: Duration) -> Self {
+        self.config.ocsp_timeout = timeout;
+        self
+    }
+
+    /// Require OCSP check to pass (fail connection if OCSP fails).
+    pub fn require_ocsp(mut self, require: bool) -> Self {
+        self.config.require_ocsp = require;
+        self
+    }
+
+    /// Enable or disable CRL checking.
+    pub fn enable_crl(mut self, enabled: bool) -> Self {
+        self.config.enable_crl = enabled;
+        self
+    }
+
+    /// Set CRL download URL.
+    pub fn crl_url(mut self, url: impl Into<String>) -> Self {
+        self.config.crl_url = Some(url.into());
+        self
+    }
+
+    /// Set CRL refresh interval.
+    pub fn crl_refresh_interval(mut self, interval: Duration) -> Self {
+        self.config.crl_refresh_interval = interval;
+        self
+    }
+
+    /// Require CRL check to pass (fail connection if CRL fails).
+    pub fn require_crl(mut self, require: bool) -> Self {
+        self.config.require_crl = require;
+        self
+    }
+
+    /// Set revocation cache TTL.
+    pub fn revocation_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.config.revocation_cache_ttl = ttl;
+        self
+    }
+
+    /// Set maximum number of entries in revocation cache.
+    pub fn revocation_cache_max_entries(mut self, max: usize) -> Self {
+        self.config.revocation_cache_max_entries = max;
         self
     }
 

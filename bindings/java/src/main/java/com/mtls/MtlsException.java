@@ -10,6 +10,22 @@ public class MtlsException extends Exception {
     private final int errorCode;
     private final ErrorCategory category;
 
+    // OCSP/CRL error code constants
+    /** OCSP check failed */
+    public static final int ERR_OCSP_FAILED = 313;
+    /** OCSP check timed out */
+    public static final int ERR_OCSP_TIMEOUT = 314;
+    /** OCSP responder returned an error */
+    public static final int ERR_OCSP_RESPONDER_ERROR = 315;
+    /** CRL check failed */
+    public static final int ERR_CRL_FAILED = 316;
+    /** CRL download failed */
+    public static final int ERR_CRL_DOWNLOAD_FAILED = 317;
+    /** CRL has expired */
+    public static final int ERR_CRL_EXPIRED = 318;
+    /** CRL parsing failed */
+    public static final int ERR_CRL_PARSE_FAILED = 319;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -158,6 +174,33 @@ public class MtlsException extends Exception {
      */
     public boolean isIoError() {
         return category.isIo();
+    }
+
+    /**
+     * Check if this is an OCSP error.
+     *
+     * @return true if this is an OCSP error
+     */
+    public boolean isOcspError() {
+        return errorCode >= ERR_OCSP_FAILED && errorCode <= ERR_OCSP_RESPONDER_ERROR;
+    }
+
+    /**
+     * Check if this is a CRL error.
+     *
+     * @return true if this is a CRL error
+     */
+    public boolean isCrlError() {
+        return errorCode >= ERR_CRL_FAILED && errorCode <= ERR_CRL_PARSE_FAILED;
+    }
+
+    /**
+     * Check if this is a revocation error (OCSP or CRL).
+     *
+     * @return true if this is a revocation error
+     */
+    public boolean isRevocationError() {
+        return isOcspError() || isCrlError();
     }
 
     @Override
