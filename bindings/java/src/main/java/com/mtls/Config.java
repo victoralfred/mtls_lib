@@ -48,6 +48,12 @@ public class Config {
     private final int revocationCacheTtlSeconds;
     private final int revocationCacheMaxEntries;
 
+    // Certificate pinning settings
+    private final List<String> pinSpkiSha256;
+    private final List<String> pinCertSha256;
+    private final boolean pinRequireMatch;
+    private final boolean pinIncludeLeafOnly;
+
     /**
      * TLS version enumeration.
      */
@@ -95,6 +101,11 @@ public class Config {
         // Revocation cache settings
         this.revocationCacheTtlSeconds = builder.revocationCacheTtlSeconds;
         this.revocationCacheMaxEntries = builder.revocationCacheMaxEntries;
+        // Certificate pinning settings
+        this.pinSpkiSha256 = new ArrayList<>(builder.pinSpkiSha256);
+        this.pinCertSha256 = new ArrayList<>(builder.pinCertSha256);
+        this.pinRequireMatch = builder.pinRequireMatch;
+        this.pinIncludeLeafOnly = builder.pinIncludeLeafOnly;
     }
 
     // Getters
@@ -129,6 +140,12 @@ public class Config {
     // Revocation cache getters
     public int getRevocationCacheTtlSeconds() { return revocationCacheTtlSeconds; }
     public int getRevocationCacheMaxEntries() { return revocationCacheMaxEntries; }
+
+    // Certificate pinning getters
+    public List<String> getPinSpkiSha256() { return List.copyOf(pinSpkiSha256); }
+    public List<String> getPinCertSha256() { return List.copyOf(pinCertSha256); }
+    public boolean isPinRequireMatch() { return pinRequireMatch; }
+    public boolean isPinIncludeLeafOnly() { return pinIncludeLeafOnly; }
 
     /**
      * Validates the configuration.
@@ -182,6 +199,11 @@ public class Config {
         // Revocation cache settings
         private int revocationCacheTtlSeconds = 3600;
         private int revocationCacheMaxEntries = 10000;
+        // Certificate pinning settings
+        private final List<String> pinSpkiSha256 = new ArrayList<>();
+        private final List<String> pinCertSha256 = new ArrayList<>();
+        private boolean pinRequireMatch = false;
+        private boolean pinIncludeLeafOnly = false;
 
         /**
          * Set the CA certificate file path.
@@ -454,6 +476,74 @@ public class Config {
          */
         public Builder revocationCacheMaxEntries(int revocationCacheMaxEntries) {
             this.revocationCacheMaxEntries = revocationCacheMaxEntries;
+            return this;
+        }
+
+        // Certificate pinning builder methods
+
+        /**
+         * Add SPKI SHA-256 pins (base64-encoded).
+         *
+         * @param pins base64-encoded SPKI SHA-256 hashes
+         * @return this builder
+         */
+        public Builder pinSpkiSha256(String... pins) {
+            this.pinSpkiSha256.addAll(Arrays.asList(pins));
+            return this;
+        }
+
+        /**
+         * Add a SPKI SHA-256 pin (base64-encoded).
+         *
+         * @param pin base64-encoded SPKI SHA-256 hash
+         * @return this builder
+         */
+        public Builder addPinSpkiSha256(String pin) {
+            this.pinSpkiSha256.add(pin);
+            return this;
+        }
+
+        /**
+         * Add certificate SHA-256 pins (base64-encoded).
+         *
+         * @param pins base64-encoded certificate SHA-256 hashes
+         * @return this builder
+         */
+        public Builder pinCertSha256(String... pins) {
+            this.pinCertSha256.addAll(Arrays.asList(pins));
+            return this;
+        }
+
+        /**
+         * Add a certificate SHA-256 pin (base64-encoded).
+         *
+         * @param pin base64-encoded certificate SHA-256 hash
+         * @return this builder
+         */
+        public Builder addPinCertSha256(String pin) {
+            this.pinCertSha256.add(pin);
+            return this;
+        }
+
+        /**
+         * Require at least one pin match (default: true if pins are set).
+         *
+         * @param pinRequireMatch true to require pin match
+         * @return this builder
+         */
+        public Builder pinRequireMatch(boolean pinRequireMatch) {
+            this.pinRequireMatch = pinRequireMatch;
+            return this;
+        }
+
+        /**
+         * Only check leaf certificate (default: false, checks entire chain).
+         *
+         * @param pinIncludeLeafOnly true to only check leaf certificate
+         * @return this builder
+         */
+        public Builder pinIncludeLeafOnly(boolean pinIncludeLeafOnly) {
+            this.pinIncludeLeafOnly = pinIncludeLeafOnly;
             return this;
         }
 

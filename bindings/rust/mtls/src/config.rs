@@ -75,6 +75,12 @@ pub struct Config {
     // Revocation cache settings
     pub(crate) revocation_cache_ttl: Duration,
     pub(crate) revocation_cache_max_entries: usize,
+
+    // Certificate pinning settings
+    pub(crate) pin_spki_sha256: Vec<String>,
+    pub(crate) pin_cert_sha256: Vec<String>,
+    pub(crate) pin_require_match: bool,
+    pub(crate) pin_include_leaf_only: bool,
 }
 
 impl Default for Config {
@@ -110,6 +116,12 @@ impl Default for Config {
             // Revocation cache settings
             revocation_cache_ttl: Duration::from_secs(3600),
             revocation_cache_max_entries: 10000,
+
+            // Certificate pinning settings
+            pin_spki_sha256: Vec::new(),
+            pin_cert_sha256: Vec::new(),
+            pin_require_match: false,
+            pin_include_leaf_only: false,
         }
     }
 }
@@ -152,6 +164,8 @@ impl Config {
             config,
             allocations: Vec::new(),
             san_array: None,
+            pin_spki_array: None,
+            pin_cert_array: None,
         };
 
         // CA certificate
@@ -260,6 +274,36 @@ impl Config {
         // Revocation cache settings
         guard.config.revocation_cache_ttl_seconds = self.revocation_cache_ttl.as_secs().min(u32::MAX as u64) as u32;
         guard.config.revocation_cache_max_entries = self.revocation_cache_max_entries;
+
+        // Certificate pinning settings
+        if !self.pin_spki_sha256.is_empty() {
+            let mut pin_ptrs: Vec<*const i8> = Vec::with_capacity(self.pin_spki_sha256.len());
+            for pin in &self.pin_spki_sha256 {
+                let c_str = to_c_string(pin)?;
+                pin_ptrs.push(c_str.as_ptr());
+                guard.allocations.push(c_str);
+            }
+            let pin_array = pin_ptrs.into_boxed_slice();
+            guard.config.pin_spki_sha256 = pin_array.as_ptr() as *mut *const i8;
+            guard.config.pin_spki_sha256_count = pin_array.len();
+            guard.pin_spki_array = Some(pin_array);
+        }
+
+        if !self.pin_cert_sha256.is_empty() {
+            let mut pin_ptrs: Vec<*const i8> = Vec::with_capacity(self.pin_cert_sha256.len());
+            for pin in &self.pin_cert_sha256 {
+                let c_str = to_c_string(pin)?;
+                pin_ptrs.push(c_str.as_ptr());
+                guard.allocations.push(c_str);
+            }
+            let pin_array = pin_ptrs.into_boxed_slice();
+            guard.config.pin_cert_sha256 = pin_array.as_ptr() as *mut *const i8;
+            guard.config.pin_cert_sha256_count = pin_array.len();
+            guard.pin_cert_array = Some(pin_array);
+        }
+
+        guard.config.pin_require_match = self.pin_require_match;
+        guard.config.pin_include_leaf_only = self.pin_include_leaf_only;
 
         Ok(guard)
     }
@@ -448,6 +492,38 @@ impl ConfigBuilder {
         self
     }
 
+    /// Add SPKI SHA-256 pins (base64-encoded).
+    pub fn pin_spki_sha256<I, S>(mut self, pins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.config.pin_spki_sha256 = pins.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    /// Add certificate SHA-256 pins (base64-encoded).
+    pub fn pin_cert_sha256<I, S>(mut self, pins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.config.pin_cert_sha256 = pins.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    /// Require at least one pin match (default: true if pins are set).
+    pub fn pin_require_match(mut self, require: bool) -> Self {
+        self.config.pin_require_match = require;
+        self
+    }
+
+    /// Only check leaf certificate (default: false, checks entire chain).
+    pub fn pin_include_leaf_only(mut self, leaf_only: bool) -> Self {
+        self.config.pin_include_leaf_only = leaf_only;
+        self
+    }
+
     /// Build the Config, validating it first.
     pub fn build(self) -> Result<Config> {
         self.config.validate()?;
@@ -478,6 +554,8 @@ pub(crate) struct CConfigGuard {
     pub config: mtls_sys::mtls_config,
     allocations: Vec<CString>,
     san_array: Option<Box<[*const i8]>>,
+    pin_spki_array: Option<Box<[*const i8]>>,
+    pin_cert_array: Option<Box<[*const i8]>>,
 }
 
 impl CConfigGuard {

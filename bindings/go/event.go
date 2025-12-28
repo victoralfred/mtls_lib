@@ -55,6 +55,16 @@ const (
 	EventCRLDownloadFailure EventType = 20
 )
 
+// Certificate pinning events (60-62)
+const (
+	// EventPinCheckStart is emitted when certificate pinning check begins.
+	EventPinCheckStart EventType = 60
+	// EventPinCheckSuccess is emitted when certificate pinning check succeeds.
+	EventPinCheckSuccess EventType = 61
+	// EventPinCheckFailure is emitted when certificate pinning check fails.
+	EventPinCheckFailure EventType = 62
+)
+
 // String returns a human-readable name for the event type.
 func (t EventType) String() string {
 	switch t {
@@ -98,6 +108,12 @@ func (t EventType) String() string {
 		return "CRLDownloadSuccess"
 	case EventCRLDownloadFailure:
 		return "CRLDownloadFailure"
+	case EventPinCheckStart:
+		return "PinCheckStart"
+	case EventPinCheckSuccess:
+		return "PinCheckSuccess"
+	case EventPinCheckFailure:
+		return "PinCheckFailure"
 	default:
 		return "Unknown"
 	}
@@ -107,14 +123,15 @@ func (t EventType) String() string {
 func (t EventType) IsSuccess() bool {
 	return t == EventConnectSuccess || t == EventHandshakeSuccess ||
 		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
-		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess
+		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess ||
+		t == EventPinCheckSuccess
 }
 
 // IsFailure returns true if the event type indicates failure.
 func (t EventType) IsFailure() bool {
 	return t == EventConnectFailure || t == EventHandshakeFailure ||
 		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
-		t == EventCRLDownloadFailure
+		t == EventCRLDownloadFailure || t == EventPinCheckFailure
 }
 
 // IsIO returns true if the event type is an I/O event.
@@ -135,6 +152,11 @@ func (t EventType) IsCRL() bool {
 // IsRevocation returns true if the event type is a revocation check event (OCSP or CRL).
 func (t EventType) IsRevocation() bool {
 	return t.IsOCSP() || t.IsCRL()
+}
+
+// IsPinning returns true if the event type is a certificate pinning event.
+func (t EventType) IsPinning() bool {
+	return t >= EventPinCheckStart && t <= EventPinCheckFailure
 }
 
 // Event represents an mTLS event emitted by the library.

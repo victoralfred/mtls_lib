@@ -65,6 +65,9 @@ if(UNIX)
     mtls_add_test(test_crl)
 endif()
 
+# Certificate pinning tests
+mtls_add_test(test_pinning)
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

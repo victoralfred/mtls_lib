@@ -70,6 +70,12 @@ type Config struct {
 	// Revocation cache settings
 	RevocationCacheTTL        time.Duration // Cache TTL (default: 1h)
 	RevocationCacheMaxEntries int           // Max cache entries (default: 10000)
+
+	// Certificate pinning settings
+	PinSPKISHA256      []string // SPKI SHA-256 pins (base64-encoded)
+	PinCertSHA256      []string // Certificate SHA-256 pins (base64-encoded)
+	PinRequireMatch    bool     // Require at least one pin match (default: true if pins set)
+	PinIncludeLeafOnly bool     // Only check leaf certificate (default: false)
 }
 
 // Validate checks the configuration for errors.
@@ -268,6 +274,40 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	if c.RevocationCacheMaxEntries > 0 {
 		cConfig.revocation_cache_max_entries = C.size_t(c.RevocationCacheMaxEntries)
 	}
+
+	// Certificate pinning settings
+	if len(c.PinSPKISHA256) > 0 {
+		pinArray := C.malloc(C.size_t(len(c.PinSPKISHA256)) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+		allocations = append(allocations, pinArray)
+
+		pinPtrs := (*[1 << 30]*C.char)(pinArray)[:len(c.PinSPKISHA256):len(c.PinSPKISHA256)]
+		for i, pin := range c.PinSPKISHA256 {
+			cStr := C.CString(pin)
+			allocations = append(allocations, unsafe.Pointer(cStr))
+			pinPtrs[i] = cStr
+		}
+
+		cConfig.pin_spki_sha256 = (**C.char)(pinArray)
+		cConfig.pin_spki_sha256_count = C.size_t(len(c.PinSPKISHA256))
+	}
+
+	if len(c.PinCertSHA256) > 0 {
+		pinArray := C.malloc(C.size_t(len(c.PinCertSHA256)) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+		allocations = append(allocations, pinArray)
+
+		pinPtrs := (*[1 << 30]*C.char)(pinArray)[:len(c.PinCertSHA256):len(c.PinCertSHA256)]
+		for i, pin := range c.PinCertSHA256 {
+			cStr := C.CString(pin)
+			allocations = append(allocations, unsafe.Pointer(cStr))
+			pinPtrs[i] = cStr
+		}
+
+		cConfig.pin_cert_sha256 = (**C.char)(pinArray)
+		cConfig.pin_cert_sha256_count = C.size_t(len(c.PinCertSHA256))
+	}
+
+	cConfig.pin_require_match = C.bool(c.PinRequireMatch)
+	cConfig.pin_include_leaf_only = C.bool(c.PinIncludeLeafOnly)
 
 	return &cConfig, allocations
 }

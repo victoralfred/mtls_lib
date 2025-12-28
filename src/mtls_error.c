@@ -181,6 +181,26 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_HOSTNAME_MISMATCH";
     case MTLS_ERR_TLS_SHUTDOWN_FAILED:
         return "MTLS_ERR_TLS_SHUTDOWN_FAILED";
+    case MTLS_ERR_OCSP_FAILED:
+        return "MTLS_ERR_OCSP_FAILED";
+    case MTLS_ERR_OCSP_TIMEOUT:
+        return "MTLS_ERR_OCSP_TIMEOUT";
+    case MTLS_ERR_OCSP_RESPONDER_ERROR:
+        return "MTLS_ERR_OCSP_RESPONDER_ERROR";
+    case MTLS_ERR_CRL_FAILED:
+        return "MTLS_ERR_CRL_FAILED";
+    case MTLS_ERR_CRL_DOWNLOAD_FAILED:
+        return "MTLS_ERR_CRL_DOWNLOAD_FAILED";
+    case MTLS_ERR_CRL_EXPIRED:
+        return "MTLS_ERR_CRL_EXPIRED";
+    case MTLS_ERR_CRL_PARSE_FAILED:
+        return "MTLS_ERR_CRL_PARSE_FAILED";
+    case MTLS_ERR_PIN_VALIDATION_FAILED:
+        return "MTLS_ERR_PIN_VALIDATION_FAILED";
+    case MTLS_ERR_PIN_INVALID_FORMAT:
+        return "MTLS_ERR_PIN_INVALID_FORMAT";
+    case MTLS_ERR_PIN_COMPUTE_FAILED:
+        return "MTLS_ERR_PIN_COMPUTE_FAILED";
 
     /* Identity errors */
     case MTLS_ERR_IDENTITY_MISMATCH:

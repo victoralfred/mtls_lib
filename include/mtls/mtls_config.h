@@ -94,6 +94,14 @@ typedef struct mtls_config {
     uint32_t revocation_cache_ttl_seconds; /* Cache TTL (0 = default 3600s) */
     size_t revocation_cache_max_entries;   /* Max cache entries (0 = default 10000) */
 
+    /* Certificate pinning configuration */
+    const char **pin_spki_sha256; /* Array of base64 SPKI hashes */
+    size_t pin_spki_sha256_count; /* Number of SPKI pins */
+    const char **pin_cert_sha256; /* Array of base64 cert hashes */
+    size_t pin_cert_sha256_count; /* Number of cert pins */
+    bool pin_require_match;       /* Require at least one pin match (default: true if pins set) */
+    bool pin_include_leaf_only;   /* Only check leaf certificate (default: false) */
+
     /* Observability */
     mtls_observers observers; /* Event callbacks */
 } mtls_config;

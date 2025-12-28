@@ -66,6 +66,9 @@ const (
 	ErrCRLDownloadFailed    ErrorCode = 317
 	ErrCRLExpired           ErrorCode = 318
 	ErrCRLParseFailed       ErrorCode = 319
+	ErrPinValidationFailed  ErrorCode = 320
+	ErrPinInvalidFormat     ErrorCode = 321
+	ErrPinComputeFailed     ErrorCode = 322
 
 	// Identity/verification errors (4xx)
 	ErrIdentityMismatch  ErrorCode = 400

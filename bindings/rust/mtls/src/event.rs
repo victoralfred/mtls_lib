@@ -53,6 +53,13 @@ pub enum EventType {
     CrlDownloadSuccess = 19,
     /// CRL download failed.
     CrlDownloadFailure = 20,
+    // Certificate pinning events (60-62)
+    /// Pin check started.
+    PinCheckStart = 60,
+    /// Pin check succeeded.
+    PinCheckSuccess = 61,
+    /// Pin check failed.
+    PinCheckFailure = 62,
     /// Unknown event type.
     Unknown = 0,
 }
@@ -89,6 +96,9 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_FAILURE => {
                 EventType::CrlDownloadFailure
             }
+            mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_START => EventType::PinCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_SUCCESS => EventType::PinCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_FAILURE => EventType::PinCheckFailure,
         }
     }
 
@@ -101,6 +111,7 @@ impl EventType {
                 | EventType::OcspCheckFailure
                 | EventType::CrlCheckFailure
                 | EventType::CrlDownloadFailure
+                | EventType::PinCheckFailure
         )
     }
 
@@ -114,6 +125,7 @@ impl EventType {
                 | EventType::OcspStapleVerified
                 | EventType::CrlCheckSuccess
                 | EventType::CrlDownloadSuccess
+                | EventType::PinCheckSuccess
         )
     }
 
@@ -164,6 +176,14 @@ impl EventType {
     pub fn is_io(&self) -> bool {
         matches!(self, EventType::Read | EventType::Write)
     }
+
+    /// Check if this is a certificate pinning event.
+    pub fn is_pinning(&self) -> bool {
+        matches!(
+            self,
+            EventType::PinCheckStart | EventType::PinCheckSuccess | EventType::PinCheckFailure
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -189,6 +209,9 @@ impl std::fmt::Display for EventType {
             EventType::CrlDownloadStart => "CrlDownloadStart",
             EventType::CrlDownloadSuccess => "CrlDownloadSuccess",
             EventType::CrlDownloadFailure => "CrlDownloadFailure",
+            EventType::PinCheckStart => "PinCheckStart",
+            EventType::PinCheckSuccess => "PinCheckSuccess",
+            EventType::PinCheckFailure => "PinCheckFailure",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)

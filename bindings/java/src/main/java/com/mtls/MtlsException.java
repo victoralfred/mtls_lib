@@ -26,6 +26,14 @@ public class MtlsException extends Exception {
     /** CRL parsing failed */
     public static final int ERR_CRL_PARSE_FAILED = 319;
 
+    // Certificate pinning error code constants
+    /** Pin validation failed (no matching pin found) */
+    public static final int ERR_PIN_VALIDATION_FAILED = 320;
+    /** Invalid pin format */
+    public static final int ERR_PIN_INVALID_FORMAT = 321;
+    /** Failed to compute pin hash */
+    public static final int ERR_PIN_COMPUTE_FAILED = 322;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -201,6 +209,15 @@ public class MtlsException extends Exception {
      */
     public boolean isRevocationError() {
         return isOcspError() || isCrlError();
+    }
+
+    /**
+     * Check if this is a certificate pinning error.
+     *
+     * @return true if this is a pinning error
+     */
+    public boolean isPinningError() {
+        return errorCode >= ERR_PIN_VALIDATION_FAILED && errorCode <= ERR_PIN_COMPUTE_FAILED;
     }
 
     @Override

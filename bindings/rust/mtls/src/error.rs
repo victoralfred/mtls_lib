@@ -71,6 +71,9 @@ pub enum ErrorCode {
     CrlDownloadFailed = 317,
     CrlExpired = 318,
     CrlParseFailed = 319,
+    PinValidationFailed = 320,
+    PinInvalidFormat = 321,
+    PinComputeFailed = 322,
 
     // Identity errors (4xx)
     IdentityMismatch = 400,
@@ -158,6 +161,9 @@ impl ErrorCode {
             317 => ErrorCode::CrlDownloadFailed,
             318 => ErrorCode::CrlExpired,
             319 => ErrorCode::CrlParseFailed,
+            320 => ErrorCode::PinValidationFailed,
+            321 => ErrorCode::PinInvalidFormat,
+            322 => ErrorCode::PinComputeFailed,
             // Identity errors
             400 => ErrorCode::IdentityMismatch,
             401 => ErrorCode::SanNotAllowed,
@@ -262,6 +268,16 @@ impl ErrorCode {
         self.is_ocsp() || self.is_crl()
     }
 
+    /// Returns true if this is a certificate pinning error.
+    pub fn is_pinning(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::PinValidationFailed
+                | ErrorCode::PinInvalidFormat
+                | ErrorCode::PinComputeFailed
+        )
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -309,6 +325,9 @@ impl ErrorCode {
             ErrorCode::CrlDownloadFailed => "CRL_DOWNLOAD_FAILED",
             ErrorCode::CrlExpired => "CRL_EXPIRED",
             ErrorCode::CrlParseFailed => "CRL_PARSE_FAILED",
+            ErrorCode::PinValidationFailed => "PIN_VALIDATION_FAILED",
+            ErrorCode::PinInvalidFormat => "PIN_INVALID_FORMAT",
+            ErrorCode::PinComputeFailed => "PIN_COMPUTE_FAILED",
             ErrorCode::IdentityMismatch => "IDENTITY_MISMATCH",
             ErrorCode::SanNotAllowed => "SAN_NOT_ALLOWED",
             ErrorCode::SpiffeParseFailed => "SPIFFE_PARSE_FAILED",
@@ -515,6 +534,11 @@ impl Error {
     /// Returns true if this is a revocation error (OCSP or CRL).
     pub fn is_revocation(&self) -> bool {
         self.code.is_revocation()
+    }
+
+    /// Returns true if this is a certificate pinning error.
+    pub fn is_pinning(&self) -> bool {
+        self.code.is_pinning()
     }
 }
 
