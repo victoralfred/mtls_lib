@@ -249,6 +249,12 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_POLICY_DENIED";
     case MTLS_ERR_CONNECTION_NOT_ALLOWED:
         return "MTLS_ERR_CONNECTION_NOT_ALLOWED";
+    case MTLS_ERR_RATE_LIMITED:
+        return "MTLS_ERR_RATE_LIMITED";
+    case MTLS_ERR_RATE_LIMIT_GLOBAL:
+        return "MTLS_ERR_RATE_LIMIT_GLOBAL";
+    case MTLS_ERR_RATE_LIMIT_CLIENT:
+        return "MTLS_ERR_RATE_LIMIT_CLIENT";
 
     /* I/O errors */
     case MTLS_ERR_READ_FAILED:

@@ -95,6 +95,9 @@ const (
 	ErrKillSwitchEnabled    ErrorCode = 500
 	ErrPolicyDenied         ErrorCode = 501
 	ErrConnectionNotAllowed ErrorCode = 502
+	ErrRateLimited          ErrorCode = 503
+	ErrRateLimitGlobal      ErrorCode = 504
+	ErrRateLimitClient      ErrorCode = 505
 
 	// I/O errors (6xx)
 	ErrReadFailed       ErrorCode = 600
@@ -205,6 +208,13 @@ func (e *Error) IsRecoverable() bool {
 		e.Code == ErrWouldBlock
 }
 
+// IsRateLimit returns true if this is a rate limiting error.
+func (e *Error) IsRateLimit() bool {
+	return e.Code == ErrRateLimited ||
+		e.Code == ErrRateLimitGlobal ||
+		e.Code == ErrRateLimitClient
+}
+
 // HasTLSError returns true if this error contains OpenSSL error information.
 func (e *Error) HasTLSError() bool {
 	return e.TLSError != 0
@@ -310,6 +320,14 @@ func IsIOError(err error) bool {
 func IsRecoverableError(err error) bool {
 	if e, ok := err.(*Error); ok {
 		return e.IsRecoverable()
+	}
+	return false
+}
+
+// IsRateLimitError returns true if err is an mTLS rate limiting error.
+func IsRateLimitError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsRateLimit()
 	}
 	return false
 }

@@ -31,6 +31,16 @@ const (
 	EventKillSwitch
 )
 
+// Rate limiting events (21-23)
+const (
+	// EventRateLimitCheck is emitted when rate limit is checked.
+	EventRateLimitCheck EventType = 21
+	// EventRateLimitExceeded is emitted when rate limit is exceeded.
+	EventRateLimitExceeded EventType = 22
+	// EventRateLimitAllowed is emitted when request passes rate limiting.
+	EventRateLimitAllowed EventType = 23
+)
+
 // OCSP/CRL events (11-20)
 const (
 	// EventOCSPCheckStart is emitted when OCSP check begins.
@@ -154,6 +164,12 @@ func (t EventType) String() string {
 		return "CTCheckFailure"
 	case EventCTSCTValidated:
 		return "CTSCTValidated"
+	case EventRateLimitCheck:
+		return "RateLimitCheck"
+	case EventRateLimitExceeded:
+		return "RateLimitExceeded"
+	case EventRateLimitAllowed:
+		return "RateLimitAllowed"
 	default:
 		return "Unknown"
 	}
@@ -165,7 +181,7 @@ func (t EventType) IsSuccess() bool {
 		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
 		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess ||
 		t == EventPinCheckSuccess || t == EventHSMInitSuccess ||
-		t == EventCTCheckSuccess
+		t == EventCTCheckSuccess || t == EventRateLimitAllowed
 }
 
 // IsFailure returns true if the event type indicates failure.
@@ -173,7 +189,8 @@ func (t EventType) IsFailure() bool {
 	return t == EventConnectFailure || t == EventHandshakeFailure ||
 		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
 		t == EventCRLDownloadFailure || t == EventPinCheckFailure ||
-		t == EventHSMInitFailure || t == EventCTCheckFailure
+		t == EventHSMInitFailure || t == EventCTCheckFailure ||
+		t == EventRateLimitExceeded
 }
 
 // IsIO returns true if the event type is an I/O event.
@@ -209,6 +226,11 @@ func (t EventType) IsHSM() bool {
 // IsCT returns true if the event type is a Certificate Transparency event.
 func (t EventType) IsCT() bool {
 	return t >= EventCTCheckStart && t <= EventCTSCTValidated
+}
+
+// IsRateLimit returns true if the event type is a rate limiting event.
+func (t EventType) IsRateLimit() bool {
+	return t >= EventRateLimitCheck && t <= EventRateLimitAllowed
 }
 
 // Event represents an mTLS event emitted by the library.
@@ -276,6 +298,13 @@ func FilterIO() EventFilter {
 	}
 }
 
+// FilterRateLimit returns an EventFilter that includes only rate limiting events.
+func FilterRateLimit() EventFilter {
+	return func(e *Event) bool {
+		return e.Type.IsRateLimit()
+	}
+}
+
 // CombineFilters returns an EventFilter that applies all given filters (AND logic).
 func CombineFilters(filters ...EventFilter) EventFilter {
 	return func(e *Event) bool {
@@ -329,6 +358,11 @@ type EventMetrics struct {
 	PolicyErrors   uint64
 	IOErrors       uint64
 
+	// Rate limiting metrics
+	RateLimitChecks   uint64
+	RateLimitExceeded uint64
+	RateLimitAllowed  uint64
+
 	// Timing (cumulative)
 	TotalConnectDuration   time.Duration
 	TotalHandshakeDuration time.Duration
@@ -368,6 +402,12 @@ func (m *EventMetrics) Record(e *Event) {
 	case EventWrite:
 		m.WriteOps++
 		m.BytesWritten += e.Bytes
+	case EventRateLimitCheck:
+		m.RateLimitChecks++
+	case EventRateLimitExceeded:
+		m.RateLimitExceeded++
+	case EventRateLimitAllowed:
+		m.RateLimitAllowed++
 	}
 }
 

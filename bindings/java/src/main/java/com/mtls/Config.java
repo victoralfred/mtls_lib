@@ -73,6 +73,15 @@ public class Config {
     private final String hsmPin;
     private final String hsmEngineId;
 
+    // Rate limiting settings
+    private final boolean rateLimitEnabled;
+    private final long rateLimitMaxConnPerSec;
+    private final long rateLimitPerClient;
+    private final long rateLimitBurstSize;
+    private final long rateLimitPerClientBurst;
+    private final boolean rateLimitByIp;
+    private final boolean rateLimitByCn;
+
     /**
      * HSM type enumeration.
      */
@@ -164,6 +173,14 @@ public class Config {
         this.hsmKeyLabel = builder.hsmKeyLabel;
         this.hsmPin = builder.hsmPin;
         this.hsmEngineId = builder.hsmEngineId;
+        // Rate limiting settings
+        this.rateLimitEnabled = builder.rateLimitEnabled;
+        this.rateLimitMaxConnPerSec = builder.rateLimitMaxConnPerSec;
+        this.rateLimitPerClient = builder.rateLimitPerClient;
+        this.rateLimitBurstSize = builder.rateLimitBurstSize;
+        this.rateLimitPerClientBurst = builder.rateLimitPerClientBurst;
+        this.rateLimitByIp = builder.rateLimitByIp;
+        this.rateLimitByCn = builder.rateLimitByCn;
     }
 
     // Getters
@@ -223,6 +240,15 @@ public class Config {
     public String getHsmKeyLabel() { return hsmKeyLabel; }
     public String getHsmPin() { return hsmPin; }
     public String getHsmEngineId() { return hsmEngineId; }
+
+    // Rate limiting getters
+    public boolean isRateLimitEnabled() { return rateLimitEnabled; }
+    public long getRateLimitMaxConnPerSec() { return rateLimitMaxConnPerSec; }
+    public long getRateLimitPerClient() { return rateLimitPerClient; }
+    public long getRateLimitBurstSize() { return rateLimitBurstSize; }
+    public long getRateLimitPerClientBurst() { return rateLimitPerClientBurst; }
+    public boolean isRateLimitByIp() { return rateLimitByIp; }
+    public boolean isRateLimitByCn() { return rateLimitByCn; }
 
     /**
      * Validates the configuration.
@@ -298,6 +324,14 @@ public class Config {
         private String hsmKeyLabel;
         private String hsmPin;
         private String hsmEngineId;
+        // Rate limiting settings
+        private boolean rateLimitEnabled = false;
+        private long rateLimitMaxConnPerSec = 0;
+        private long rateLimitPerClient = 0;
+        private long rateLimitBurstSize = 10;
+        private long rateLimitPerClientBurst = 5;
+        private boolean rateLimitByIp = true;
+        private boolean rateLimitByCn = false;
 
         /**
          * Set the CA certificate file path.
@@ -807,6 +841,85 @@ public class Config {
          */
         public Builder hsmEngineId(String hsmEngineId) {
             this.hsmEngineId = hsmEngineId;
+            return this;
+        }
+
+        // Rate limiting builder methods
+
+        /**
+         * Enable or disable rate limiting.
+         *
+         * @param rateLimitEnabled true to enable rate limiting
+         * @return this builder
+         */
+        public Builder rateLimitEnabled(boolean rateLimitEnabled) {
+            this.rateLimitEnabled = rateLimitEnabled;
+            return this;
+        }
+
+        /**
+         * Set the global rate limit (connections per second).
+         *
+         * @param rateLimitMaxConnPerSec global rate limit (0 = unlimited)
+         * @return this builder
+         */
+        public Builder rateLimitMaxConnPerSec(long rateLimitMaxConnPerSec) {
+            this.rateLimitMaxConnPerSec = rateLimitMaxConnPerSec;
+            return this;
+        }
+
+        /**
+         * Set the per-client rate limit (connections per second).
+         *
+         * @param rateLimitPerClient per-client rate limit (0 = unlimited)
+         * @return this builder
+         */
+        public Builder rateLimitPerClient(long rateLimitPerClient) {
+            this.rateLimitPerClient = rateLimitPerClient;
+            return this;
+        }
+
+        /**
+         * Set the global burst size.
+         *
+         * @param rateLimitBurstSize global burst size (default: 10)
+         * @return this builder
+         */
+        public Builder rateLimitBurstSize(long rateLimitBurstSize) {
+            this.rateLimitBurstSize = rateLimitBurstSize;
+            return this;
+        }
+
+        /**
+         * Set the per-client burst size.
+         *
+         * @param rateLimitPerClientBurst per-client burst size (default: 5)
+         * @return this builder
+         */
+        public Builder rateLimitPerClientBurst(long rateLimitPerClientBurst) {
+            this.rateLimitPerClientBurst = rateLimitPerClientBurst;
+            return this;
+        }
+
+        /**
+         * Use IP address for rate limiting (default: true).
+         *
+         * @param rateLimitByIp true to use IP address as client identifier
+         * @return this builder
+         */
+        public Builder rateLimitByIp(boolean rateLimitByIp) {
+            this.rateLimitByIp = rateLimitByIp;
+            return this;
+        }
+
+        /**
+         * Use certificate CN for rate limiting (default: false).
+         *
+         * @param rateLimitByCn true to use certificate CN as client identifier
+         * @return this builder
+         */
+        public Builder rateLimitByCn(boolean rateLimitByCn) {
+            this.rateLimitByCn = rateLimitByCn;
             return this;
         }
 

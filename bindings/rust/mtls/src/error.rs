@@ -100,6 +100,9 @@ pub enum ErrorCode {
     KillSwitchEnabled = 500,
     PolicyDenied = 501,
     ConnectionNotAllowed = 502,
+    RateLimited = 503,
+    RateLimitGlobal = 504,
+    RateLimitClient = 505,
 
     // I/O errors (6xx)
     ReadFailed = 600,
@@ -201,6 +204,9 @@ impl ErrorCode {
             500 => ErrorCode::KillSwitchEnabled,
             501 => ErrorCode::PolicyDenied,
             502 => ErrorCode::ConnectionNotAllowed,
+            503 => ErrorCode::RateLimited,
+            504 => ErrorCode::RateLimitGlobal,
+            505 => ErrorCode::RateLimitClient,
             // I/O errors
             600 => ErrorCode::ReadFailed,
             601 => ErrorCode::WriteFailed,
@@ -331,6 +337,14 @@ impl ErrorCode {
         )
     }
 
+    /// Returns true if this is a rate limiting error.
+    pub fn is_rate_limit(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::RateLimited | ErrorCode::RateLimitGlobal | ErrorCode::RateLimitClient
+        )
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -403,6 +417,9 @@ impl ErrorCode {
             ErrorCode::KillSwitchEnabled => "KILL_SWITCH_ENABLED",
             ErrorCode::PolicyDenied => "POLICY_DENIED",
             ErrorCode::ConnectionNotAllowed => "CONNECTION_NOT_ALLOWED",
+            ErrorCode::RateLimited => "RATE_LIMITED",
+            ErrorCode::RateLimitGlobal => "RATE_LIMIT_GLOBAL",
+            ErrorCode::RateLimitClient => "RATE_LIMIT_CLIENT",
             ErrorCode::ReadFailed => "READ_FAILED",
             ErrorCode::WriteFailed => "WRITE_FAILED",
             ErrorCode::ConnectionClosed => "CONNECTION_CLOSED",
@@ -615,6 +632,11 @@ impl Error {
     /// Returns true if this is an HSM error.
     pub fn is_hsm(&self) -> bool {
         self.code.is_hsm()
+    }
+
+    /// Returns true if this is a rate limiting error.
+    pub fn is_rate_limit(&self) -> bool {
+        self.code.is_rate_limit()
     }
 }
 

@@ -64,6 +64,14 @@ public class MtlsException extends Exception {
     /** HSM module not found */
     public static final int ERR_HSM_MODULE_NOT_FOUND = 117;
 
+    // Rate limiting error code constants
+    /** Rate limited (general) */
+    public static final int ERR_RATE_LIMITED = 503;
+    /** Global rate limit exceeded */
+    public static final int ERR_RATE_LIMIT_GLOBAL = 504;
+    /** Per-client rate limit exceeded */
+    public static final int ERR_RATE_LIMIT_CLIENT = 505;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -266,6 +274,15 @@ public class MtlsException extends Exception {
      */
     public boolean isHsmError() {
         return errorCode >= ERR_HSM_INIT_FAILED && errorCode <= ERR_HSM_MODULE_NOT_FOUND;
+    }
+
+    /**
+     * Check if this is a rate limiting error.
+     *
+     * @return true if this is a rate limiting error
+     */
+    public boolean isRateLimitError() {
+        return errorCode >= ERR_RATE_LIMITED && errorCode <= ERR_RATE_LIMIT_CLIENT;
     }
 
     @Override

@@ -89,6 +89,15 @@ pub struct Config {
     pub(crate) ct_log_list_path: Option<String>,
     pub(crate) ct_log_list_json: Option<Vec<u8>>,
     pub(crate) ct_allow_unknown_logs: bool,
+
+    // Rate limiting settings
+    pub(crate) rate_limit_enabled: bool,
+    pub(crate) rate_limit_max_conn_per_sec: u64,
+    pub(crate) rate_limit_per_client: u64,
+    pub(crate) rate_limit_burst_size: u64,
+    pub(crate) rate_limit_per_client_burst: u64,
+    pub(crate) rate_limit_by_ip: bool,
+    pub(crate) rate_limit_by_cn: bool,
 }
 
 impl Default for Config {
@@ -138,6 +147,15 @@ impl Default for Config {
             ct_log_list_path: None,
             ct_log_list_json: None,
             ct_allow_unknown_logs: false,
+
+            // Rate limiting settings
+            rate_limit_enabled: false,
+            rate_limit_max_conn_per_sec: 0,
+            rate_limit_per_client: 0,
+            rate_limit_burst_size: 10,
+            rate_limit_per_client_burst: 5,
+            rate_limit_by_ip: true,
+            rate_limit_by_cn: false,
         }
     }
 }
@@ -335,6 +353,15 @@ impl Config {
             guard.config.ct_log_list_json_len = json.len();
         }
         guard.config.ct_allow_unknown_logs = self.ct_allow_unknown_logs;
+
+        // Rate limiting settings
+        guard.config.rate_limit_enabled = self.rate_limit_enabled;
+        guard.config.rate_limit_max_conn_per_sec = self.rate_limit_max_conn_per_sec;
+        guard.config.rate_limit_per_client = self.rate_limit_per_client;
+        guard.config.rate_limit_burst_size = self.rate_limit_burst_size;
+        guard.config.rate_limit_per_client_burst = self.rate_limit_per_client_burst;
+        guard.config.rate_limit_by_ip = self.rate_limit_by_ip;
+        guard.config.rate_limit_by_cn = self.rate_limit_by_cn;
 
         Ok(guard)
     }
@@ -590,6 +617,48 @@ impl ConfigBuilder {
     /// Allow SCTs from unknown logs (default: false).
     pub fn ct_allow_unknown_logs(mut self, allow: bool) -> Self {
         self.config.ct_allow_unknown_logs = allow;
+        self
+    }
+
+    /// Enable or disable rate limiting.
+    pub fn rate_limit_enabled(mut self, enabled: bool) -> Self {
+        self.config.rate_limit_enabled = enabled;
+        self
+    }
+
+    /// Set global rate limit (connections per second, 0 = unlimited).
+    pub fn rate_limit_max_conn_per_sec(mut self, limit: u64) -> Self {
+        self.config.rate_limit_max_conn_per_sec = limit;
+        self
+    }
+
+    /// Set per-client rate limit (connections per second, 0 = unlimited).
+    pub fn rate_limit_per_client(mut self, limit: u64) -> Self {
+        self.config.rate_limit_per_client = limit;
+        self
+    }
+
+    /// Set global burst size (default: 10).
+    pub fn rate_limit_burst_size(mut self, burst: u64) -> Self {
+        self.config.rate_limit_burst_size = burst;
+        self
+    }
+
+    /// Set per-client burst size (default: 5).
+    pub fn rate_limit_per_client_burst(mut self, burst: u64) -> Self {
+        self.config.rate_limit_per_client_burst = burst;
+        self
+    }
+
+    /// Use IP address for rate limiting (default: true).
+    pub fn rate_limit_by_ip(mut self, by_ip: bool) -> Self {
+        self.config.rate_limit_by_ip = by_ip;
+        self
+    }
+
+    /// Use certificate CN for rate limiting (default: false).
+    pub fn rate_limit_by_cn(mut self, by_cn: bool) -> Self {
+        self.config.rate_limit_by_cn = by_cn;
         self
     }
 

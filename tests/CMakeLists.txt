@@ -76,6 +76,11 @@ if(UNIX)
     mtls_add_test(test_hsm)
 endif()
 
+# Rate limiting tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_rate_limit)
+endif()
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

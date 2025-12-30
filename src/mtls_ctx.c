@@ -7,6 +7,7 @@
 
 #include "mtls/mtls.h"
 #include "mtls/mtls_ocsp.h"
+#include "mtls/mtls_rate_limit.h"
 #include "internal/mtls_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -52,6 +53,15 @@ void mtls_config_init(mtls_config *config)
     /* Revocation cache defaults */
     config->revocation_cache_ttl_seconds = 3600;  /* 1 hour */
     config->revocation_cache_max_entries = 10000; /* 10K entries */
+
+    /* Rate limiting defaults */
+    config->rate_limit_enabled = false;
+    config->rate_limit_max_conn_per_sec = 0; /* Unlimited */
+    config->rate_limit_per_client = 0;       /* Unlimited */
+    config->rate_limit_burst_size = 10;
+    config->rate_limit_per_client_burst = 5;
+    config->rate_limit_by_ip = true;
+    config->rate_limit_by_cn = false;
 }
 
 int mtls_config_validate(const mtls_config *config, mtls_err *err)
@@ -260,6 +270,26 @@ mtls_ctx *mtls_ctx_create(const mtls_config *config, mtls_err *err)
         }
     }
 
+    /* Create rate limiter if rate limiting is enabled */
+    if (config->rate_limit_enabled) {
+        mtls_rate_limit_config rl_config;
+        mtls_rate_limit_config_init(&rl_config);
+        rl_config.enabled = true;
+        rl_config.max_conn_per_sec = config->rate_limit_max_conn_per_sec;
+        rl_config.per_client_rate = config->rate_limit_per_client;
+        rl_config.burst_size = config->rate_limit_burst_size;
+        rl_config.per_client_burst = config->rate_limit_per_client_burst;
+        rl_config.limit_by_ip = config->rate_limit_by_ip;
+        rl_config.limit_by_cn = config->rate_limit_by_cn;
+
+        mtls_err rl_err;
+        mtls_err_init(&rl_err);
+        if (mtls_rate_limiter_create(&ctx->rate_limiter, &rl_config, &rl_err) < 0) {
+            /* Non-fatal: continue without rate limiting */
+            ctx->rate_limiter = NULL;
+        }
+    }
+
     atomic_init(&ctx->kill_switch_enabled, config->kill_switch_enabled);
 
     /* Create TLS context */
@@ -323,6 +353,11 @@ void mtls_ctx_free(mtls_ctx *ctx)
     /* Free revocation cache */
     if (ctx->revocation_cache) {
         mtls_revocation_cache_free(ctx->revocation_cache);
+    }
+
+    /* Free rate limiter */
+    if (ctx->rate_limiter) {
+        mtls_rate_limiter_free(ctx->rate_limiter);
     }
 
     /* Free cached CRL data */

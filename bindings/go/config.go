@@ -95,6 +95,15 @@ type Config struct {
 	HSMKeyLabel   string // Key label (alternative to key ID)
 	HSMPIN        string // PIN for login
 	HSMEngineID   string // ENGINE ID (for ENGINE mode)
+
+	// Rate limiting settings
+	RateLimitEnabled      bool   // Enable rate limiting
+	RateLimitMaxConnPerSec uint64 // Global rate limit (0 = unlimited)
+	RateLimitPerClient    uint64 // Per-client rate limit (0 = unlimited)
+	RateLimitBurstSize    uint64 // Global burst allowance (default: 10)
+	RateLimitPerClientBurst uint64 // Per-client burst (default: 5)
+	RateLimitByIP         bool   // Use IP address as client ID (default: true)
+	RateLimitByCN         bool   // Use certificate CN as client ID
 }
 
 // HSMType represents the HSM interface type.
@@ -398,6 +407,15 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		allocations = append(allocations, unsafe.Pointer(cStr))
 		cConfig.hsm_engine_id = cStr
 	}
+
+	// Rate limiting settings
+	cConfig.rate_limit_enabled = C.bool(c.RateLimitEnabled)
+	cConfig.rate_limit_max_conn_per_sec = C.uint64_t(c.RateLimitMaxConnPerSec)
+	cConfig.rate_limit_per_client = C.uint64_t(c.RateLimitPerClient)
+	cConfig.rate_limit_burst_size = C.uint64_t(c.RateLimitBurstSize)
+	cConfig.rate_limit_per_client_burst = C.uint64_t(c.RateLimitPerClientBurst)
+	cConfig.rate_limit_by_ip = C.bool(c.RateLimitByIP)
+	cConfig.rate_limit_by_cn = C.bool(c.RateLimitByCN)
 
 	return &cConfig, allocations
 }

@@ -69,6 +69,13 @@ pub enum EventType {
     HsmInitFailure = 72,
     /// HSM key loaded.
     HsmKeyLoaded = 73,
+    // Rate limiting events (21-23)
+    /// Rate limit check.
+    RateLimitCheck = 21,
+    /// Rate limit exceeded.
+    RateLimitExceeded = 22,
+    /// Rate limit allowed.
+    RateLimitAllowed = 23,
     // Certificate Transparency events (80-83)
     /// CT check started.
     CtCheckStart = 80,
@@ -125,6 +132,13 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_SUCCESS => EventType::CtCheckSuccess,
             mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_FAILURE => EventType::CtCheckFailure,
             mtls_sys::mtls_event_type::MTLS_EVENT_CT_SCT_VALIDATED => EventType::CtSctValidated,
+            mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_CHECK => EventType::RateLimitCheck,
+            mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_EXCEEDED => {
+                EventType::RateLimitExceeded
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_ALLOWED => {
+                EventType::RateLimitAllowed
+            }
         }
     }
 
@@ -140,6 +154,7 @@ impl EventType {
                 | EventType::PinCheckFailure
                 | EventType::HsmInitFailure
                 | EventType::CtCheckFailure
+                | EventType::RateLimitExceeded
         )
     }
 
@@ -156,6 +171,7 @@ impl EventType {
                 | EventType::PinCheckSuccess
                 | EventType::HsmInitSuccess
                 | EventType::CtCheckSuccess
+                | EventType::RateLimitAllowed
         )
     }
 
@@ -236,6 +252,16 @@ impl EventType {
                 | EventType::HsmKeyLoaded
         )
     }
+
+    /// Check if this is a rate limiting event.
+    pub fn is_rate_limit(&self) -> bool {
+        matches!(
+            self,
+            EventType::RateLimitCheck
+                | EventType::RateLimitExceeded
+                | EventType::RateLimitAllowed
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -272,6 +298,9 @@ impl std::fmt::Display for EventType {
             EventType::CtCheckSuccess => "CtCheckSuccess",
             EventType::CtCheckFailure => "CtCheckFailure",
             EventType::CtSctValidated => "CtSctValidated",
+            EventType::RateLimitCheck => "RateLimitCheck",
+            EventType::RateLimitExceeded => "RateLimitExceeded",
+            EventType::RateLimitAllowed => "RateLimitAllowed",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)

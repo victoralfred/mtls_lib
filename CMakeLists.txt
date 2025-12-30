@@ -138,6 +138,7 @@ set(MTLS_SOURCES
     src/mtls_pinning.c
     src/mtls_ct.c
     src/mtls_hsm.c
+    src/mtls_rate_limit.c
 )
 
 # Platform-specific sources

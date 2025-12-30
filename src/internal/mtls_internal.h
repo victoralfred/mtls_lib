@@ -23,6 +23,9 @@ extern "C" {
 /* Forward declaration for revocation cache */
 struct mtls_revocation_cache;
 
+/* Forward declaration for rate limiter */
+struct mtls_rate_limiter;
+
 /*
  * Internal context structure
  */
@@ -45,6 +48,9 @@ struct mtls_ctx {
     struct mtls_revocation_cache *revocation_cache; /* OCSP/CRL response cache */
     void *crl_data;                                 /* Cached CRL data */
     size_t crl_data_len;                            /* Length of CRL data */
+
+    /* Rate limiting */
+    struct mtls_rate_limiter *rate_limiter; /* Connection rate limiter */
 };
 
 /*
@@ -132,9 +138,15 @@ static inline void mtls_emit_event(mtls_ctx *ctx, const mtls_event *event)
 
     /* Validate event data before invoking callback to prevent callback issues
      * from invalid event types or corrupted data.
+     * Valid ranges: Connection (1-10), OCSP/CRL (11-20), Rate Limit (21-23),
+     *               Pinning (60-62), HSM (70-73), CT (80-83)
      */
     bool valid_event =
-        (event->type >= MTLS_EVENT_CONNECT_START && event->type <= MTLS_EVENT_CRL_DOWNLOAD_FAILURE);
+        (event->type >= MTLS_EVENT_CONNECT_START && event->type <= MTLS_EVENT_RATE_LIMIT_ALLOWED) ||
+        (event->type >= MTLS_EVENT_PIN_CHECK_START &&
+         event->type <= MTLS_EVENT_PIN_CHECK_FAILURE) ||
+        (event->type >= MTLS_EVENT_HSM_INIT_START && event->type <= MTLS_EVENT_HSM_KEY_LOADED) ||
+        (event->type >= MTLS_EVENT_CT_CHECK_START && event->type <= MTLS_EVENT_CT_SCT_VALIDATED);
     if (!valid_event) {
         /* Invalid event type - skip emission to prevent callback issues.
          * This should never happen in normal operation, but protects against

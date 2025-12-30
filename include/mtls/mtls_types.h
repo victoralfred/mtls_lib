@@ -149,6 +149,11 @@ typedef enum mtls_event_type {
     MTLS_EVENT_CRL_DOWNLOAD_SUCCESS = 19,
     MTLS_EVENT_CRL_DOWNLOAD_FAILURE = 20,
 
+    /* Rate limiting events (21-23) */
+    MTLS_EVENT_RATE_LIMIT_CHECK = 21,
+    MTLS_EVENT_RATE_LIMIT_EXCEEDED = 22,
+    MTLS_EVENT_RATE_LIMIT_ALLOWED = 23,
+
     /* Certificate pinning events (60-62) */
     MTLS_EVENT_PIN_CHECK_START = 60,
     MTLS_EVENT_PIN_CHECK_SUCCESS = 61,

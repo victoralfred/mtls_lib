@@ -43,6 +43,7 @@ typedef struct mtls_hsm_ctx mtls_hsm_ctx;
  *
  * If both path and PEM are provided, PEM takes precedence.
  */
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 typedef struct mtls_config {
     /* CA certificate (required) */
     const char *ca_cert_path;   /* Path to CA certificate file */
@@ -123,6 +124,15 @@ typedef struct mtls_config {
     const char *hsm_pin;         /* PIN for login (NULL = use callback) */
     const char *hsm_engine_id;   /* ENGINE ID (for ENGINE mode) */
     mtls_hsm_ctx *hsm_ctx;       /* Pre-initialized HSM context (optional) */
+
+    /* Rate limiting configuration */
+    bool rate_limit_enabled;              /* Enable rate limiting */
+    uint64_t rate_limit_max_conn_per_sec; /* Global rate limit (0 = unlimited) */
+    uint64_t rate_limit_per_client;       /* Per-client rate limit (0 = unlimited) */
+    uint64_t rate_limit_burst_size;       /* Global burst allowance (default: 10) */
+    uint64_t rate_limit_per_client_burst; /* Per-client burst (default: 5) */
+    bool rate_limit_by_ip;                /* Use IP address as client ID (default: true) */
+    bool rate_limit_by_cn;                /* Use certificate CN as client ID */
 
     /* Observability */
     mtls_observers observers; /* Event callbacks */
