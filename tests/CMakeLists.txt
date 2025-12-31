@@ -81,6 +81,11 @@ if(UNIX)
     mtls_add_test(test_rate_limit)
 endif()
 
+# Deadline handling tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_deadline)
+endif()
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

@@ -76,6 +76,11 @@ pub enum EventType {
     RateLimitExceeded = 22,
     /// Rate limit allowed.
     RateLimitAllowed = 23,
+    // Deadline events (30-31)
+    /// Deadline-aware operation started.
+    DeadlineStart = 30,
+    /// Deadline exceeded.
+    DeadlineExceeded = 31,
     // Certificate Transparency events (80-83)
     /// CT check started.
     CtCheckStart = 80,
@@ -139,6 +144,8 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_ALLOWED => {
                 EventType::RateLimitAllowed
             }
+            mtls_sys::mtls_event_type::MTLS_EVENT_DEADLINE_START => EventType::DeadlineStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_DEADLINE_EXCEEDED => EventType::DeadlineExceeded,
         }
     }
 
@@ -155,6 +162,7 @@ impl EventType {
                 | EventType::HsmInitFailure
                 | EventType::CtCheckFailure
                 | EventType::RateLimitExceeded
+                | EventType::DeadlineExceeded
         )
     }
 
@@ -262,6 +270,14 @@ impl EventType {
                 | EventType::RateLimitAllowed
         )
     }
+
+    /// Check if this is a deadline event.
+    pub fn is_deadline(&self) -> bool {
+        matches!(
+            self,
+            EventType::DeadlineStart | EventType::DeadlineExceeded
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -301,6 +317,8 @@ impl std::fmt::Display for EventType {
             EventType::RateLimitCheck => "RateLimitCheck",
             EventType::RateLimitExceeded => "RateLimitExceeded",
             EventType::RateLimitAllowed => "RateLimitAllowed",
+            EventType::DeadlineStart => "DeadlineStart",
+            EventType::DeadlineExceeded => "DeadlineExceeded",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)
@@ -628,5 +646,23 @@ mod tests {
         assert_eq!(format!("{}", EventType::HsmInitSuccess), "HsmInitSuccess");
         assert_eq!(format!("{}", EventType::HsmInitFailure), "HsmInitFailure");
         assert_eq!(format!("{}", EventType::HsmKeyLoaded), "HsmKeyLoaded");
+    }
+
+    #[test]
+    fn test_deadline_event_categories() {
+        // Deadline events
+        assert!(EventType::DeadlineStart.is_deadline());
+        assert!(EventType::DeadlineExceeded.is_deadline());
+        assert!(!EventType::ConnectStart.is_deadline());
+
+        // Error categorization
+        assert!(EventType::DeadlineExceeded.is_error());
+        assert!(!EventType::DeadlineStart.is_error());
+    }
+
+    #[test]
+    fn test_deadline_event_display() {
+        assert_eq!(format!("{}", EventType::DeadlineStart), "DeadlineStart");
+        assert_eq!(format!("{}", EventType::DeadlineExceeded), "DeadlineExceeded");
     }
 }

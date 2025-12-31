@@ -100,15 +100,17 @@ const (
 	ErrRateLimitClient      ErrorCode = 505
 
 	// I/O errors (6xx)
-	ErrReadFailed       ErrorCode = 600
-	ErrWriteFailed      ErrorCode = 601
-	ErrConnectionClosed ErrorCode = 602
-	ErrConnectionReset  ErrorCode = 603
-	ErrReadTimeout      ErrorCode = 604
-	ErrWriteTimeout     ErrorCode = 605
-	ErrWouldBlock       ErrorCode = 606
-	ErrPartialWrite     ErrorCode = 607
-	ErrEOF              ErrorCode = 608
+	ErrReadFailed        ErrorCode = 600
+	ErrWriteFailed       ErrorCode = 601
+	ErrConnectionClosed  ErrorCode = 602
+	ErrConnectionReset   ErrorCode = 603
+	ErrReadTimeout       ErrorCode = 604
+	ErrWriteTimeout      ErrorCode = 605
+	ErrWouldBlock        ErrorCode = 606
+	ErrPartialWrite      ErrorCode = 607
+	ErrEOF               ErrorCode = 608
+	ErrDeadlineExceeded  ErrorCode = 609
+	ErrCancelled         ErrorCode = 610
 
 	// Internal/unknown errors (9xx)
 	ErrInternal       ErrorCode = 900
@@ -213,6 +215,12 @@ func (e *Error) IsRateLimit() bool {
 	return e.Code == ErrRateLimited ||
 		e.Code == ErrRateLimitGlobal ||
 		e.Code == ErrRateLimitClient
+}
+
+// IsDeadline returns true if this is a deadline/cancellation error.
+func (e *Error) IsDeadline() bool {
+	return e.Code == ErrDeadlineExceeded ||
+		e.Code == ErrCancelled
 }
 
 // HasTLSError returns true if this error contains OpenSSL error information.
@@ -328,6 +336,14 @@ func IsRecoverableError(err error) bool {
 func IsRateLimitError(err error) bool {
 	if e, ok := err.(*Error); ok {
 		return e.IsRateLimit()
+	}
+	return false
+}
+
+// IsDeadlineError returns true if err is an mTLS deadline/cancellation error.
+func IsDeadlineError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsDeadline()
 	}
 	return false
 }

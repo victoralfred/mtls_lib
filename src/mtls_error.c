@@ -275,6 +275,10 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_PARTIAL_WRITE";
     case MTLS_ERR_EOF:
         return "MTLS_ERR_EOF";
+    case MTLS_ERR_DEADLINE_EXCEEDED:
+        return "MTLS_ERR_DEADLINE_EXCEEDED";
+    case MTLS_ERR_CANCELLED:
+        return "MTLS_ERR_CANCELLED";
 
     /* Internal errors */
     case MTLS_ERR_INTERNAL:

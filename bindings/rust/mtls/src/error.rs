@@ -114,6 +114,8 @@ pub enum ErrorCode {
     WouldBlock = 606,
     PartialWrite = 607,
     Eof = 608,
+    DeadlineExceeded = 609,
+    Cancelled = 610,
 
     // Internal errors (9xx)
     Internal = 900,
@@ -217,6 +219,8 @@ impl ErrorCode {
             606 => ErrorCode::WouldBlock,
             607 => ErrorCode::PartialWrite,
             608 => ErrorCode::Eof,
+            609 => ErrorCode::DeadlineExceeded,
+            610 => ErrorCode::Cancelled,
             // Internal errors
             900 => ErrorCode::Internal,
             901 => ErrorCode::NotImplemented,
@@ -345,6 +349,11 @@ impl ErrorCode {
         )
     }
 
+    /// Returns true if this is a deadline/cancellation error.
+    pub fn is_deadline(&self) -> bool {
+        matches!(self, ErrorCode::DeadlineExceeded | ErrorCode::Cancelled)
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -429,6 +438,8 @@ impl ErrorCode {
             ErrorCode::WouldBlock => "WOULD_BLOCK",
             ErrorCode::PartialWrite => "PARTIAL_WRITE",
             ErrorCode::Eof => "EOF",
+            ErrorCode::DeadlineExceeded => "DEADLINE_EXCEEDED",
+            ErrorCode::Cancelled => "CANCELLED",
             ErrorCode::Internal => "INTERNAL",
             ErrorCode::NotImplemented => "NOT_IMPLEMENTED",
             ErrorCode::ContextCreationFailed => "CONTEXT_CREATION_FAILED",
@@ -637,6 +648,11 @@ impl Error {
     /// Returns true if this is a rate limiting error.
     pub fn is_rate_limit(&self) -> bool {
         self.code.is_rate_limit()
+    }
+
+    /// Returns true if this is a deadline/cancellation error.
+    pub fn is_deadline(&self) -> bool {
+        self.code.is_deadline()
     }
 }
 

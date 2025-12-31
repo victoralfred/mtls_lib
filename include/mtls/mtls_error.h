@@ -121,6 +121,8 @@ typedef enum mtls_error_code {
     MTLS_ERR_WOULD_BLOCK = 606,
     MTLS_ERR_PARTIAL_WRITE = 607,
     MTLS_ERR_EOF = 608,
+    MTLS_ERR_DEADLINE_EXCEEDED = 609,
+    MTLS_ERR_CANCELLED = 610,
 
     /* Internal/unknown errors (9xx) */
     MTLS_ERR_INTERNAL = 900,

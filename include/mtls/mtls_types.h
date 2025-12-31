@@ -18,6 +18,8 @@
 #if defined(_WIN32)
 #    include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
+#else
+#    include <sys/types.h>
 #endif
 
 #ifdef __cplusplus
@@ -153,6 +155,10 @@ typedef enum mtls_event_type {
     MTLS_EVENT_RATE_LIMIT_CHECK = 21,
     MTLS_EVENT_RATE_LIMIT_EXCEEDED = 22,
     MTLS_EVENT_RATE_LIMIT_ALLOWED = 23,
+
+    /* Deadline events (30-31) */
+    MTLS_EVENT_DEADLINE_START = 30,
+    MTLS_EVENT_DEADLINE_EXCEEDED = 31,
 
     /* Certificate pinning events (60-62) */
     MTLS_EVENT_PIN_CHECK_START = 60,

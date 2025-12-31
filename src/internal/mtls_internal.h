@@ -139,10 +139,11 @@ static inline void mtls_emit_event(mtls_ctx *ctx, const mtls_event *event)
     /* Validate event data before invoking callback to prevent callback issues
      * from invalid event types or corrupted data.
      * Valid ranges: Connection (1-10), OCSP/CRL (11-20), Rate Limit (21-23),
-     *               Pinning (60-62), HSM (70-73), CT (80-83)
+     *               Deadline (30-31), Pinning (60-62), HSM (70-73), CT (80-83)
      */
     bool valid_event =
         (event->type >= MTLS_EVENT_CONNECT_START && event->type <= MTLS_EVENT_RATE_LIMIT_ALLOWED) ||
+        (event->type >= MTLS_EVENT_DEADLINE_START && event->type <= MTLS_EVENT_DEADLINE_EXCEEDED) ||
         (event->type >= MTLS_EVENT_PIN_CHECK_START &&
          event->type <= MTLS_EVENT_PIN_CHECK_FAILURE) ||
         (event->type >= MTLS_EVENT_HSM_INIT_START && event->type <= MTLS_EVENT_HSM_KEY_LOADED) ||

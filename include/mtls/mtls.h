@@ -38,6 +38,7 @@
 #include "mtls_types.h"
 #include "mtls_error.h"
 #include "mtls_config.h"
+#include "mtls_deadline.h"
 
 #ifdef __cplusplus
 extern "C" {

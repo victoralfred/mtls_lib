@@ -41,6 +41,14 @@ const (
 	EventRateLimitAllowed EventType = 23
 )
 
+// Deadline events (30-31)
+const (
+	// EventDeadlineStart is emitted when a deadline-aware operation starts.
+	EventDeadlineStart EventType = 30
+	// EventDeadlineExceeded is emitted when a deadline is exceeded.
+	EventDeadlineExceeded EventType = 31
+)
+
 // OCSP/CRL events (11-20)
 const (
 	// EventOCSPCheckStart is emitted when OCSP check begins.
@@ -170,6 +178,10 @@ func (t EventType) String() string {
 		return "RateLimitExceeded"
 	case EventRateLimitAllowed:
 		return "RateLimitAllowed"
+	case EventDeadlineStart:
+		return "DeadlineStart"
+	case EventDeadlineExceeded:
+		return "DeadlineExceeded"
 	default:
 		return "Unknown"
 	}
@@ -190,7 +202,7 @@ func (t EventType) IsFailure() bool {
 		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
 		t == EventCRLDownloadFailure || t == EventPinCheckFailure ||
 		t == EventHSMInitFailure || t == EventCTCheckFailure ||
-		t == EventRateLimitExceeded
+		t == EventRateLimitExceeded || t == EventDeadlineExceeded
 }
 
 // IsIO returns true if the event type is an I/O event.
@@ -231,6 +243,11 @@ func (t EventType) IsCT() bool {
 // IsRateLimit returns true if the event type is a rate limiting event.
 func (t EventType) IsRateLimit() bool {
 	return t >= EventRateLimitCheck && t <= EventRateLimitAllowed
+}
+
+// IsDeadline returns true if the event type is a deadline event.
+func (t EventType) IsDeadline() bool {
+	return t >= EventDeadlineStart && t <= EventDeadlineExceeded
 }
 
 // Event represents an mTLS event emitted by the library.

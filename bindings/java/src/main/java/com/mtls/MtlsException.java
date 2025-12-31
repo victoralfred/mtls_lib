@@ -72,6 +72,12 @@ public class MtlsException extends Exception {
     /** Per-client rate limit exceeded */
     public static final int ERR_RATE_LIMIT_CLIENT = 505;
 
+    // Deadline error code constants
+    /** Deadline exceeded */
+    public static final int ERR_DEADLINE_EXCEEDED = 609;
+    /** Operation cancelled */
+    public static final int ERR_CANCELLED = 610;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -283,6 +289,15 @@ public class MtlsException extends Exception {
      */
     public boolean isRateLimitError() {
         return errorCode >= ERR_RATE_LIMITED && errorCode <= ERR_RATE_LIMIT_CLIENT;
+    }
+
+    /**
+     * Check if this is a deadline/cancellation error.
+     *
+     * @return true if this is a deadline error
+     */
+    public boolean isDeadlineError() {
+        return errorCode >= ERR_DEADLINE_EXCEEDED && errorCode <= ERR_CANCELLED;
     }
 
     @Override
