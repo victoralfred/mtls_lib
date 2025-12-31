@@ -12,7 +12,10 @@ A minimal, secure, and auditable mTLS (mutual TLS) transport library with cross-
 - **Emergency kill-switch**: Immediate global connection blocking
 - **Observability layer**: Real-time event tracking, metrics collection, microsecond-precision timing
 - **Structured errors**: Categorized error codes for debugging
-- **Language bindings**: Go, Rust, Java (planned)
+- **Async I/O**: Non-blocking operations with callback-based event loop
+- **Connection pooling**: Efficient connection reuse with health checks
+- **Deadline handling**: Operation timeouts with cancellation support
+- **Language bindings**: Go, Rust, Java
 
 ## Security
 
@@ -413,6 +416,77 @@ mtls_set_observers(ctx, &observers);
 - `MTLS_EVENT_KILL_SWITCH_TRIGGERED` - Emergency kill-switch activation
 
 All events include microsecond-precision timestamps and durations where applicable. See `examples/observability_demo.c` for a complete metrics tracking implementation.
+
+### Async I/O
+
+For high-performance applications, use the async I/O API with non-blocking operations:
+
+```c
+#include <mtls/mtls.h>
+#include <mtls/mtls_async.h>
+
+// Callback for async connect
+void on_connect(mtls_conn *conn, mtls_err *err, void *userdata) {
+    if (conn) {
+        printf("Connected successfully!\n");
+        // Start async read...
+    } else {
+        printf("Connection failed: %s\n", err->message);
+    }
+}
+
+// Callback for async read
+void on_read(mtls_conn *conn, ssize_t result, mtls_err *err, void *userdata) {
+    if (result > 0) {
+        char *buf = (char *)userdata;
+        printf("Received %zd bytes: %s\n", result, buf);
+    } else if (result < 0) {
+        printf("Read error: %s\n", err->message);
+    }
+}
+
+int main(void) {
+    mtls_err err;
+    mtls_err_init(&err);
+
+    // Create context with config...
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
+
+    // Create async context
+    mtls_async_ctx *async_ctx;
+    if (mtls_async_ctx_create(&async_ctx, ctx, &err) != 0) {
+        fprintf(stderr, "Failed to create async context\n");
+        return 1;
+    }
+
+    // Start async connect
+    mtls_async_op *op = mtls_async_connect(async_ctx, "server:8443",
+                                            on_connect, NULL, &err);
+
+    // Run event loop
+    while (mtls_async_pending_count(async_ctx) > 0) {
+        mtls_async_poll(async_ctx, 1000, &err);  // 1 second timeout
+    }
+
+    // Cleanup
+    mtls_async_ctx_destroy(async_ctx);
+    mtls_ctx_free(ctx);
+    return 0;
+}
+```
+
+**Async API Functions:**
+- `mtls_async_ctx_create()` / `_destroy()` - Create/destroy async context
+- `mtls_async_connect()` - Non-blocking connect with callback
+- `mtls_async_read()` / `_write()` - Non-blocking I/O with callbacks
+- `mtls_async_close()` - Non-blocking close with callback
+- `mtls_async_poll()` - Process pending events
+- `mtls_async_wakeup()` - Wake up poll from another thread
+- `mtls_async_op_cancel()` - Cancel pending operation
+
+**Async Event Types:**
+- `MTLS_EVENT_ASYNC_CONNECT_START` / `_SUCCESS` / `_FAILURE` - Async connect lifecycle
+- `MTLS_EVENT_ASYNC_OP_CANCELLED` - Operation was cancelled
 
 ## Error Handling
 
