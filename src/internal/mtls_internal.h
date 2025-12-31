@@ -84,6 +84,23 @@ SSL_CTX *mtls_tls_get_ssl_ctx(void *tls_ctx); // NOLINT(misc-include-cleaner)
 /* Note: mtls_validate_peer_sans is now in public API (mtls.h) */
 /* Note: Other identity functions are declared in public API (mtls.h) */
 
+/**
+ * Get the underlying socket file descriptor from a connection
+ *
+ * This is an internal function for use by the async module to access
+ * the socket fd for event loop registration.
+ *
+ * @param conn Connection to get fd from
+ * @return Socket file descriptor, or -1 if invalid
+ */
+static inline int mtls_internal_get_socket_fd(const mtls_conn *conn)
+{
+    if (!conn) {
+        return -1;
+    }
+    return (int)conn->sock;
+}
+
 /*
  * Helper function to emit observability events
  *
@@ -146,6 +163,8 @@ static inline void mtls_emit_event(mtls_ctx *ctx, const mtls_event *event)
         (event->type >= MTLS_EVENT_DEADLINE_START && event->type <= MTLS_EVENT_DEADLINE_EXCEEDED) ||
         (event->type >= MTLS_EVENT_POOL_ACQUIRE_START &&
          event->type <= MTLS_EVENT_POOL_CONN_CLOSED) ||
+        (event->type >= MTLS_EVENT_ASYNC_CONNECT_START &&
+         event->type <= MTLS_EVENT_ASYNC_OP_CANCELLED) ||
         (event->type >= MTLS_EVENT_PIN_CHECK_START &&
          event->type <= MTLS_EVENT_PIN_CHECK_FAILURE) ||
         (event->type >= MTLS_EVENT_HSM_INIT_START && event->type <= MTLS_EVENT_HSM_KEY_LOADED) ||

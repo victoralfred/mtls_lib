@@ -91,6 +91,11 @@ if(UNIX)
     mtls_add_test(test_pool)
 endif()
 
+# Async I/O tests (epoll-dependent, Linux only)
+if(MTLS_PLATFORM_LINUX)
+    mtls_add_test(test_async)
+endif()
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

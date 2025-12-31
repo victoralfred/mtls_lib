@@ -111,6 +111,18 @@ const (
 	EventHSMKeyLoaded EventType = 73
 )
 
+// Async I/O events (50-53)
+const (
+	// EventAsyncConnectStart is emitted when async connect begins.
+	EventAsyncConnectStart EventType = 50
+	// EventAsyncConnectSuccess is emitted when async connect succeeds.
+	EventAsyncConnectSuccess EventType = 51
+	// EventAsyncConnectFailure is emitted when async connect fails.
+	EventAsyncConnectFailure EventType = 52
+	// EventAsyncOpCancelled is emitted when an async operation is cancelled.
+	EventAsyncOpCancelled EventType = 53
+)
+
 // Certificate Transparency events (80-83)
 const (
 	// EventCTCheckStart is emitted when CT verification begins.
@@ -210,6 +222,14 @@ func (t EventType) String() string {
 		return "PoolConnCreated"
 	case EventPoolConnClosed:
 		return "PoolConnClosed"
+	case EventAsyncConnectStart:
+		return "AsyncConnectStart"
+	case EventAsyncConnectSuccess:
+		return "AsyncConnectSuccess"
+	case EventAsyncConnectFailure:
+		return "AsyncConnectFailure"
+	case EventAsyncOpCancelled:
+		return "AsyncOpCancelled"
 	default:
 		return "Unknown"
 	}
@@ -221,7 +241,8 @@ func (t EventType) IsSuccess() bool {
 		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
 		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess ||
 		t == EventPinCheckSuccess || t == EventHSMInitSuccess ||
-		t == EventCTCheckSuccess || t == EventRateLimitAllowed
+		t == EventCTCheckSuccess || t == EventRateLimitAllowed ||
+		t == EventAsyncConnectSuccess
 }
 
 // IsFailure returns true if the event type indicates failure.
@@ -230,7 +251,13 @@ func (t EventType) IsFailure() bool {
 		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
 		t == EventCRLDownloadFailure || t == EventPinCheckFailure ||
 		t == EventHSMInitFailure || t == EventCTCheckFailure ||
-		t == EventRateLimitExceeded || t == EventDeadlineExceeded
+		t == EventRateLimitExceeded || t == EventDeadlineExceeded ||
+		t == EventAsyncConnectFailure || t == EventAsyncOpCancelled
+}
+
+// IsAsync returns true if this is an async I/O event.
+func (t EventType) IsAsync() bool {
+	return t >= EventAsyncConnectStart && t <= EventAsyncOpCancelled
 }
 
 // IsIO returns true if the event type is an I/O event.

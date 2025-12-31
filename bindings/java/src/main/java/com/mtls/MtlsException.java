@@ -88,6 +88,14 @@ public class MtlsException extends Exception {
     /** Connection is unhealthy */
     public static final int ERR_CONN_UNHEALTHY = 215;
 
+    // Async I/O error code constants
+    /** Async operation pending */
+    public static final int ERR_ASYNC_PENDING = 611;
+    /** Async operation was cancelled */
+    public static final int ERR_ASYNC_CANCELLED = 612;
+    /** Event loop error */
+    public static final int ERR_EVENTLOOP_ERROR = 613;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -317,6 +325,15 @@ public class MtlsException extends Exception {
      */
     public boolean isPoolError() {
         return errorCode >= ERR_POOL_EXHAUSTED && errorCode <= ERR_CONN_UNHEALTHY;
+    }
+
+    /**
+     * Check if this is an async I/O error.
+     *
+     * @return true if this is an async error
+     */
+    public boolean isAsyncError() {
+        return errorCode >= ERR_ASYNC_PENDING && errorCode <= ERR_EVENTLOOP_ERROR;
     }
 
     @Override

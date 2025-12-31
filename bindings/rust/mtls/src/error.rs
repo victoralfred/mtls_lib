@@ -120,6 +120,9 @@ pub enum ErrorCode {
     Eof = 608,
     DeadlineExceeded = 609,
     Cancelled = 610,
+    AsyncPending = 611,
+    AsyncCancelled = 612,
+    EventLoopError = 613,
 
     // Internal errors (9xx)
     Internal = 900,
@@ -229,6 +232,9 @@ impl ErrorCode {
             608 => ErrorCode::Eof,
             609 => ErrorCode::DeadlineExceeded,
             610 => ErrorCode::Cancelled,
+            611 => ErrorCode::AsyncPending,
+            612 => ErrorCode::AsyncCancelled,
+            613 => ErrorCode::EventLoopError,
             // Internal errors
             900 => ErrorCode::Internal,
             901 => ErrorCode::NotImplemented,
@@ -373,6 +379,14 @@ impl ErrorCode {
         )
     }
 
+    /// Returns true if this is an async I/O error.
+    pub fn is_async(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::AsyncPending | ErrorCode::AsyncCancelled | ErrorCode::EventLoopError
+        )
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -463,6 +477,9 @@ impl ErrorCode {
             ErrorCode::Eof => "EOF",
             ErrorCode::DeadlineExceeded => "DEADLINE_EXCEEDED",
             ErrorCode::Cancelled => "CANCELLED",
+            ErrorCode::AsyncPending => "ASYNC_PENDING",
+            ErrorCode::AsyncCancelled => "ASYNC_CANCELLED",
+            ErrorCode::EventLoopError => "EVENTLOOP_ERROR",
             ErrorCode::Internal => "INTERNAL",
             ErrorCode::NotImplemented => "NOT_IMPLEMENTED",
             ErrorCode::ContextCreationFailed => "CONTEXT_CREATION_FAILED",

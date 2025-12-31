@@ -94,6 +94,15 @@ pub enum EventType {
     PoolConnCreated = 44,
     /// Connection closed in pool.
     PoolConnClosed = 45,
+    // Async I/O events (50-53)
+    /// Async connect started.
+    AsyncConnectStart = 50,
+    /// Async connect succeeded.
+    AsyncConnectSuccess = 51,
+    /// Async connect failed.
+    AsyncConnectFailure = 52,
+    /// Async operation cancelled.
+    AsyncOpCancelled = 53,
     // Certificate Transparency events (80-83)
     /// CT check started.
     CtCheckStart = 80,
@@ -169,6 +178,18 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_POOL_RELEASE => EventType::PoolRelease,
             mtls_sys::mtls_event_type::MTLS_EVENT_POOL_CONN_CREATED => EventType::PoolConnCreated,
             mtls_sys::mtls_event_type::MTLS_EVENT_POOL_CONN_CLOSED => EventType::PoolConnClosed,
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_CONNECT_START => {
+                EventType::AsyncConnectStart
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_CONNECT_SUCCESS => {
+                EventType::AsyncConnectSuccess
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_CONNECT_FAILURE => {
+                EventType::AsyncConnectFailure
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_OP_CANCELLED => {
+                EventType::AsyncOpCancelled
+            }
         }
     }
 
@@ -187,6 +208,7 @@ impl EventType {
                 | EventType::RateLimitExceeded
                 | EventType::DeadlineExceeded
                 | EventType::PoolAcquireTimeout
+                | EventType::AsyncConnectFailure
         )
     }
 
@@ -205,6 +227,7 @@ impl EventType {
                 | EventType::CtCheckSuccess
                 | EventType::RateLimitAllowed
                 | EventType::PoolAcquireSuccess
+                | EventType::AsyncConnectSuccess
         )
     }
 
@@ -316,6 +339,17 @@ impl EventType {
                 | EventType::PoolConnClosed
         )
     }
+
+    /// Check if this is an async I/O event.
+    pub fn is_async(&self) -> bool {
+        matches!(
+            self,
+            EventType::AsyncConnectStart
+                | EventType::AsyncConnectSuccess
+                | EventType::AsyncConnectFailure
+                | EventType::AsyncOpCancelled
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -363,6 +397,10 @@ impl std::fmt::Display for EventType {
             EventType::PoolRelease => "PoolRelease",
             EventType::PoolConnCreated => "PoolConnCreated",
             EventType::PoolConnClosed => "PoolConnClosed",
+            EventType::AsyncConnectStart => "AsyncConnectStart",
+            EventType::AsyncConnectSuccess => "AsyncConnectSuccess",
+            EventType::AsyncConnectFailure => "AsyncConnectFailure",
+            EventType::AsyncOpCancelled => "AsyncOpCancelled",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)
@@ -736,5 +774,29 @@ mod tests {
         assert_eq!(format!("{}", EventType::PoolRelease), "PoolRelease");
         assert_eq!(format!("{}", EventType::PoolConnCreated), "PoolConnCreated");
         assert_eq!(format!("{}", EventType::PoolConnClosed), "PoolConnClosed");
+    }
+
+    #[test]
+    fn test_async_event_categories() {
+        // Async events
+        assert!(EventType::AsyncConnectStart.is_async());
+        assert!(EventType::AsyncConnectSuccess.is_async());
+        assert!(EventType::AsyncConnectFailure.is_async());
+        assert!(EventType::AsyncOpCancelled.is_async());
+        assert!(!EventType::ConnectStart.is_async());
+
+        // Success/error categorization
+        assert!(EventType::AsyncConnectSuccess.is_success());
+        assert!(EventType::AsyncConnectFailure.is_error());
+        assert!(!EventType::AsyncConnectStart.is_success());
+        assert!(!EventType::AsyncConnectStart.is_error());
+    }
+
+    #[test]
+    fn test_async_event_display() {
+        assert_eq!(format!("{}", EventType::AsyncConnectStart), "AsyncConnectStart");
+        assert_eq!(format!("{}", EventType::AsyncConnectSuccess), "AsyncConnectSuccess");
+        assert_eq!(format!("{}", EventType::AsyncConnectFailure), "AsyncConnectFailure");
+        assert_eq!(format!("{}", EventType::AsyncOpCancelled), "AsyncOpCancelled");
     }
 }

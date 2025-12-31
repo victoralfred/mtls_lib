@@ -141,6 +141,7 @@ set(MTLS_SOURCES
     src/mtls_rate_limit.c
     src/mtls_deadline.c
     src/mtls_pool.c
+    src/mtls_async.c
 )
 
 # Platform-specific sources

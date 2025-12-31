@@ -287,6 +287,12 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_DEADLINE_EXCEEDED";
     case MTLS_ERR_CANCELLED:
         return "MTLS_ERR_CANCELLED";
+    case MTLS_ERR_ASYNC_PENDING:
+        return "MTLS_ERR_ASYNC_PENDING";
+    case MTLS_ERR_ASYNC_CANCELLED:
+        return "MTLS_ERR_ASYNC_CANCELLED";
+    case MTLS_ERR_EVENTLOOP_ERROR:
+        return "MTLS_ERR_EVENTLOOP_ERROR";
 
     /* Internal errors */
     case MTLS_ERR_INTERNAL:

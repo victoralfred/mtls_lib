@@ -115,6 +115,9 @@ const (
 	ErrEOF               ErrorCode = 608
 	ErrDeadlineExceeded  ErrorCode = 609
 	ErrCancelled         ErrorCode = 610
+	ErrAsyncPending      ErrorCode = 611
+	ErrAsyncCancelled    ErrorCode = 612
+	ErrEventLoopError    ErrorCode = 613
 
 	// Internal/unknown errors (9xx)
 	ErrInternal       ErrorCode = 900
@@ -230,6 +233,11 @@ func (e *Error) IsDeadline() bool {
 // IsPool returns true if this is a connection pool error.
 func (e *Error) IsPool() bool {
 	return e.Code >= ErrPoolExhausted && e.Code <= ErrConnUnhealthy
+}
+
+// IsAsync returns true if this is an async I/O error.
+func (e *Error) IsAsync() bool {
+	return e.Code >= ErrAsyncPending && e.Code <= ErrEventLoopError
 }
 
 // HasTLSError returns true if this error contains OpenSSL error information.
@@ -361,6 +369,14 @@ func IsDeadlineError(err error) bool {
 func IsPoolError(err error) bool {
 	if e, ok := err.(*Error); ok {
 		return e.IsPool()
+	}
+	return false
+}
+
+// IsAsyncError returns true if err is an mTLS async I/O error.
+func IsAsyncError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsAsync()
 	}
 	return false
 }
