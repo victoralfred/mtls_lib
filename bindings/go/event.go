@@ -49,6 +49,22 @@ const (
 	EventDeadlineExceeded EventType = 31
 )
 
+// Connection pool events (40-45)
+const (
+	// EventPoolAcquireStart is emitted when pool acquire begins.
+	EventPoolAcquireStart EventType = 40
+	// EventPoolAcquireSuccess is emitted when pool acquire succeeds.
+	EventPoolAcquireSuccess EventType = 41
+	// EventPoolAcquireTimeout is emitted when pool acquire times out.
+	EventPoolAcquireTimeout EventType = 42
+	// EventPoolRelease is emitted when a connection is released to pool.
+	EventPoolRelease EventType = 43
+	// EventPoolConnCreated is emitted when a new pooled connection is created.
+	EventPoolConnCreated EventType = 44
+	// EventPoolConnClosed is emitted when a pooled connection is closed.
+	EventPoolConnClosed EventType = 45
+)
+
 // OCSP/CRL events (11-20)
 const (
 	// EventOCSPCheckStart is emitted when OCSP check begins.
@@ -182,6 +198,18 @@ func (t EventType) String() string {
 		return "DeadlineStart"
 	case EventDeadlineExceeded:
 		return "DeadlineExceeded"
+	case EventPoolAcquireStart:
+		return "PoolAcquireStart"
+	case EventPoolAcquireSuccess:
+		return "PoolAcquireSuccess"
+	case EventPoolAcquireTimeout:
+		return "PoolAcquireTimeout"
+	case EventPoolRelease:
+		return "PoolRelease"
+	case EventPoolConnCreated:
+		return "PoolConnCreated"
+	case EventPoolConnClosed:
+		return "PoolConnClosed"
 	default:
 		return "Unknown"
 	}
@@ -248,6 +276,11 @@ func (t EventType) IsRateLimit() bool {
 // IsDeadline returns true if the event type is a deadline event.
 func (t EventType) IsDeadline() bool {
 	return t >= EventDeadlineStart && t <= EventDeadlineExceeded
+}
+
+// IsPool returns true if the event type is a connection pool event.
+func (t EventType) IsPool() bool {
+	return t >= EventPoolAcquireStart && t <= EventPoolConnClosed
 }
 
 // Event represents an mTLS event emitted by the library.

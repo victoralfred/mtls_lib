@@ -49,8 +49,12 @@ const (
 	ErrConnectionRefused  ErrorCode = 207
 	ErrNetworkUnreachable ErrorCode = 208
 	ErrHostUnreachable    ErrorCode = 209
-	ErrAddressInUse       ErrorCode = 210
-	ErrInvalidAddress     ErrorCode = 211
+	ErrAddressInUse        ErrorCode = 210
+	ErrInvalidAddress      ErrorCode = 211
+	ErrPoolExhausted       ErrorCode = 212
+	ErrPoolAcquireTimeout  ErrorCode = 213
+	ErrPoolClosed          ErrorCode = 214
+	ErrConnUnhealthy       ErrorCode = 215
 
 	// TLS/certificate errors (3xx)
 	ErrTLSInitFailed        ErrorCode = 300
@@ -223,6 +227,11 @@ func (e *Error) IsDeadline() bool {
 		e.Code == ErrCancelled
 }
 
+// IsPool returns true if this is a connection pool error.
+func (e *Error) IsPool() bool {
+	return e.Code >= ErrPoolExhausted && e.Code <= ErrConnUnhealthy
+}
+
 // HasTLSError returns true if this error contains OpenSSL error information.
 func (e *Error) HasTLSError() bool {
 	return e.TLSError != 0
@@ -344,6 +353,14 @@ func IsRateLimitError(err error) bool {
 func IsDeadlineError(err error) bool {
 	if e, ok := err.(*Error); ok {
 		return e.IsDeadline()
+	}
+	return false
+}
+
+// IsPoolError returns true if err is an mTLS connection pool error.
+func IsPoolError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsPool()
 	}
 	return false
 }

@@ -56,6 +56,10 @@ pub enum ErrorCode {
     HostUnreachable = 209,
     AddressInUse = 210,
     InvalidAddress = 211,
+    PoolExhausted = 212,
+    PoolAcquireTimeout = 213,
+    PoolClosed = 214,
+    ConnUnhealthy = 215,
 
     // TLS errors (3xx)
     TlsInitFailed = 300,
@@ -165,6 +169,10 @@ impl ErrorCode {
             209 => ErrorCode::HostUnreachable,
             210 => ErrorCode::AddressInUse,
             211 => ErrorCode::InvalidAddress,
+            212 => ErrorCode::PoolExhausted,
+            213 => ErrorCode::PoolAcquireTimeout,
+            214 => ErrorCode::PoolClosed,
+            215 => ErrorCode::ConnUnhealthy,
             // TLS errors
             300 => ErrorCode::TlsInitFailed,
             301 => ErrorCode::TlsHandshakeFailed,
@@ -354,6 +362,17 @@ impl ErrorCode {
         matches!(self, ErrorCode::DeadlineExceeded | ErrorCode::Cancelled)
     }
 
+    /// Returns true if this is a connection pool error.
+    pub fn is_pool(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::PoolExhausted
+                | ErrorCode::PoolAcquireTimeout
+                | ErrorCode::PoolClosed
+                | ErrorCode::ConnUnhealthy
+        )
+    }
+
     /// Returns the error code name as a string.
     pub fn name(&self) -> &'static str {
         match self {
@@ -388,6 +407,10 @@ impl ErrorCode {
             ErrorCode::HostUnreachable => "HOST_UNREACHABLE",
             ErrorCode::AddressInUse => "ADDRESS_IN_USE",
             ErrorCode::InvalidAddress => "INVALID_ADDRESS",
+            ErrorCode::PoolExhausted => "POOL_EXHAUSTED",
+            ErrorCode::PoolAcquireTimeout => "POOL_ACQUIRE_TIMEOUT",
+            ErrorCode::PoolClosed => "POOL_CLOSED",
+            ErrorCode::ConnUnhealthy => "CONN_UNHEALTHY",
             ErrorCode::TlsInitFailed => "TLS_INIT_FAILED",
             ErrorCode::TlsHandshakeFailed => "TLS_HANDSHAKE_FAILED",
             ErrorCode::TlsVersionMismatch => "TLS_VERSION_MISMATCH",
@@ -654,6 +677,11 @@ impl Error {
     pub fn is_deadline(&self) -> bool {
         self.code.is_deadline()
     }
+
+    /// Returns true if this is a connection pool error.
+    pub fn is_pool(&self) -> bool {
+        self.code.is_pool()
+    }
 }
 
 impl fmt::Display for Error {
@@ -854,5 +882,37 @@ mod tests {
         assert_eq!(ErrorCode::HsmOperationFailed.name(), "HSM_OPERATION_FAILED");
         assert_eq!(ErrorCode::HsmSlotNotFound.name(), "HSM_SLOT_NOT_FOUND");
         assert_eq!(ErrorCode::HsmModuleNotFound.name(), "HSM_MODULE_NOT_FOUND");
+    }
+
+    #[test]
+    fn test_pool_error_codes() {
+        // Test pool error categorization
+        assert!(ErrorCode::PoolExhausted.is_pool());
+        assert!(ErrorCode::PoolAcquireTimeout.is_pool());
+        assert!(ErrorCode::PoolClosed.is_pool());
+        assert!(ErrorCode::ConnUnhealthy.is_pool());
+        assert!(!ErrorCode::ConnectFailed.is_pool());
+
+        // All pool errors are network errors (2xx range)
+        assert!(ErrorCode::PoolExhausted.is_network());
+        assert!(ErrorCode::PoolAcquireTimeout.is_network());
+        assert!(ErrorCode::PoolClosed.is_network());
+        assert!(ErrorCode::ConnUnhealthy.is_network());
+    }
+
+    #[test]
+    fn test_pool_error_from_i32() {
+        assert_eq!(ErrorCode::from_i32(212), ErrorCode::PoolExhausted);
+        assert_eq!(ErrorCode::from_i32(213), ErrorCode::PoolAcquireTimeout);
+        assert_eq!(ErrorCode::from_i32(214), ErrorCode::PoolClosed);
+        assert_eq!(ErrorCode::from_i32(215), ErrorCode::ConnUnhealthy);
+    }
+
+    #[test]
+    fn test_pool_error_names() {
+        assert_eq!(ErrorCode::PoolExhausted.name(), "POOL_EXHAUSTED");
+        assert_eq!(ErrorCode::PoolAcquireTimeout.name(), "POOL_ACQUIRE_TIMEOUT");
+        assert_eq!(ErrorCode::PoolClosed.name(), "POOL_CLOSED");
+        assert_eq!(ErrorCode::ConnUnhealthy.name(), "CONN_UNHEALTHY");
     }
 }

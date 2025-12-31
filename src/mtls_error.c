@@ -167,6 +167,14 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_ADDRESS_IN_USE";
     case MTLS_ERR_INVALID_ADDRESS:
         return "MTLS_ERR_INVALID_ADDRESS";
+    case MTLS_ERR_POOL_EXHAUSTED:
+        return "MTLS_ERR_POOL_EXHAUSTED";
+    case MTLS_ERR_POOL_ACQUIRE_TIMEOUT:
+        return "MTLS_ERR_POOL_ACQUIRE_TIMEOUT";
+    case MTLS_ERR_POOL_CLOSED:
+        return "MTLS_ERR_POOL_CLOSED";
+    case MTLS_ERR_CONN_UNHEALTHY:
+        return "MTLS_ERR_CONN_UNHEALTHY";
 
     /* TLS errors */
     case MTLS_ERR_TLS_INIT_FAILED:

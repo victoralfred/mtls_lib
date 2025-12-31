@@ -78,6 +78,16 @@ public class MtlsException extends Exception {
     /** Operation cancelled */
     public static final int ERR_CANCELLED = 610;
 
+    // Connection pool error code constants
+    /** Connection pool exhausted */
+    public static final int ERR_POOL_EXHAUSTED = 212;
+    /** Pool acquire timed out */
+    public static final int ERR_POOL_ACQUIRE_TIMEOUT = 213;
+    /** Pool has been closed */
+    public static final int ERR_POOL_CLOSED = 214;
+    /** Connection is unhealthy */
+    public static final int ERR_CONN_UNHEALTHY = 215;
+
     /**
      * Error categories matching the C library classification.
      */
@@ -298,6 +308,15 @@ public class MtlsException extends Exception {
      */
     public boolean isDeadlineError() {
         return errorCode >= ERR_DEADLINE_EXCEEDED && errorCode <= ERR_CANCELLED;
+    }
+
+    /**
+     * Check if this is a connection pool error.
+     *
+     * @return true if this is a pool error
+     */
+    public boolean isPoolError() {
+        return errorCode >= ERR_POOL_EXHAUSTED && errorCode <= ERR_CONN_UNHEALTHY;
     }
 
     @Override

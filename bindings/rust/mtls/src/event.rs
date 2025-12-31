@@ -81,6 +81,19 @@ pub enum EventType {
     DeadlineStart = 30,
     /// Deadline exceeded.
     DeadlineExceeded = 31,
+    // Connection pool events (40-45)
+    /// Pool acquire started.
+    PoolAcquireStart = 40,
+    /// Pool acquire succeeded.
+    PoolAcquireSuccess = 41,
+    /// Pool acquire timed out.
+    PoolAcquireTimeout = 42,
+    /// Connection released to pool.
+    PoolRelease = 43,
+    /// Connection created in pool.
+    PoolConnCreated = 44,
+    /// Connection closed in pool.
+    PoolConnClosed = 45,
     // Certificate Transparency events (80-83)
     /// CT check started.
     CtCheckStart = 80,
@@ -146,6 +159,16 @@ impl EventType {
             }
             mtls_sys::mtls_event_type::MTLS_EVENT_DEADLINE_START => EventType::DeadlineStart,
             mtls_sys::mtls_event_type::MTLS_EVENT_DEADLINE_EXCEEDED => EventType::DeadlineExceeded,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_ACQUIRE_START => EventType::PoolAcquireStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_ACQUIRE_SUCCESS => {
+                EventType::PoolAcquireSuccess
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_ACQUIRE_TIMEOUT => {
+                EventType::PoolAcquireTimeout
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_RELEASE => EventType::PoolRelease,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_CONN_CREATED => EventType::PoolConnCreated,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_CONN_CLOSED => EventType::PoolConnClosed,
         }
     }
 
@@ -163,6 +186,7 @@ impl EventType {
                 | EventType::CtCheckFailure
                 | EventType::RateLimitExceeded
                 | EventType::DeadlineExceeded
+                | EventType::PoolAcquireTimeout
         )
     }
 
@@ -180,6 +204,7 @@ impl EventType {
                 | EventType::HsmInitSuccess
                 | EventType::CtCheckSuccess
                 | EventType::RateLimitAllowed
+                | EventType::PoolAcquireSuccess
         )
     }
 
@@ -278,6 +303,19 @@ impl EventType {
             EventType::DeadlineStart | EventType::DeadlineExceeded
         )
     }
+
+    /// Check if this is a connection pool event.
+    pub fn is_pool(&self) -> bool {
+        matches!(
+            self,
+            EventType::PoolAcquireStart
+                | EventType::PoolAcquireSuccess
+                | EventType::PoolAcquireTimeout
+                | EventType::PoolRelease
+                | EventType::PoolConnCreated
+                | EventType::PoolConnClosed
+        )
+    }
 }
 
 impl std::fmt::Display for EventType {
@@ -319,6 +357,12 @@ impl std::fmt::Display for EventType {
             EventType::RateLimitAllowed => "RateLimitAllowed",
             EventType::DeadlineStart => "DeadlineStart",
             EventType::DeadlineExceeded => "DeadlineExceeded",
+            EventType::PoolAcquireStart => "PoolAcquireStart",
+            EventType::PoolAcquireSuccess => "PoolAcquireSuccess",
+            EventType::PoolAcquireTimeout => "PoolAcquireTimeout",
+            EventType::PoolRelease => "PoolRelease",
+            EventType::PoolConnCreated => "PoolConnCreated",
+            EventType::PoolConnClosed => "PoolConnClosed",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)
@@ -664,5 +708,33 @@ mod tests {
     fn test_deadline_event_display() {
         assert_eq!(format!("{}", EventType::DeadlineStart), "DeadlineStart");
         assert_eq!(format!("{}", EventType::DeadlineExceeded), "DeadlineExceeded");
+    }
+
+    #[test]
+    fn test_pool_event_categories() {
+        // Pool events
+        assert!(EventType::PoolAcquireStart.is_pool());
+        assert!(EventType::PoolAcquireSuccess.is_pool());
+        assert!(EventType::PoolAcquireTimeout.is_pool());
+        assert!(EventType::PoolRelease.is_pool());
+        assert!(EventType::PoolConnCreated.is_pool());
+        assert!(EventType::PoolConnClosed.is_pool());
+        assert!(!EventType::ConnectStart.is_pool());
+
+        // Success/error categorization
+        assert!(EventType::PoolAcquireSuccess.is_success());
+        assert!(EventType::PoolAcquireTimeout.is_error());
+        assert!(!EventType::PoolRelease.is_success());
+        assert!(!EventType::PoolRelease.is_error());
+    }
+
+    #[test]
+    fn test_pool_event_display() {
+        assert_eq!(format!("{}", EventType::PoolAcquireStart), "PoolAcquireStart");
+        assert_eq!(format!("{}", EventType::PoolAcquireSuccess), "PoolAcquireSuccess");
+        assert_eq!(format!("{}", EventType::PoolAcquireTimeout), "PoolAcquireTimeout");
+        assert_eq!(format!("{}", EventType::PoolRelease), "PoolRelease");
+        assert_eq!(format!("{}", EventType::PoolConnCreated), "PoolConnCreated");
+        assert_eq!(format!("{}", EventType::PoolConnClosed), "PoolConnClosed");
     }
 }
