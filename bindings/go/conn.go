@@ -17,9 +17,10 @@ import (
 //
 // Conn implements io.Reader, io.Writer, and io.Closer interfaces.
 //
-// Conn is NOT safe for concurrent use from multiple goroutines.
-// For concurrent access, use external synchronization or create
-// separate connections.
+// Concurrent Read + Write on the same Conn from separate goroutines is safe:
+// OpenSSL serialises SSL_read and SSL_write independently, matching the
+// gRPC-go transport model. Concurrent Read + Read or Write + Write requires
+// external synchronisation.
 type Conn struct {
 	conn *C.mtls_conn
 	ctx  *Context

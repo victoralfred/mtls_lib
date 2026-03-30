@@ -7,6 +7,7 @@ import "C"
 
 import (
 	"context"
+	"log"
 	"net"
 	"runtime"
 	"sync"
@@ -40,6 +41,20 @@ func NewContext(config *Config) (*Context, error) {
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, err
+	}
+
+	// Warn when revocation checking is requested but not yet enforced at the
+	// C library level. Callers should use OCSPCheck/CRLCheck explicitly until
+	// automatic enforcement is implemented (see GitHub issue #12).
+	if config.EnableOCSP || config.RequireOCSP {
+		log.Println("mtls: WARNING: EnableOCSP/RequireOCSP is set but automatic OCSP " +
+			"enforcement is not yet implemented in the C library. " +
+			"Use Context.OCSPCheck() to validate certificates explicitly.")
+	}
+	if config.EnableCRL || config.RequireCRL {
+		log.Println("mtls: WARNING: EnableCRL/RequireCRL is set but automatic CRL " +
+			"enforcement is not yet implemented in the C library. " +
+			"Use Context.CRLCheck() to validate certificates explicitly.")
 	}
 
 	// Convert Go config to C config

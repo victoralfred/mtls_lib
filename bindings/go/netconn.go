@@ -1,7 +1,10 @@
 package mtls
 
 import (
+	"context"
+	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -14,15 +17,25 @@ type netAddr struct {
 func (a *netAddr) Network() string { return a.network }
 func (a *netAddr) String() string  { return a.addr }
 
+// maxWriteChunk is the maximum bytes per single C write call.
+// The C library rejects writes larger than MTLS_MAX_WRITE_BUFFER_SIZE (16 KB);
+// NetConn.Write silently chunks larger buffers to comply with the net.Conn contract.
+const maxWriteChunk = 16 * 1024
+
 // NetConn wraps a *Conn to implement the net.Conn interface.
 //
 // This allows mTLS connections to be used anywhere a net.Conn is accepted
 // (e.g., http.Server, grpc, etc.).
 //
-// SetDeadline / SetReadDeadline / SetWriteDeadline are not yet supported
-// by the underlying C library and return nil without effect.
+// Concurrent Read + Write (but not Read+Read or Write+Write) is safe:
+// the underlying OpenSSL SSL_read and SSL_write are independent operations
+// on separate locks inside OpenSSL, matching gRPC-go's transport model.
 type NetConn struct {
 	conn *Conn
+
+	deadlineMu    sync.RWMutex
+	readDeadline  time.Time
+	writeDeadline time.Time
 }
 
 // Ensure NetConn implements net.Conn.
@@ -38,9 +51,70 @@ func NewNetConn(conn *Conn) *NetConn {
 // Conn returns the underlying mTLS Conn.
 func (n *NetConn) Conn() *Conn { return n.conn }
 
-func (n *NetConn) Read(b []byte) (int, error)  { return n.conn.Read(b) }
-func (n *NetConn) Write(b []byte) (int, error) { return n.conn.Write(b) }
-func (n *NetConn) Close() error                { return n.conn.Close() }
+// Read reads from the connection, honouring any read deadline set via SetDeadline
+// or SetReadDeadline. Returns io.EOF on clean connection close.
+func (n *NetConn) Read(b []byte) (int, error) {
+	n.deadlineMu.RLock()
+	dl := n.readDeadline
+	n.deadlineMu.RUnlock()
+
+	if !dl.IsZero() {
+		d, err := NewDeadlineCtx(dl)
+		if err != nil {
+			return 0, context.DeadlineExceeded
+		}
+		defer d.Cancel()
+		nr, err := n.conn.ReadWithDeadline(b, d)
+		if nr == 0 && err == nil {
+			return 0, io.EOF
+		}
+		return nr, err
+	}
+	return n.conn.Read(b)
+}
+
+// Write writes to the connection, honouring any write deadline set via SetDeadline
+// or SetWriteDeadline. Large buffers are automatically chunked to satisfy the C
+// library's 16 KB per-write limit while preserving the net.Conn all-or-error contract.
+func (n *NetConn) Write(b []byte) (int, error) {
+	n.deadlineMu.RLock()
+	dl := n.writeDeadline
+	n.deadlineMu.RUnlock()
+
+	var d *DeadlineCtx
+	if !dl.IsZero() {
+		var err error
+		d, err = NewDeadlineCtx(dl)
+		if err != nil {
+			return 0, context.DeadlineExceeded
+		}
+		defer d.Cancel()
+	}
+
+	total := 0
+	for len(b) > 0 {
+		chunk := b
+		if len(chunk) > maxWriteChunk {
+			chunk = b[:maxWriteChunk]
+		}
+		var nw int
+		var err error
+		if d != nil {
+			nw, err = n.conn.WriteWithDeadline(chunk, d)
+		} else {
+			nw, err = n.conn.Write(chunk)
+		}
+		total += nw
+		b = b[nw:]
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// Close closes the connection.
+func (n *NetConn) Close() error { return n.conn.Close() }
 
 func (n *NetConn) LocalAddr() net.Addr {
 	addr, _ := n.conn.LocalAddr()
@@ -52,14 +126,32 @@ func (n *NetConn) RemoteAddr() net.Addr {
 	return &netAddr{addr: addr, network: "tcp"}
 }
 
-// SetDeadline is a no-op placeholder. Deadline support requires C library changes.
-func (n *NetConn) SetDeadline(t time.Time) error { return nil }
+// SetDeadline sets both the read and write deadlines.
+func (n *NetConn) SetDeadline(t time.Time) error {
+	n.deadlineMu.Lock()
+	defer n.deadlineMu.Unlock()
+	n.readDeadline = t
+	n.writeDeadline = t
+	return nil
+}
 
-// SetReadDeadline is a no-op placeholder.
-func (n *NetConn) SetReadDeadline(t time.Time) error { return nil }
+// SetReadDeadline sets the deadline for future Read calls.
+// A zero value clears the deadline.
+func (n *NetConn) SetReadDeadline(t time.Time) error {
+	n.deadlineMu.Lock()
+	defer n.deadlineMu.Unlock()
+	n.readDeadline = t
+	return nil
+}
 
-// SetWriteDeadline is a no-op placeholder.
-func (n *NetConn) SetWriteDeadline(t time.Time) error { return nil }
+// SetWriteDeadline sets the deadline for future Write calls.
+// A zero value clears the deadline.
+func (n *NetConn) SetWriteDeadline(t time.Time) error {
+	n.deadlineMu.Lock()
+	defer n.deadlineMu.Unlock()
+	n.writeDeadline = t
+	return nil
+}
 
 // NetListener wraps a *Listener to implement the net.Listener interface.
 //
