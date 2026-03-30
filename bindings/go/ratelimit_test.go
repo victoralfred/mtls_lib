@@ -85,6 +85,58 @@ func TestRateLimitStatusConstants(t *testing.T) {
 	}
 }
 
+// TestRateLimiterStats verifies Stats returns valid data after acquisitions.
+func TestRateLimiterStats(t *testing.T) {
+	rl, err := NewRateLimiter(RateLimiterConfig{
+		MaxConnPerSec: 100,
+		BurstSize:     10,
+	})
+	if err != nil {
+		t.Fatalf("NewRateLimiter: %v", err)
+	}
+	defer rl.Close()
+
+	// Acquire a few tokens.
+	for i := 0; i < 3; i++ {
+		_ = rl.Acquire("test-client")
+	}
+
+	stats, err := rl.Stats()
+	if err != nil {
+		t.Fatalf("Stats(): %v", err)
+	}
+	if stats.TotalRequests < 3 {
+		t.Errorf("TotalRequests = %d, want >= 3", stats.TotalRequests)
+	}
+	if stats.AllowedRequests < 3 {
+		t.Errorf("AllowedRequests = %d, want >= 3", stats.AllowedRequests)
+	}
+}
+
+// TestRateLimiterResetStats verifies ResetStats clears counters without panicking.
+func TestRateLimiterResetStats(t *testing.T) {
+	rl, err := NewRateLimiter(RateLimiterConfig{
+		MaxConnPerSec: 100,
+		BurstSize:     10,
+	})
+	if err != nil {
+		t.Fatalf("NewRateLimiter: %v", err)
+	}
+	defer rl.Close()
+
+	_ = rl.Acquire("test-client")
+
+	rl.ResetStats() // must not panic
+
+	stats, err := rl.Stats()
+	if err != nil {
+		t.Fatalf("Stats() after ResetStats: %v", err)
+	}
+	if stats.TotalRequests != 0 {
+		t.Errorf("TotalRequests = %d after ResetStats, want 0", stats.TotalRequests)
+	}
+}
+
 // TestRateLimiterTokenStatus verifies TokenStatus works without panicking.
 func TestRateLimiterTokenStatus(t *testing.T) {
 	rl, err := NewRateLimiter(RateLimiterConfig{

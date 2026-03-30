@@ -149,6 +149,35 @@ func (rl *RateLimiter) TokenStatus(clientID string) (tokens uint64, nextRefill t
 	return uint64(cTokens), time.Duration(cNextRefillMs) * time.Millisecond, nil
 }
 
+// Stats returns current rate limiter statistics.
+func (rl *RateLimiter) Stats() (RateLimiterStats, error) {
+	if rl.r == nil {
+		return RateLimiterStats{}, &Error{Code: ErrInternal, Message: "rate limiter is closed"}
+	}
+
+	var cStats C.mtls_rate_limit_stats
+	if C.mtls_rate_limiter_stats(rl.r, &cStats) != 0 {
+		return RateLimiterStats{}, &Error{Code: ErrInternal, Message: "failed to retrieve rate limiter stats"}
+	}
+
+	return RateLimiterStats{
+		TotalRequests:    uint64(cStats.total_requests),
+		AllowedRequests:  uint64(cStats.allowed_requests),
+		RejectedRequests: uint64(cStats.rejected_requests),
+		GlobalRejections: uint64(cStats.global_rejections),
+		ClientRejections: uint64(cStats.client_rejections),
+		ActiveClients:    int(cStats.active_clients),
+		TokensAvailable:  uint64(cStats.tokens_available),
+	}, nil
+}
+
+// ResetStats clears accumulated statistics without affecting token buckets.
+func (rl *RateLimiter) ResetStats() {
+	if rl.r != nil {
+		C.mtls_rate_limiter_reset_stats(rl.r)
+	}
+}
+
 // Reset clears all token buckets.
 func (rl *RateLimiter) Reset() {
 	if rl.r != nil {
