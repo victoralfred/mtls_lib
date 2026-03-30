@@ -277,6 +277,17 @@ impl Drop for Conn {
     }
 }
 
+/// `AsRawFd` is needed so `tokio::io::unix::AsyncFd<Conn>` can register the
+/// socket fd with epoll/kqueue. Only available on Unix.
+#[cfg(unix)]
+impl std::os::unix::io::AsRawFd for Conn {
+    fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
+        self.ptr
+            .map(|p| unsafe { mtls_sys::mtls_conn_get_fd(p.as_ptr()) })
+            .unwrap_or(-1)
+    }
+}
+
 /// Async connection wrapper that owns a Conn and provides async I/O.
 ///
 /// This wrapper is needed because the underlying C library uses blocking I/O,
@@ -459,6 +470,203 @@ impl AsyncConn {
 impl Drop for AsyncConn {
     fn drop(&mut self) {
         // Connection will be closed when the inner Conn is dropped
+    }
+}
+
+/// True non-blocking async connection using `tokio::io::unix::AsyncFd`.
+///
+/// Unlike [`AsyncConn`] which wraps blocking I/O in `spawn_blocking`, this
+/// type registers the raw socket file descriptor with tokio's reactor and
+/// performs I/O directly on the tokio thread pool via non-blocking OpenSSL
+/// calls (`mtls_conn_read_nonblocking` / `mtls_conn_write_nonblocking`).
+///
+/// # Platform
+///
+/// Available on Unix platforms only (Linux, macOS). The underlying C function
+/// `mtls_conn_get_fd()` returns a POSIX file descriptor; `AsyncFd` requires
+/// a valid Unix fd.
+///
+/// # Feature flag
+///
+/// Enable the `async-tokio-native` feature to use this type.
+#[cfg(all(feature = "async-tokio-native", unix))]
+pub struct AsyncFdConn {
+    inner: tokio::io::unix::AsyncFd<Conn>,
+}
+
+#[cfg(all(feature = "async-tokio-native", unix))]
+impl AsyncFdConn {
+    /// Wrap a [`Conn`] for native async I/O.
+    ///
+    /// The underlying socket is set to non-blocking mode. Returns an error if
+    /// the connection has no valid file descriptor (e.g. already closed).
+    pub fn new(conn: Conn) -> io::Result<Self> {
+        use std::os::unix::io::RawFd;
+
+        // Retrieve the raw fd before handing conn to AsyncFd
+        let raw_fd: RawFd = {
+            let fd = unsafe {
+                mtls_sys::mtls_conn_get_fd(
+                    conn.ptr
+                        .ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::NotConnected, "connection has no fd")
+                        })?
+                        .as_ptr(),
+                )
+            };
+            if fd < 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "connection has no valid fd",
+                ));
+            }
+            fd
+        };
+
+        // Put the socket into non-blocking mode so OpenSSL returns WANT_READ/WRITE.
+        unsafe {
+            let flags = libc::fcntl(raw_fd, libc::F_GETFL, 0);
+            if flags == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::fcntl(raw_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+
+        Ok(AsyncFdConn {
+            inner: tokio::io::unix::AsyncFd::new(conn)?,
+        })
+    }
+
+    /// Read data from the connection without blocking the tokio thread.
+    ///
+    /// Waits until the socket is readable, then calls the non-blocking C
+    /// function. Retries automatically if the C layer returns `WOULD_BLOCK`
+    /// (OpenSSL renegotiation / fragmentation).
+    pub async fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            let mut guard = self.inner.readable().await?;
+            let conn_ptr = match self.inner.get_ref().ptr {
+                Some(p) => p.as_ptr(),
+                None => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "connection is closed",
+                    ))
+                }
+            };
+
+            let mut err = crate::ffi_helpers::init_c_err();
+            let n = unsafe {
+                mtls_sys::mtls_conn_read_nonblocking(
+                    conn_ptr,
+                    buf.as_mut_ptr() as *mut _,
+                    buf.len(),
+                    &mut err,
+                )
+            };
+
+            if n > 0 {
+                return Ok(n as usize);
+            }
+            if n == 0 {
+                return Ok(0); // EOF
+            }
+
+            // n < 0 — check for WOULD_BLOCK
+            if err.code == mtls_sys::mtls_error_code::MTLS_ERR_WOULD_BLOCK {
+                guard.clear_ready();
+                continue;
+            }
+
+            return Err(Error::from_c_err(&err).into());
+        }
+    }
+
+    /// Write data to the connection without blocking the tokio thread.
+    pub async fn write(&self, buf: &[u8]) -> io::Result<usize> {
+        loop {
+            let mut guard = self.inner.writable().await?;
+            let conn_ptr = match self.inner.get_ref().ptr {
+                Some(p) => p.as_ptr(),
+                None => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "connection is closed",
+                    ))
+                }
+            };
+
+            let mut err = crate::ffi_helpers::init_c_err();
+            let n = unsafe {
+                mtls_sys::mtls_conn_write_nonblocking(
+                    conn_ptr,
+                    buf.as_ptr() as *const _,
+                    buf.len(),
+                    &mut err,
+                )
+            };
+
+            if n >= 0 {
+                return Ok(n as usize);
+            }
+
+            if err.code == mtls_sys::mtls_error_code::MTLS_ERR_WOULD_BLOCK {
+                guard.clear_ready();
+                continue;
+            }
+
+            return Err(Error::from_c_err(&err).into());
+        }
+    }
+
+    /// Write all bytes in `buf`, retrying on partial writes.
+    pub async fn write_all(&self, buf: &[u8]) -> io::Result<()> {
+        let mut written = 0;
+        while written < buf.len() {
+            let n = self.write(&buf[written..]).await?;
+            written += n;
+        }
+        Ok(())
+    }
+
+    /// Close the connection gracefully.
+    pub fn close(&mut self) {
+        self.inner.get_mut().close();
+    }
+
+    /// Get the connection state.
+    pub fn state(&self) -> crate::identity::ConnState {
+        self.inner.get_ref().state()
+    }
+
+    /// Get peer identity if available.
+    pub fn peer_identity(&self) -> Option<crate::identity::PeerIdentity> {
+        self.inner.get_ref().peer_identity()
+    }
+
+    /// Get remote address if available.
+    pub fn remote_addr(&self) -> Option<String> {
+        self.inner.get_ref().remote_addr()
+    }
+
+    /// Get local address if available.
+    pub fn local_addr(&self) -> Option<String> {
+        self.inner.get_ref().local_addr()
+    }
+}
+
+#[cfg(all(feature = "async-tokio-native", unix))]
+impl std::os::unix::io::AsRawFd for AsyncFdConn {
+    fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
+        unsafe {
+            self.inner
+                .get_ref()
+                .ptr
+                .map(|p| mtls_sys::mtls_conn_get_fd(p.as_ptr()))
+                .unwrap_or(-1)
+        }
     }
 }
 

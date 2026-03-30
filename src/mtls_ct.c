@@ -7,7 +7,9 @@
 
 #include "mtls/mtls_ct.h"
 #include "mtls/mtls_error.h"
+#include "internal/mtls_internal.h"
 
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/sha.h>
@@ -657,14 +659,49 @@ int mtls_ct_extract_scts_from_cert(const uint8_t *cert_pem, size_t cert_pem_len,
 int mtls_ct_extract_scts_from_conn(mtls_conn *conn, mtls_sct *scts, size_t max_scts,
                                    size_t *sct_count, mtls_err *err)
 {
-    /* This would extract SCTs from the connection's peer certificate */
-    /* For now, we return not implemented since connection access requires internal headers */
-    (void)conn;
-    (void)scts;
-    (void)max_scts;
-    (void)sct_count;
-    CT_ERR_SET(err, MTLS_ERR_NOT_IMPLEMENTED, "Connection SCT extraction not yet implemented");
-    return -1;
+    if (conn == NULL || scts == NULL || sct_count == NULL) {
+        CT_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "NULL parameter");
+        return -1;
+    }
+
+    *sct_count = 0;
+
+    /* Get peer certificate from SSL connection */
+    ERR_clear_error();
+    X509 *peer_cert = SSL_get_peer_certificate(conn->ssl);
+    if (peer_cert == NULL) {
+        CT_ERR_SET(err, MTLS_ERR_CT_VALIDATION_FAILED, "No peer certificate available");
+        return -1;
+    }
+
+    /* Convert X509 to PEM so we can reuse the existing cert-based extractor */
+    BIO *pem_bio = BIO_new(BIO_s_mem());
+    if (pem_bio == NULL) {
+        X509_free(peer_cert);
+        CT_ERR_SET(err, MTLS_ERR_CT_VALIDATION_FAILED, "Failed to create BIO");
+        return -1;
+    }
+
+    if (PEM_write_bio_X509(pem_bio, peer_cert) != 1) {
+        BIO_free(pem_bio);
+        X509_free(peer_cert);
+        CT_ERR_SET(err, MTLS_ERR_CT_VALIDATION_FAILED, "Failed to encode certificate as PEM");
+        return -1;
+    }
+    X509_free(peer_cert);
+
+    char *pem_data = NULL;
+    long pem_len = BIO_get_mem_data(pem_bio, &pem_data);
+    if (pem_len <= 0 || pem_data == NULL) {
+        BIO_free(pem_bio);
+        CT_ERR_SET(err, MTLS_ERR_CT_VALIDATION_FAILED, "Failed to retrieve PEM data");
+        return -1;
+    }
+
+    int result = mtls_ct_extract_scts_from_cert((const uint8_t *)pem_data, (size_t)pem_len, scts,
+                                                max_scts, sct_count, err);
+    BIO_free(pem_bio);
+    return result;
 }
 
 /*
@@ -685,7 +722,6 @@ mtls_sct_validation_result mtls_ct_validate_sct(mtls_sct *sct, const uint8_t *ce
 
     if (sct == NULL || log_list == NULL) {
         CT_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "NULL parameter");
-        sct->validation_result = MTLS_SCT_PARSE_ERROR;
         return MTLS_SCT_PARSE_ERROR;
     }
 
@@ -803,13 +839,75 @@ mtls_ct_result mtls_ct_validate_scts(mtls_sct *scts, size_t sct_count, const uin
 int mtls_ct_validate_conn(mtls_conn *conn, const mtls_ct_log_list *log_list, size_t min_valid_scts,
                           bool allow_unknown_logs, mtls_ct_report *report, mtls_err *err)
 {
-    (void)conn;
-    (void)log_list;
-    (void)min_valid_scts;
-    (void)allow_unknown_logs;
-    (void)report;
-    CT_ERR_SET(err, MTLS_ERR_NOT_IMPLEMENTED, "Connection CT validation not yet implemented");
-    return -1;
+    if (conn == NULL || log_list == NULL) {
+        CT_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "NULL parameter");
+        return -1;
+    }
+
+    /* Extract SCTs from the connection's peer certificate */
+    mtls_sct scts[MTLS_CT_MAX_SCTS];
+    size_t sct_count = 0;
+
+    if (mtls_ct_extract_scts_from_conn(conn, scts, MTLS_CT_MAX_SCTS, &sct_count, err) != 0) {
+        return -1;
+    }
+
+    /* Get peer certificate PEM for SCT validation */
+    ERR_clear_error();
+    X509 *peer_cert = SSL_get_peer_certificate(conn->ssl);
+    if (peer_cert == NULL) {
+        CT_ERR_SET(err, MTLS_ERR_CT_VALIDATION_FAILED, "No peer certificate available");
+        return -1;
+    }
+
+    BIO *cert_bio = BIO_new(BIO_s_mem());
+    if (cert_bio == NULL) {
+        X509_free(peer_cert);
+        CT_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to create BIO for certificate");
+        return -1;
+    }
+
+    if (PEM_write_bio_X509(cert_bio, peer_cert) != 1) {
+        BIO_free(cert_bio);
+        X509_free(peer_cert);
+        CT_ERR_SET(err, MTLS_ERR_CT_VALIDATION_FAILED, "Failed to encode certificate as PEM");
+        return -1;
+    }
+    X509_free(peer_cert);
+
+    char *cert_pem = NULL;
+    long cert_pem_len = BIO_get_mem_data(cert_bio, &cert_pem);
+
+    /* Get issuer PEM from peer certificate chain (index 1) */
+    BIO *issuer_bio = NULL;
+    char *issuer_pem = NULL;
+    long issuer_pem_len = 0;
+
+    STACK_OF(X509) *chain = SSL_get_peer_cert_chain(conn->ssl);
+    if (chain != NULL && sk_X509_num(chain) > 1) {
+        X509 *issuer_cert = sk_X509_value(chain, 1);
+        if (issuer_cert != NULL) {
+            issuer_bio = BIO_new(BIO_s_mem());
+            if (issuer_bio != NULL) {
+                if (PEM_write_bio_X509(issuer_bio, issuer_cert) == 1) {
+                    issuer_pem_len = BIO_get_mem_data(issuer_bio, &issuer_pem);
+                }
+            }
+        }
+    }
+
+    mtls_ct_result ct_result = mtls_ct_validate_scts(
+        scts, sct_count, (const uint8_t *)cert_pem, cert_pem_len > 0 ? (size_t)cert_pem_len : 0U,
+        issuer_pem != NULL ? (const uint8_t *)issuer_pem : NULL,
+        issuer_pem_len > 0 ? (size_t)issuer_pem_len : 0U, log_list, min_valid_scts,
+        allow_unknown_logs, report, err);
+
+    if (issuer_bio != NULL) {
+        BIO_free(issuer_bio);
+    }
+    BIO_free(cert_bio);
+
+    return (ct_result == MTLS_CT_RESULT_VALID) ? 0 : -1;
 }
 
 /*

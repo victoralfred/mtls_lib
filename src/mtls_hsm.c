@@ -21,6 +21,10 @@
 #include <openssl/evp.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#    include <openssl/provider.h>
+#    include <openssl/store.h>
+#endif
 
 #include "mtls/mtls_error.h"
 #include "mtls/mtls_hsm.h"
@@ -232,6 +236,11 @@ struct mtls_hsm_ctx {
     /* OpenSSL ENGINE state */
     ENGINE *engine; /* ENGINE handle */
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    /* OpenSSL 3.x PKCS#11 provider (loaded on demand) */
+    OSSL_PROVIDER *pkcs11_provider;
+#endif
+
     /* PIN callback */
     mtls_hsm_pin_callback pin_callback;
     void *pin_userdata;
@@ -404,6 +413,13 @@ void mtls_hsm_free(mtls_hsm_ctx *ctx)
         ENGINE_finish(ctx->engine);
         ENGINE_free(ctx->engine);
     }
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    /* Unload PKCS#11 provider if loaded */
+    if (ctx->pkcs11_provider != NULL) {
+        (void)OSSL_PROVIDER_unload(ctx->pkcs11_provider);
+    }
+#endif
 
     /* Free loaded objects */
     if (ctx->private_key != NULL) {
@@ -857,12 +873,93 @@ int mtls_hsm_load_private_key(mtls_hsm_ctx *ctx, const char *key_id, void **pkey
         return -1;
     }
 
-    /* For PKCS#11, we would need to create an EVP_PKEY that wraps the PKCS#11
-     * operations. This typically requires OpenSSL 3.x provider or engine.
-     * For now, we return an error indicating this requires additional setup. */
-    MTLS_ERR_SET(err, MTLS_ERR_NOT_IMPLEMENTED,
-                 "PKCS#11 key wrapping requires OpenSSL PKCS#11 provider");
-    return -1;
+    /* Build PKCS#11 URI from config: pkcs11:token=<label>;object=<key_id>;type=private */
+    const char *obj_id = key_id != NULL ? key_id : ctx->config.key_id;
+    const char *obj_label = obj_id != NULL ? NULL : ctx->config.key_label;
+    char uri[512];
+    if (obj_id != NULL) {
+        (void)snprintf(uri, sizeof(uri), "pkcs11:object=%s;type=private", obj_id);
+    } else if (obj_label != NULL) {
+        (void)snprintf(uri, sizeof(uri), "pkcs11:token=%s;type=private", obj_label);
+    } else {
+        MTLS_ERR_SET(err, MTLS_ERR_HSM_KEY_NOT_FOUND, "Key ID or label required for PKCS#11");
+        return -1;
+    }
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    /* OpenSSL 3.x path: load pkcs11 provider and use OSSL_STORE */
+    ERR_clear_error();
+
+    if (ctx->pkcs11_provider == NULL) {
+        ctx->pkcs11_provider = OSSL_PROVIDER_load(NULL, "pkcs11");
+        if (ctx->pkcs11_provider == NULL) {
+            MTLS_ERR_SET(err, MTLS_ERR_HSM_OPERATION_FAILED,
+                         "Failed to load OpenSSL pkcs11 provider");
+            return -1;
+        }
+    }
+
+    OSSL_STORE_CTX *store_ctx = OSSL_STORE_open(uri, NULL, NULL, NULL, NULL);
+    if (store_ctx == NULL) {
+        MTLS_ERR_SET(err, MTLS_ERR_HSM_KEY_NOT_FOUND, "Failed to open PKCS#11 store for URI: %s",
+                     uri);
+        return -1;
+    }
+
+    EVP_PKEY *key = NULL;
+    while (!OSSL_STORE_eof(store_ctx) && key == NULL) {
+        OSSL_STORE_INFO *info = OSSL_STORE_load(store_ctx);
+        if (info == NULL) {
+            break;
+        }
+        if (OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY) {
+            key = OSSL_STORE_INFO_get1_PKEY(info);
+        }
+        OSSL_STORE_INFO_free(info);
+    }
+    OSSL_STORE_close(store_ctx);
+
+    if (key == NULL) {
+        MTLS_ERR_SET(err, MTLS_ERR_HSM_KEY_NOT_FOUND, "Private key not found at PKCS#11 URI: %s",
+                     uri);
+        return -1;
+    }
+
+    *pkey = key;
+    ctx->private_key = key;
+    return 0;
+
+#else
+    /* OpenSSL 1.x fallback: load pkcs11 ENGINE */
+    ERR_clear_error();
+
+    ENGINE *e = ENGINE_by_id("pkcs11");
+    if (e == NULL) {
+        MTLS_ERR_SET(err, MTLS_ERR_HSM_OPERATION_FAILED,
+                     "Failed to find pkcs11 ENGINE (OpenSSL < 3.0)");
+        return -1;
+    }
+
+    if (ENGINE_init(e) != 1) {
+        ENGINE_free(e);
+        MTLS_ERR_SET(err, MTLS_ERR_HSM_OPERATION_FAILED, "Failed to initialize pkcs11 ENGINE");
+        return -1;
+    }
+
+    EVP_PKEY *key = ENGINE_load_private_key(e, uri, NULL, NULL);
+    ENGINE_finish(e);
+    ENGINE_free(e);
+
+    if (key == NULL) {
+        MTLS_ERR_SET(err, MTLS_ERR_HSM_KEY_NOT_FOUND,
+                     "Failed to load private key via pkcs11 ENGINE: %s", uri);
+        return -1;
+    }
+
+    *pkey = key;
+    ctx->private_key = key;
+    return 0;
+#endif
 }
 
 int mtls_hsm_load_certificate(mtls_hsm_ctx *ctx, const char *cert_id, void **cert, mtls_err *err)

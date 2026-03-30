@@ -5,8 +5,8 @@
  * This module provides non-blocking, event-driven I/O operations using
  * platform-specific event notification mechanisms:
  * - Linux: epoll
- * - macOS/BSD: kqueue (TODO)
- * - Windows: IOCP (TODO)
+ * - macOS/BSD: kqueue
+ * - Windows: WSAEventSelect + WaitForMultipleObjects (readiness-based IOCP)
  */
 
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
@@ -34,6 +34,14 @@
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 #    include <sys/event.h>
 #    define MTLS_USE_KQUEUE 1
+#elif defined(_WIN32) || defined(_WIN64)
+#    ifndef WIN32_LEAN_AND_MEAN
+#        define WIN32_LEAN_AND_MEAN
+#    endif
+#    include <windows.h>
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+#    define MTLS_USE_IOCP 1
 #else
 #    error "Unsupported platform for async I/O"
 #endif
@@ -104,6 +112,8 @@ struct mtls_async_ctx {
 #elif defined(MTLS_USE_KQUEUE)
     int kqueue_fd;      /**< kqueue file descriptor */
     int wakeup_pipe[2]; /**< pipe for wakeup */
+#elif defined(MTLS_USE_IOCP)
+    HANDLE wakeup_event; /**< manual-reset event for mtls_async_wakeup() */
 #endif
 
     /* Operation list */
@@ -234,6 +244,52 @@ static void epoll_unregister(mtls_async_ctx *ctx, int socket_fd)
 {
     epoll_ctl(ctx->epoll_fd, EPOLL_CTL_DEL, socket_fd, NULL);
 }
+#elif defined(MTLS_USE_KQUEUE)
+/**
+ * Register fd with kqueue for a specific filter (EVFILT_READ or EVFILT_WRITE).
+ * EV_CLEAR enables edge-triggered semantics, matching EPOLLET behaviour.
+ */
+static int kqueue_register(mtls_async_ctx *ctx, int socket_fd, int filter, mtls_err *err)
+{
+    struct kevent kev;
+    EV_SET(&kev, (uintptr_t)socket_fd, filter, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, NULL);
+    if (kevent(ctx->kqueue_fd, &kev, 1, NULL, 0, NULL) == -1) {
+        MTLS_ERR_SET(err, MTLS_ERR_EVENTLOOP_ERROR, "Failed to register fd with kqueue");
+        return -1;
+    }
+    return 0;
+}
+
+/**
+ * Unregister a single kqueue filter for fd (best-effort, ignores errors)
+ */
+static void kqueue_unregister(mtls_async_ctx *ctx, int socket_fd, int filter)
+{
+    struct kevent kev;
+    EV_SET(&kev, (uintptr_t)socket_fd, filter, EV_DELETE, 0, 0, NULL);
+    (void)kevent(ctx->kqueue_fd, &kev, 1, NULL, 0, NULL);
+}
+#elif defined(MTLS_USE_IOCP)
+/**
+ * Register socket with WSAEventSelect for the given network events.
+ * Ownership of the WSAEVENT stays with the caller — one event per socket.
+ */
+static int iocp_register(SOCKET sock, WSAEVENT ev, long net_events, mtls_err *err)
+{
+    if (WSAEventSelect(sock, ev, net_events) == SOCKET_ERROR) {
+        MTLS_ERR_SET(err, MTLS_ERR_EVENTLOOP_ERROR, "WSAEventSelect failed: %d", WSAGetLastError());
+        return -1;
+    }
+    return 0;
+}
+
+/**
+ * Unregister socket from WSAEventSelect (best-effort)
+ */
+static void iocp_unregister(SOCKET sock)
+{
+    (void)WSAEventSelect(sock, NULL, 0);
+}
 #endif
 
 /**
@@ -339,6 +395,30 @@ int mtls_async_ctx_create(mtls_async_ctx **async_ctx, struct mtls_ctx *ctx, mtls
         free(actx);
         return -1;
     }
+
+    /* Register the read end of the wakeup pipe with kqueue */
+    {
+        struct kevent wakeup_kev;
+        EV_SET(&wakeup_kev, (uintptr_t)actx->wakeup_pipe[0], EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0,
+               NULL);
+        if (kevent(actx->kqueue_fd, &wakeup_kev, 1, NULL, 0, NULL) == -1) {
+            close(actx->wakeup_pipe[0]);
+            close(actx->wakeup_pipe[1]);
+            close(actx->kqueue_fd);
+            MTLS_ERR_SET(err, MTLS_ERR_EVENTLOOP_ERROR,
+                         "Failed to register wakeup pipe with kqueue");
+            free(actx);
+            return -1;
+        }
+    }
+#elif defined(MTLS_USE_IOCP)
+    /* Create a manual-reset event used by mtls_async_wakeup() */
+    actx->wakeup_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (actx->wakeup_event == NULL) {
+        MTLS_ERR_SET(err, MTLS_ERR_EVENTLOOP_ERROR, "Failed to create wakeup event");
+        free(actx);
+        return -1;
+    }
 #endif
 
     if (pthread_mutex_init(&actx->lock, NULL) != 0) {
@@ -349,6 +429,8 @@ int mtls_async_ctx_create(mtls_async_ctx **async_ctx, struct mtls_ctx *ctx, mtls
         close(actx->wakeup_pipe[0]);
         close(actx->wakeup_pipe[1]);
         close(actx->kqueue_fd);
+#elif defined(MTLS_USE_IOCP)
+        CloseHandle(actx->wakeup_event);
 #endif
         MTLS_ERR_SET(err, MTLS_ERR_INTERNAL, "Failed to initialize mutex");
         free(actx);
@@ -378,6 +460,15 @@ void mtls_async_ctx_destroy(mtls_async_ctx *async_ctx)
 #if defined(MTLS_USE_EPOLL)
         if (op->socket_fd >= 0) {
             epoll_unregister(async_ctx, op->socket_fd);
+        }
+#elif defined(MTLS_USE_KQUEUE)
+        if (op->socket_fd >= 0) {
+            kqueue_unregister(async_ctx, op->socket_fd, EVFILT_READ);
+            kqueue_unregister(async_ctx, op->socket_fd, EVFILT_WRITE);
+        }
+#elif defined(MTLS_USE_IOCP)
+        if (op->socket_fd >= 0) {
+            iocp_unregister((SOCKET)op->socket_fd);
         }
 #endif
 
@@ -426,6 +517,8 @@ void mtls_async_ctx_destroy(mtls_async_ctx *async_ctx)
     close(async_ctx->wakeup_pipe[0]);
     close(async_ctx->wakeup_pipe[1]);
     close(async_ctx->kqueue_fd);
+#elif defined(MTLS_USE_IOCP)
+    CloseHandle(async_ctx->wakeup_event);
 #endif
 
     pthread_mutex_destroy(&async_ctx->lock);
@@ -631,6 +724,352 @@ static void process_epoll_event(mtls_async_ctx *ctx, struct epoll_event *ev)
 }
 #endif
 
+#if defined(MTLS_USE_KQUEUE)
+/**
+ * Process a single kqueue event.
+ * Mirrors process_epoll_event() with kqueue-specific field translations:
+ *   ev->ident (uintptr_t) == socket fd
+ *   ev->flags & EV_ERROR  == EPOLLERR
+ *   ev->flags & EV_EOF    == EPOLLHUP
+ *   ev->filter == EVFILT_READ  == EPOLLIN
+ *   ev->filter == EVFILT_WRITE == EPOLLOUT
+ */
+// NOLINTNEXTLINE(readability-identifier-length) - ev is standard naming for kqueue events
+static void process_kqueue_event(mtls_async_ctx *ctx, struct kevent *ev)
+{
+    int socket_fd = (int)ev->ident;
+
+    /* Handle wakeup pipe read-end becoming readable */
+    if (socket_fd == ctx->wakeup_pipe[0]) {
+        char dummy[16];
+        (void)read(ctx->wakeup_pipe[0], dummy, sizeof(dummy));
+        return;
+    }
+
+    pthread_mutex_lock(&ctx->lock);
+    // NOLINTNEXTLINE(readability-identifier-length) - op is standard naming for operations
+    mtls_async_op *op = ctx_find_op_by_fd(ctx, socket_fd);
+    if (!op) {
+        pthread_mutex_unlock(&ctx->lock);
+        return;
+    }
+
+    mtls_err err;
+    mtls_err_init(&err);
+
+    switch (op->type) {
+    case ASYNC_OP_CONNECT: {
+        /* Check for connection completion */
+        int sock_err = 0;
+        socklen_t sock_err_len = sizeof(sock_err);
+        if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &sock_err, &sock_err_len) == -1 ||
+            sock_err != 0) {
+            op->state = MTLS_ASYNC_STATE_ERROR;
+            kqueue_unregister(ctx, socket_fd, EVFILT_WRITE);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            MTLS_ERR_SET(&err, MTLS_ERR_CONNECT_FAILED, "Async connect failed");
+            emit_async_event(ctx, MTLS_EVENT_ASYNC_CONNECT_FAILURE, NULL, MTLS_ERR_CONNECT_FAILED);
+            if (op->data.connect.callback) {
+                op->data.connect.callback(NULL, &err, op->userdata);
+            }
+            close(socket_fd);
+            async_op_destroy(op);
+            return;
+        }
+
+        op->state = MTLS_ASYNC_STATE_HANDSHAKING;
+        struct mtls_conn *conn = mtls_connect(ctx->mtls_ctx, op->data.connect.addr, &err);
+        kqueue_unregister(ctx, socket_fd, EVFILT_WRITE);
+        ctx_remove_op(ctx, op);
+        pthread_mutex_unlock(&ctx->lock);
+
+        if (!conn) {
+            emit_async_event(ctx, MTLS_EVENT_ASYNC_CONNECT_FAILURE, NULL, err.code);
+            if (op->data.connect.callback) {
+                op->data.connect.callback(NULL, &err, op->userdata);
+            }
+        } else {
+            emit_async_event(ctx, MTLS_EVENT_ASYNC_CONNECT_SUCCESS, conn, MTLS_OK);
+            if (op->data.connect.callback) {
+                op->data.connect.callback(conn, NULL, op->userdata);
+            }
+        }
+        async_op_destroy(op);
+        return;
+    }
+
+    case ASYNC_OP_READ: {
+        if ((ev->flags & EV_ERROR) || (ev->flags & EV_EOF)) {
+            op->state = MTLS_ASYNC_STATE_ERROR;
+            kqueue_unregister(ctx, socket_fd, EVFILT_READ);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            MTLS_ERR_SET(&err, MTLS_ERR_READ_FAILED, "Read error");
+            if (op->data.read.callback) {
+                op->data.read.callback(op->conn, -1, &err, op->userdata);
+            }
+            async_op_destroy(op);
+            return;
+        }
+
+        ssize_t bytes = mtls_read(op->conn, op->data.read.buf, op->data.read.len, &err);
+        kqueue_unregister(ctx, socket_fd, EVFILT_READ);
+        ctx_remove_op(ctx, op);
+        pthread_mutex_unlock(&ctx->lock);
+
+        if (op->data.read.callback) {
+            if (bytes < 0) {
+                op->data.read.callback(op->conn, bytes, &err, op->userdata);
+            } else {
+                op->data.read.callback(op->conn, bytes, NULL, op->userdata);
+            }
+        }
+        async_op_destroy(op);
+        return;
+    }
+
+    case ASYNC_OP_WRITE: {
+        if ((ev->flags & EV_ERROR) || (ev->flags & EV_EOF)) {
+            op->state = MTLS_ASYNC_STATE_ERROR;
+            kqueue_unregister(ctx, socket_fd, EVFILT_WRITE);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            MTLS_ERR_SET(&err, MTLS_ERR_WRITE_FAILED, "Write error");
+            if (op->data.write.callback) {
+                op->data.write.callback(op->conn, -1, &err, op->userdata);
+            }
+            async_op_destroy(op);
+            return;
+        }
+
+        const char *buf = (const char *)op->data.write.buf + op->data.write.written;
+        size_t remaining = op->data.write.len - op->data.write.written;
+        ssize_t bytes = mtls_write(op->conn, buf, remaining, &err);
+
+        if (bytes < 0) {
+            kqueue_unregister(ctx, socket_fd, EVFILT_WRITE);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            if (op->data.write.callback) {
+                op->data.write.callback(op->conn, -1, &err, op->userdata);
+            }
+            async_op_destroy(op);
+            return;
+        }
+
+        op->data.write.written += (size_t)bytes;
+        if (op->data.write.written >= op->data.write.len) {
+            kqueue_unregister(ctx, socket_fd, EVFILT_WRITE);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            if (op->data.write.callback) {
+                op->data.write.callback(op->conn, (ssize_t)op->data.write.written, NULL,
+                                        op->userdata);
+            }
+            async_op_destroy(op);
+            return;
+        }
+
+        /* More to write, keep waiting */
+        pthread_mutex_unlock(&ctx->lock);
+        return;
+    }
+
+    case ASYNC_OP_CLOSE: {
+        mtls_close(op->conn);
+        kqueue_unregister(ctx, socket_fd, EVFILT_WRITE);
+        ctx_remove_op(ctx, op);
+        pthread_mutex_unlock(&ctx->lock);
+
+        if (op->data.close.callback) {
+            op->data.close.callback(NULL, op->userdata);
+        }
+        async_op_destroy(op);
+        return;
+    }
+
+    default:
+        pthread_mutex_unlock(&ctx->lock);
+        return;
+    }
+}
+#endif
+
+#if defined(MTLS_USE_IOCP)
+/**
+ * Process a single ready socket for IOCP (WSAEventSelect) path.
+ * Called after WSAEnumNetworkEvents confirms the socket has pending events.
+ */
+static void process_iocp_event(mtls_async_ctx *ctx, SOCKET sock, WSANETWORKEVENTS *net_ev)
+{
+    int socket_fd = (int)sock;
+
+    pthread_mutex_lock(&ctx->lock);
+    mtls_async_op *op = ctx_find_op_by_fd(ctx, socket_fd);
+    if (!op) {
+        pthread_mutex_unlock(&ctx->lock);
+        return;
+    }
+
+    mtls_err err;
+    mtls_err_init(&err);
+
+    switch (op->type) {
+    case ASYNC_OP_CONNECT: {
+        if ((net_ev->lNetworkEvents & FD_CONNECT) && net_ev->iErrorCode[FD_CONNECT_BIT] != 0) {
+            op->state = MTLS_ASYNC_STATE_ERROR;
+            iocp_unregister(sock);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            MTLS_ERR_SET(&err, MTLS_ERR_CONNECT_FAILED, "Async connect failed");
+            emit_async_event(ctx, MTLS_EVENT_ASYNC_CONNECT_FAILURE, NULL, MTLS_ERR_CONNECT_FAILED);
+            if (op->data.connect.callback) {
+                op->data.connect.callback(NULL, &err, op->userdata);
+            }
+            closesocket(socket_fd);
+            async_op_destroy(op);
+            return;
+        }
+
+        if (net_ev->lNetworkEvents & FD_CONNECT) {
+            op->state = MTLS_ASYNC_STATE_HANDSHAKING;
+            struct mtls_conn *conn = mtls_connect(ctx->mtls_ctx, op->data.connect.addr, &err);
+            iocp_unregister(sock);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            if (!conn) {
+                emit_async_event(ctx, MTLS_EVENT_ASYNC_CONNECT_FAILURE, NULL, err.code);
+                if (op->data.connect.callback) {
+                    op->data.connect.callback(NULL, &err, op->userdata);
+                }
+            } else {
+                emit_async_event(ctx, MTLS_EVENT_ASYNC_CONNECT_SUCCESS, conn, MTLS_OK);
+                if (op->data.connect.callback) {
+                    op->data.connect.callback(conn, NULL, op->userdata);
+                }
+            }
+            async_op_destroy(op);
+        } else {
+            pthread_mutex_unlock(&ctx->lock);
+        }
+        return;
+    }
+
+    case ASYNC_OP_READ: {
+        bool has_error =
+            ((net_ev->lNetworkEvents & FD_CLOSE) && net_ev->iErrorCode[FD_CLOSE_BIT] != 0) ||
+            ((net_ev->lNetworkEvents & FD_READ) && net_ev->iErrorCode[FD_READ_BIT] != 0);
+        if (has_error) {
+            op->state = MTLS_ASYNC_STATE_ERROR;
+            iocp_unregister(sock);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            MTLS_ERR_SET(&err, MTLS_ERR_READ_FAILED, "Read error");
+            if (op->data.read.callback) {
+                op->data.read.callback(op->conn, -1, &err, op->userdata);
+            }
+            async_op_destroy(op);
+            return;
+        }
+
+        if ((net_ev->lNetworkEvents & FD_READ) || (net_ev->lNetworkEvents & FD_CLOSE)) {
+            struct mtls_conn *conn = op->conn;
+            void *buf = op->data.read.buf;
+            size_t len = op->data.read.len;
+            mtls_async_io_cb cb = op->data.read.callback;
+            void *ud = op->userdata;
+
+            op->state = MTLS_ASYNC_STATE_COMPLETE;
+            iocp_unregister(sock);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            int n = mtls_read(conn, buf, (int)len, &err);
+            if (cb) {
+                cb(conn, n, n < 0 ? &err : NULL, ud);
+            }
+            async_op_destroy(op);
+        } else {
+            pthread_mutex_unlock(&ctx->lock);
+        }
+        return;
+    }
+
+    case ASYNC_OP_WRITE: {
+        bool has_error =
+            (net_ev->lNetworkEvents & FD_WRITE) && net_ev->iErrorCode[FD_WRITE_BIT] != 0;
+        if (has_error) {
+            op->state = MTLS_ASYNC_STATE_ERROR;
+            iocp_unregister(sock);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            MTLS_ERR_SET(&err, MTLS_ERR_WRITE_FAILED, "Write error");
+            if (op->data.write.callback) {
+                op->data.write.callback(op->conn, -1, &err, op->userdata);
+            }
+            async_op_destroy(op);
+            return;
+        }
+
+        if (net_ev->lNetworkEvents & FD_WRITE) {
+            struct mtls_conn *conn = op->conn;
+            const void *buf = op->data.write.buf;
+            int remaining = (int)(op->data.write.len - op->data.write.written);
+            mtls_async_io_cb cb = op->data.write.callback;
+            void *ud = op->userdata;
+
+            op->state = MTLS_ASYNC_STATE_COMPLETE;
+            iocp_unregister(sock);
+            ctx_remove_op(ctx, op);
+            pthread_mutex_unlock(&ctx->lock);
+
+            int n = mtls_write(conn, (const char *)buf + op->data.write.written, remaining, &err);
+            if (cb) {
+                cb(conn, n, n < 0 ? &err : NULL, ud);
+            }
+            async_op_destroy(op);
+        } else {
+            pthread_mutex_unlock(&ctx->lock);
+        }
+        return;
+    }
+
+    case ASYNC_OP_CLOSE: {
+        op->state = MTLS_ASYNC_STATE_COMPLETE;
+        iocp_unregister(sock);
+        ctx_remove_op(ctx, op);
+        struct mtls_conn *conn = op->conn;
+        mtls_async_close_cb cb = op->data.close.callback;
+        void *ud = op->userdata;
+        pthread_mutex_unlock(&ctx->lock);
+
+        if (conn) {
+            mtls_close(conn, &err);
+        }
+        if (cb) {
+            cb(NULL, ud);
+        }
+        async_op_destroy(op);
+        return;
+    }
+
+    default:
+        pthread_mutex_unlock(&ctx->lock);
+        return;
+    }
+}
+#endif
+
 int mtls_async_poll(mtls_async_ctx *async_ctx, int timeout_ms, mtls_err *err)
 {
     if (!async_ctx) {
@@ -675,8 +1114,72 @@ int mtls_async_poll(mtls_async_ctx *async_ctx, int timeout_ms, mtls_err *err)
         return -1;
     }
 
-    /* TODO: Process kqueue events */
+    for (int i = 0; i < nevents; i++) {
+        process_kqueue_event(async_ctx, &events[i]);
+    }
     return nevents;
+#elif defined(MTLS_USE_IOCP)
+    /* Build array: wakeup event + one WSAEvent per pending op (max 63 sockets,
+     * WFMO limit is MAXIMUM_WAIT_OBJECTS=64). */
+#    define IOCP_MAX_EVENTS 63
+    HANDLE handles[IOCP_MAX_EVENTS + 1];
+    SOCKET sockets[IOCP_MAX_EVENTS];
+    WSAEVENT sock_events[IOCP_MAX_EVENTS];
+    int nhandles = 0;
+
+    handles[nhandles++] = async_ctx->wakeup_event;
+
+    pthread_mutex_lock(&async_ctx->lock);
+    for (mtls_async_op *op = async_ctx->ops_head; op && nhandles <= IOCP_MAX_EVENTS;
+         op = op->next) {
+        if (op->socket_fd < 0) {
+            continue;
+        }
+        WSAEVENT ev = WSACreateEvent();
+        if (ev == WSA_INVALID_EVENT) {
+            continue;
+        }
+        long net_ev_mask =
+            (op->type == ASYNC_OP_READ) ? (FD_READ | FD_CLOSE) : (FD_WRITE | FD_CONNECT | FD_CLOSE);
+        if (WSAEventSelect((SOCKET)op->socket_fd, ev, net_ev_mask) == SOCKET_ERROR) {
+            WSACloseEvent(ev);
+            continue;
+        }
+        sock_events[nhandles - 1] = ev;
+        sockets[nhandles - 1] = (SOCKET)op->socket_fd;
+        handles[nhandles++] = ev;
+    }
+    pthread_mutex_unlock(&async_ctx->lock);
+
+    DWORD timeout_dw = (timeout_ms < 0) ? INFINITE : (DWORD)timeout_ms;
+    DWORD rc = WaitForMultipleObjects((DWORD)nhandles, handles, FALSE, timeout_dw);
+
+    int dispatched = 0;
+
+    if (rc == WAIT_OBJECT_0) {
+        /* Wakeup event fired — drain and continue */
+        ResetEvent(async_ctx->wakeup_event);
+        dispatched = 0;
+    } else if (rc > WAIT_OBJECT_0 && rc < (WAIT_OBJECT_0 + (DWORD)nhandles)) {
+        /* One or more socket events ready — scan all to catch coalesced events */
+        for (int i = 1; i < nhandles; i++) {
+            WSANETWORKEVENTS net_ev;
+            if (WSAEnumNetworkEvents(sockets[i - 1], sock_events[i - 1], &net_ev) == 0 &&
+                net_ev.lNetworkEvents != 0) {
+                process_iocp_event(async_ctx, sockets[i - 1], &net_ev);
+                dispatched++;
+            }
+        }
+    }
+    /* else: timeout or error — dispatched stays 0 */
+
+    /* Clean up per-op WSAEVENT handles */
+    for (int i = 1; i < nhandles; i++) {
+        WSACloseEvent(sock_events[i - 1]);
+    }
+#    undef IOCP_MAX_EVENTS
+
+    return dispatched;
 #else
     MTLS_ERR_SET(err, MTLS_ERR_NOT_IMPLEMENTED, "Async I/O not implemented for this platform");
     return -1;
@@ -698,6 +1201,11 @@ int mtls_async_wakeup(mtls_async_ctx *async_ctx)
 #elif defined(MTLS_USE_KQUEUE)
     char dummy = 1;
     if (write(async_ctx->wakeup_pipe[1], &dummy, 1) == -1) {
+        return -1;
+    }
+    return 0;
+#elif defined(MTLS_USE_IOCP)
+    if (!SetEvent(async_ctx->wakeup_event)) {
         return -1;
     }
     return 0;
@@ -804,6 +1312,16 @@ mtls_async_op *mtls_async_connect(mtls_async_ctx *async_ctx, const char *addr,
         pthread_mutex_unlock(&async_ctx->lock);
         return NULL;
     }
+#elif defined(MTLS_USE_KQUEUE)
+    if (kqueue_register(async_ctx, sock, EVFILT_WRITE, err) != 0) {
+        platform_socket_close(sock);
+        async_op_destroy(op);
+        pthread_mutex_unlock(&async_ctx->lock);
+        return NULL;
+    }
+#elif defined(MTLS_USE_IOCP)
+    /* Registration deferred to poll loop — WSAEventSelect created per-poll */
+    (void)iocp_register; /* suppress unused-function warning on Windows */
 #endif
 
     ctx_add_op(async_ctx, op);
@@ -860,6 +1378,15 @@ mtls_async_op *mtls_async_read(mtls_async_ctx *async_ctx, struct mtls_conn *conn
         pthread_mutex_unlock(&async_ctx->lock);
         return NULL;
     }
+#elif defined(MTLS_USE_KQUEUE)
+    if (kqueue_register(async_ctx, socket_fd, EVFILT_READ, err) != 0) {
+        async_op_destroy(op);
+        pthread_mutex_unlock(&async_ctx->lock);
+        return NULL;
+    }
+#elif defined(MTLS_USE_IOCP)
+    /* Registration deferred to poll loop */
+    (void)socket_fd;
 #endif
 
     ctx_add_op(async_ctx, op);
@@ -917,6 +1444,15 @@ mtls_async_op *mtls_async_write(mtls_async_ctx *async_ctx, struct mtls_conn *con
         pthread_mutex_unlock(&async_ctx->lock);
         return NULL;
     }
+#elif defined(MTLS_USE_KQUEUE)
+    if (kqueue_register(async_ctx, socket_fd, EVFILT_WRITE, err) != 0) {
+        async_op_destroy(op);
+        pthread_mutex_unlock(&async_ctx->lock);
+        return NULL;
+    }
+#elif defined(MTLS_USE_IOCP)
+    /* Registration deferred to poll loop */
+    (void)socket_fd;
 #endif
 
     ctx_add_op(async_ctx, op);
@@ -965,6 +1501,17 @@ mtls_async_op *mtls_async_close(mtls_async_ctx *async_ctx, struct mtls_conn *con
             return NULL;
         }
     }
+#elif defined(MTLS_USE_KQUEUE)
+    if (socket_fd >= 0) {
+        if (kqueue_register(async_ctx, socket_fd, EVFILT_WRITE, err) != 0) {
+            async_op_destroy(op);
+            pthread_mutex_unlock(&async_ctx->lock);
+            return NULL;
+        }
+    }
+#elif defined(MTLS_USE_IOCP)
+    /* Registration deferred to poll loop */
+    (void)socket_fd;
 #endif
 
     ctx_add_op(async_ctx, op);
@@ -998,6 +1545,15 @@ int mtls_async_op_cancel(mtls_async_op *async_op)
 #if defined(MTLS_USE_EPOLL)
     if (async_op->socket_fd >= 0) {
         epoll_unregister(ctx, async_op->socket_fd);
+    }
+#elif defined(MTLS_USE_KQUEUE)
+    if (async_op->socket_fd >= 0) {
+        kqueue_unregister(ctx, async_op->socket_fd, EVFILT_READ);
+        kqueue_unregister(ctx, async_op->socket_fd, EVFILT_WRITE);
+    }
+#elif defined(MTLS_USE_IOCP)
+    if (async_op->socket_fd >= 0) {
+        iocp_unregister((SOCKET)async_op->socket_fd);
     }
 #endif
 
@@ -1121,6 +1677,11 @@ void mtls_async_unregister_conn(mtls_async_ctx *async_ctx, struct mtls_conn *con
         if (op->conn == conn || op->socket_fd == socket_fd) {
 #if defined(MTLS_USE_EPOLL)
             epoll_unregister(async_ctx, op->socket_fd);
+#elif defined(MTLS_USE_KQUEUE)
+            kqueue_unregister(async_ctx, op->socket_fd, EVFILT_READ);
+            kqueue_unregister(async_ctx, op->socket_fd, EVFILT_WRITE);
+#elif defined(MTLS_USE_IOCP)
+            iocp_unregister((SOCKET)op->socket_fd);
 #endif
             ctx_remove_op(async_ctx, op);
 

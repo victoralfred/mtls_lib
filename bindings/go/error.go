@@ -380,3 +380,33 @@ func IsAsyncError(err error) bool {
 	}
 	return false
 }
+
+// Sentinel errors for use with errors.Is and errors.As.
+//
+// These variables let callers match specific mTLS error categories without
+// importing the numeric code constants:
+//
+//	if errors.Is(err, mtls.ErrConnectFailed) { ... }
+//	var tlsErr *mtls.Error
+//	if errors.As(err, &tlsErr) && tlsErr.IsTLS() { ... }
+var (
+	ErrSentinelConnectFailed    = &Error{Code: ErrConnectFailed}
+	ErrSentinelTLSHandshake     = &Error{Code: ErrTLSHandshakeFailed}
+	ErrSentinelCertExpired      = &Error{Code: ErrCertExpired}
+	ErrSentinelCertRevoked      = &Error{Code: ErrCertRevoked}
+	ErrSentinelHostnameMismatch = &Error{Code: ErrHostnameMismatch}
+	ErrSentinelKillSwitch       = &Error{Code: ErrKillSwitchEnabled}
+	ErrSentinelRateLimited      = &Error{Code: ErrRateLimited}
+	ErrSentinelConnectionClosed = &Error{Code: ErrConnectionClosed}
+	ErrSentinelDeadline         = &Error{Code: ErrDeadlineExceeded}
+	ErrSentinelWouldBlock       = &Error{Code: ErrWouldBlock}
+)
+
+// Is implements errors.Is support. Two *Error values are equal when their
+// Code fields match. This allows using sentinel variables with errors.Is.
+func (e *Error) Is(target error) bool {
+	if t, ok := target.(*Error); ok {
+		return e.Code == t.Code
+	}
+	return false
+}

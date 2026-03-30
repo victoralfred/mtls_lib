@@ -461,6 +461,38 @@ static void test_revocation_result_structure(void)
     printf("  PASS: Revocation result structure works correctly\n");
 }
 
+/* Test 15: HTTPS CRL URL is_https detection */
+static void test_crl_download_https_detection(void)
+{
+    printf("Test 15: HTTPS CRL URL detection\n");
+
+    mtls_err err;
+    mtls_err_init(&err);
+
+    mtls_config config;
+    mtls_config_init(&config);
+    config.ca_cert_path = "/dev/null";
+    config.enable_crl = true;
+
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
+    if (!ctx) {
+        printf("  SKIP: Could not create mTLS context\n");
+        return;
+    }
+
+    /* Attempt HTTPS CRL download against a non-TLS port — should fail gracefully,
+     * NOT return MTLS_ERR_NOT_IMPLEMENTED (that was the old stub behaviour). */
+    mtls_err_init(&err);
+    int ret = mtls_crl_download(ctx, "https://127.0.0.1:19998/crl.der", 200, &err);
+    assert(ret == -1);
+    /* Must NOT be NOT_IMPLEMENTED any more */
+    assert(err.code != MTLS_ERR_NOT_IMPLEMENTED);
+
+    mtls_ctx_free(ctx);
+
+    printf("  PASS: HTTPS CRL URL no longer returns NOT_IMPLEMENTED\n");
+}
+
 int main(void)
 {
     printf("Running CRL tests...\n\n");
@@ -479,6 +511,7 @@ int main(void)
     test_crl_check_data_invalid();
     test_crl_event_types();
     test_revocation_result_structure();
+    test_crl_download_https_detection();
 
     printf("\nAll CRL tests passed!\n");
     return 0;

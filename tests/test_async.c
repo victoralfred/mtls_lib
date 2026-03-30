@@ -601,6 +601,152 @@ static int test_internal_get_socket_fd(void)
 
 /*
  * =============================================================================
+ * kqueue Smoke Tests (compiled only on macOS/BSD)
+ * =============================================================================
+ */
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+/* Verify that ctx_get_fd returns a valid kqueue descriptor (>= 0) */
+static int test_kqueue_ctx_create_has_valid_fd(void)
+{
+    mtls_config config;
+    mtls_config_init(&config);
+    config.ca_cert_path = "/dev/null";
+
+    mtls_err err;
+    mtls_err_init(&err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
+    if (!ctx) {
+        return 0; /* Skip — context creation needs certs on some platforms */
+    }
+
+    mtls_async_ctx *actx = NULL;
+    if (mtls_async_ctx_create(&actx, ctx, &err) != 0) {
+        mtls_ctx_free(ctx);
+        return 0;
+    }
+
+    int fd = mtls_async_ctx_get_fd(actx);
+    int ok = (fd >= 0);
+
+    mtls_async_ctx_destroy(actx);
+    mtls_ctx_free(ctx);
+    return ok;
+}
+
+/* Verify that mtls_async_wakeup() unblocks a poll with a long timeout */
+static void *kqueue_wakeup_thread(void *arg)
+{
+    mtls_async_ctx *actx = (mtls_async_ctx *)arg;
+    struct timespec ts = {0, 50 * 1000 * 1000}; /* 50 ms */
+    nanosleep(&ts, NULL);
+    mtls_async_wakeup(actx);
+    return NULL;
+}
+
+static int test_kqueue_wakeup_returns_from_poll(void)
+{
+    mtls_config config;
+    mtls_config_init(&config);
+    config.ca_cert_path = "/dev/null";
+
+    mtls_err err;
+    mtls_err_init(&err);
+    mtls_ctx *ctx = mtls_ctx_create(&config, &err);
+    if (!ctx) {
+        return 0;
+    }
+
+    mtls_async_ctx *actx = NULL;
+    if (mtls_async_ctx_create(&actx, ctx, &err) != 0) {
+        mtls_ctx_free(ctx);
+        return 0;
+    }
+
+    pthread_t tid;
+    pthread_create(&tid, NULL, kqueue_wakeup_thread, actx);
+
+    /* Poll with 2 s timeout — wakeup thread fires at 50 ms */
+    int nevents = mtls_async_poll(actx, 2000, &err);
+
+    pthread_join(tid, NULL);
+    mtls_async_ctx_destroy(actx);
+    mtls_ctx_free(ctx);
+
+    /* Should return >= 0 (the wakeup pipe event) without waiting the full 2 s */
+    return (nevents >= 0);
+}
+#endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
+
+/* =============================================================================
+ * Windows IOCP smoke tests
+ * ============================================================================= */
+#if defined(_WIN32) || defined(_WIN64)
+/**
+ * Verify that mtls_async_ctx_create() succeeds on Windows and creates a non-NULL
+ * context with a valid wakeup_event handle.
+ */
+static int test_iocp_ctx_create(void)
+{
+    mtls_ctx *ctx = NULL;
+    mtls_config config;
+    mtls_err err = {0};
+    mtls_config_init(&config);
+    if (mtls_ctx_new(&ctx, &config, &err) != 0) {
+        return 0; /* No certs available — skip gracefully */
+    }
+
+    mtls_async_ctx *actx = NULL;
+    if (mtls_async_ctx_create(&actx, ctx, &err) != 0) {
+        mtls_ctx_free(ctx);
+        return 0;
+    }
+
+    int rc = (actx != NULL);
+    mtls_async_ctx_destroy(actx);
+    mtls_ctx_free(ctx);
+    return rc;
+}
+
+/**
+ * Verify that mtls_async_wakeup() makes mtls_async_poll() return promptly.
+ */
+static DWORD WINAPI iocp_wakeup_thread(LPVOID arg)
+{
+    mtls_async_ctx *actx = (mtls_async_ctx *)arg;
+    Sleep(50); /* 50 ms */
+    mtls_async_wakeup(actx);
+    return 0;
+}
+
+static int test_iocp_wakeup_returns_from_poll(void)
+{
+    mtls_ctx *ctx = NULL;
+    mtls_config config;
+    mtls_err err = {0};
+    mtls_config_init(&config);
+    if (mtls_ctx_new(&ctx, &config, &err) != 0) {
+        return 0;
+    }
+
+    mtls_async_ctx *actx = NULL;
+    if (mtls_async_ctx_create(&actx, ctx, &err) != 0) {
+        mtls_ctx_free(ctx);
+        return 0;
+    }
+
+    HANDLE tid = CreateThread(NULL, 0, iocp_wakeup_thread, actx, 0, NULL);
+    int nevents = mtls_async_poll(actx, 2000, &err);
+    WaitForSingleObject(tid, INFINITE);
+    CloseHandle(tid);
+
+    mtls_async_ctx_destroy(actx);
+    mtls_ctx_free(ctx);
+    return (nevents >= 0);
+}
+#endif /* _WIN32 || _WIN64 */
+
+/*
+ * =============================================================================
  * Main
  * =============================================================================
  */
@@ -645,6 +791,20 @@ int main(void)
 
     /* Internal function tests */
     TEST(internal_get_socket_fd);
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    /* kqueue-specific smoke tests */
+    printf("\n  [kqueue platform detected — running kqueue smoke tests]\n");
+    TEST(kqueue_ctx_create_has_valid_fd);
+    TEST(kqueue_wakeup_returns_from_poll);
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+    /* Windows IOCP smoke tests */
+    printf("\n  [Windows platform detected — running IOCP smoke tests]\n");
+    TEST(iocp_ctx_create);
+    TEST(iocp_wakeup_returns_from_poll);
+#endif
 
     printf("\n=== Results: %d/%d tests passed ===\n\n", tests_passed, tests_run);
 

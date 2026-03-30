@@ -23,6 +23,7 @@
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
+#include <openssl/ssl.h>
 #include <openssl/evp.h>
 #include <openssl/ocsp.h>
 #include <openssl/pem.h>
@@ -479,9 +480,6 @@ int mtls_ocsp_check_url(const char *ocsp_url, const uint8_t *cert_pem, size_t ce
     if (timeout_ms == 0) {
         timeout_ms = MTLS_OCSP_DEFAULT_TIMEOUT_MS;
     }
-    /* TODO: Use timeout_ms for actual connection timeout in production implementation.
-     * Currently this is a stub - cast to void to silence unused parameter warning. */
-    (void)timeout_ms;
 
     X509 *cert = parse_pem_cert(cert_pem, cert_pem_len, err);
     if (!cert) {
@@ -554,6 +552,16 @@ int mtls_ocsp_check_url(const char *ocsp_url, const uint8_t *cert_pem, size_t ce
         MTLS_ERR_SET(err, MTLS_ERR_OCSP_TIMEOUT, "Failed to connect to OCSP responder");
         result->ocsp_status = MTLS_OCSP_STATUS_ERROR;
         return -1;
+    }
+
+    /* Apply socket-level timeout for subsequent send/receive operations */
+    {
+        int bio_fd = -1;
+        (void)BIO_get_fd(cbio, &bio_fd);
+        if (bio_fd >= 0 && timeout_ms > 0) {
+            (void)platform_socket_set_recv_timeout((mtls_socket_t)bio_fd, timeout_ms, NULL);
+            (void)platform_socket_set_send_timeout((mtls_socket_t)bio_fd, timeout_ms, NULL);
+        }
     }
 
     /* Extract host and path from URL */
@@ -1046,9 +1054,176 @@ int mtls_crl_load_file(mtls_ctx *ctx, const char *crl_path, mtls_err *err)
     return 0;
 }
 
+/**
+ * Send an HTTP/1.0 GET over an already-connected BIO and return the response body.
+ * Handles any BIO type (plain TCP or SSL chain).
+ * Caller must free *out_body on success.
+ */
+static int crl_http_get_body(BIO *bio, const char *path, const char *host, void **out_body,
+                             size_t *out_len, mtls_err *err)
+{
+    /* Send GET request */
+    char request[1024];
+    int req_len = snprintf(request, sizeof(request),
+                           "GET %s HTTP/1.0\r\n"
+                           "Host: %s\r\n"
+                           "Connection: close\r\n"
+                           "\r\n",
+                           path, host);
+    if (req_len <= 0 || (size_t)req_len >= sizeof(request)) {
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "CRL request URL too long");
+        return -1;
+    }
+
+    if (BIO_write(bio, request, req_len) <= 0) {
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to send CRL request");
+        return -1;
+    }
+
+    /* Read full response */
+    char *response = NULL;
+    size_t response_len = 0;
+    size_t response_cap = 64 * 1024;
+
+    response = malloc(response_cap);
+    if (!response) {
+        MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate response buffer");
+        return -1;
+    }
+
+    char buf[4096];
+    int bytes_read;
+    while ((bytes_read = BIO_read(bio, buf, (int)sizeof(buf))) > 0) {
+        if (response_len + (size_t)bytes_read > response_cap) {
+            response_cap *= 2;
+            if (response_cap > 10U * 1024U * 1024U) {
+                free(response);
+                MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "CRL response too large");
+                return -1;
+            }
+            char *new_response = realloc(response, response_cap);
+            if (!new_response) {
+                free(response);
+                MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to grow response buffer");
+                return -1;
+            }
+            response = new_response;
+        }
+        memcpy(response + response_len, buf, (size_t)bytes_read);
+        response_len += (size_t)bytes_read;
+    }
+
+    /* Find end of HTTP headers */
+    char *body = strstr(response, "\r\n\r\n");
+    if (!body) {
+        free(response);
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Invalid HTTP response");
+        return -1;
+    }
+    body += 4;
+    size_t body_len = response_len - (size_t)(body - response);
+
+    void *crl_data = malloc(body_len);
+    if (!crl_data) {
+        free(response);
+        MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate CRL data");
+        return -1;
+    }
+    memcpy(crl_data, body, body_len);
+    free(response);
+
+    *out_body = crl_data;
+    *out_len = body_len;
+    return 0;
+}
+
+/**
+ * Download a CRL over HTTPS using a standalone SSL_CTX with system CA certificates.
+ * Uses a separate SSL_CTX to avoid circular dependency: the CRL server's certificate
+ * is validated against the OS trust store, not via the mTLS library's own CRL checks.
+ */
+static int download_crl_https(const char *host, int port, const char *path, uint32_t timeout_ms,
+                              void **out_body, size_t *out_len, mtls_err *err)
+{
+    ERR_clear_error();
+
+    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_client_method());
+    if (!ssl_ctx) {
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to create SSL context for CRL");
+        return -1;
+    }
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_default_verify_paths(ssl_ctx); /* system CA store */
+    SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION);
+
+    char addr_str[512];
+    int printed = snprintf(addr_str, sizeof(addr_str), "%s:%d", host, port);
+    if (printed <= 0 || (size_t)printed >= sizeof(addr_str)) {
+        SSL_CTX_free(ssl_ctx);
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "CRL host address too long");
+        return -1;
+    }
+
+    BIO *cbio = BIO_new_connect(addr_str);
+    if (!cbio) {
+        SSL_CTX_free(ssl_ctx);
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to create HTTPS connect BIO");
+        return -1;
+    }
+
+    BIO *ssl_bio = BIO_new_ssl(ssl_ctx, 1 /* client */);
+    if (!ssl_bio) {
+        BIO_free_all(cbio);
+        SSL_CTX_free(ssl_ctx);
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to create SSL BIO");
+        return -1;
+    }
+
+    /* BIO_push transfers cbio ownership into the chain; free chain frees both */
+    BIO *chain = BIO_push(ssl_bio, cbio);
+
+    /* Set SNI hostname */
+    SSL *ssl_obj = NULL;
+    BIO_get_ssl(ssl_bio, &ssl_obj);
+    if (ssl_obj != NULL) {
+        (void)SSL_set_tlsext_host_name(ssl_obj, host);
+    }
+
+    if (BIO_do_connect(chain) <= 0) {
+        BIO_free_all(chain);
+        SSL_CTX_free(ssl_ctx);
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to connect to HTTPS CRL server");
+        return -1;
+    }
+
+    /* Apply socket-level timeout (best-effort) */
+    {
+        int bio_fd = -1;
+        (void)BIO_get_fd(cbio, &bio_fd);
+        if (bio_fd >= 0 && timeout_ms > 0) {
+            (void)platform_socket_set_recv_timeout((mtls_socket_t)bio_fd, timeout_ms, NULL);
+            (void)platform_socket_set_send_timeout((mtls_socket_t)bio_fd, timeout_ms, NULL);
+        }
+    }
+
+    if (BIO_do_handshake(chain) <= 0) {
+        BIO_free_all(chain);
+        SSL_CTX_free(ssl_ctx);
+        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "TLS handshake with CRL server failed");
+        return -1;
+    }
+
+    int rc = crl_http_get_body(chain, path, host, out_body, out_len, err);
+    BIO_free_all(chain);
+    SSL_CTX_free(ssl_ctx);
+    return rc;
+}
+
 int mtls_crl_download(mtls_ctx *ctx, const char *crl_url, uint32_t timeout_ms, mtls_err *err)
 {
-    (void)timeout_ms; /* Currently unused, reserved for future use */
+    if (timeout_ms == 0) {
+        timeout_ms = MTLS_OCSP_DEFAULT_TIMEOUT_MS;
+    }
 
     if (!ctx || !crl_url) {
         MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Invalid arguments for CRL download");
@@ -1111,118 +1286,68 @@ int mtls_crl_download(mtls_ctx *ctx, const char *crl_url, uint32_t timeout_ms, m
         }
     }
 
-    /* For HTTPS, we would need TLS - for now just support HTTP */
+    void *crl_data = NULL;
+    size_t body_len = 0;
+
     if (is_https) {
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_NOT_IMPLEMENTED);
-        MTLS_ERR_SET(err, MTLS_ERR_NOT_IMPLEMENTED, "HTTPS CRL download not yet supported");
-        return -1;
-    }
-
-    /* Create connection to CRL server */
-    char addr_str[512];
-    snprintf(addr_str, sizeof(addr_str), "%s:%d", host, port);
-
-    BIO *cbio = BIO_new_connect(addr_str);
-    if (!cbio) {
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_CRL_DOWNLOAD_FAILED);
-        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED,
-                     "Failed to create connection to CRL server");
-        return -1;
-    }
-
-    if (BIO_do_connect(cbio) <= 0) {
-        BIO_free_all(cbio);
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_CRL_DOWNLOAD_FAILED);
-        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to connect to CRL server");
-        return -1;
-    }
-
-    /* Send HTTP GET request */
-    char request[1024];
-    snprintf(request, sizeof(request),
-             "GET %s HTTP/1.0\r\n"
-             "Host: %s\r\n"
-             "Connection: close\r\n"
-             "\r\n",
-             path, host);
-
-    if (BIO_write(cbio, request, (int)strlen(request)) <= 0) {
-        BIO_free_all(cbio);
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_CRL_DOWNLOAD_FAILED);
-        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to send CRL request");
-        return -1;
-    }
-
-    /* Read response */
-    char *response = NULL;
-    size_t response_len = 0;
-    size_t response_cap = 64 * 1024; /* Start with 64KB */
-
-    response = malloc(response_cap);
-    if (!response) {
-        BIO_free_all(cbio);
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_OUT_OF_MEMORY);
-        MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate response buffer");
-        return -1;
-    }
-
-    char buf[4096];
-    int len;
-    while ((len = BIO_read(cbio, buf, sizeof(buf))) > 0) {
-        if (response_len + (size_t)len > response_cap) {
-            response_cap *= 2;
-            if (response_cap > 10 * 1024 * 1024) { /* Max 10MB */
-                free(response);
-                BIO_free_all(cbio);
-                emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE,
-                                      MTLS_ERR_CRL_DOWNLOAD_FAILED);
-                MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "CRL response too large");
-                return -1;
-            }
-            char *new_response = realloc(response, response_cap);
-            if (!new_response) {
-                free(response);
-                BIO_free_all(cbio);
-                emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_OUT_OF_MEMORY);
-                MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to grow response buffer");
-                return -1;
-            }
-            response = new_response;
+        /* HTTPS: use standalone SSL_CTX with system CA (avoids circular CRL dependency) */
+        if (download_crl_https(host, port, path, timeout_ms, &crl_data, &body_len, err) != 0) {
+            emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE,
+                                  MTLS_ERR_CRL_DOWNLOAD_FAILED);
+            return -1;
         }
-        memcpy(response + response_len, buf, (size_t)len);
-        response_len += (size_t)len;
+    } else {
+        /* HTTP: plain TCP connection */
+        char addr_str[512];
+        int printed = snprintf(addr_str, sizeof(addr_str), "%s:%d", host, port);
+        if (printed <= 0 || (size_t)printed >= sizeof(addr_str)) {
+            emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE,
+                                  MTLS_ERR_CRL_DOWNLOAD_FAILED);
+            MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "CRL host address too long");
+            return -1;
+        }
+
+        BIO *cbio = BIO_new_connect(addr_str);
+        if (!cbio) {
+            emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE,
+                                  MTLS_ERR_CRL_DOWNLOAD_FAILED);
+            MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED,
+                         "Failed to create connection to CRL server");
+            return -1;
+        }
+
+        if (BIO_do_connect(cbio) <= 0) {
+            BIO_free_all(cbio);
+            emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE,
+                                  MTLS_ERR_CRL_DOWNLOAD_FAILED);
+            MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Failed to connect to CRL server");
+            return -1;
+        }
+
+        /* Apply socket timeout (best-effort) */
+        {
+            int bio_fd = -1;
+            (void)BIO_get_fd(cbio, &bio_fd);
+            if (bio_fd >= 0 && timeout_ms > 0) {
+                (void)platform_socket_set_recv_timeout((mtls_socket_t)bio_fd, timeout_ms, NULL);
+                (void)platform_socket_set_send_timeout((mtls_socket_t)bio_fd, timeout_ms, NULL);
+            }
+        }
+
+        int rc = crl_http_get_body(cbio, path, host, &crl_data, &body_len, err);
+        BIO_free_all(cbio);
+        if (rc != 0) {
+            emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE,
+                                  MTLS_ERR_CRL_DOWNLOAD_FAILED);
+            return -1;
+        }
     }
 
-    BIO_free_all(cbio);
-
-    /* Find end of HTTP headers */
-    char *body = strstr(response, "\r\n\r\n");
-    if (!body) {
-        free(response);
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_CRL_DOWNLOAD_FAILED);
-        MTLS_ERR_SET(err, MTLS_ERR_CRL_DOWNLOAD_FAILED, "Invalid HTTP response");
-        return -1;
-    }
-    body += 4; /* Skip \r\n\r\n */
-    size_t body_len = response_len - (size_t)(body - response);
-
-    /* Copy CRL body */
-    void *crl_data = malloc(body_len);
-    if (!crl_data) {
-        free(response);
-        emit_revocation_event(ctx, MTLS_EVENT_CRL_DOWNLOAD_FAILURE, MTLS_ERR_OUT_OF_MEMORY);
-        MTLS_ERR_SET(err, MTLS_ERR_OUT_OF_MEMORY, "Failed to allocate CRL data");
-        return -1;
-    }
-    memcpy(crl_data, body, body_len);
-    free(response);
-
-    /* Free old CRL data */
+    /* Store downloaded CRL, replacing any previously cached data */
     if (ctx->crl_data) {
         platform_secure_zero(ctx->crl_data, ctx->crl_data_len);
         free(ctx->crl_data);
     }
-
     ctx->crl_data = crl_data;
     ctx->crl_data_len = body_len;
 

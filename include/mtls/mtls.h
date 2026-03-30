@@ -223,6 +223,52 @@ MTLS_API ssize_t mtls_write(mtls_conn *conn, const void *buffer, size_t len, mtl
  */
 MTLS_API void mtls_close(mtls_conn *conn);
 
+/**
+ * Get the underlying socket file descriptor for a connection.
+ *
+ * Intended for use with event loops (epoll, kqueue, AsyncFd). The caller
+ * must NOT close the returned fd — it is owned by the connection.
+ *
+ * @param conn Connection
+ * @return Socket fd on success, -1 if conn is NULL or not established
+ */
+MTLS_API int mtls_conn_get_fd(const mtls_conn *conn);
+
+/**
+ * Non-blocking read from a connection.
+ *
+ * The underlying socket must have been put into non-blocking mode by the
+ * caller (e.g. after registering with an event loop). Returns:
+ *  - > 0 : bytes read into buffer
+ *  -   0 : EOF / connection closed gracefully
+ *  -  -1 : error; if err->code == MTLS_ERR_WOULD_BLOCK the operation would
+ *           block and the caller should wait for readability and retry.
+ *
+ * @param conn   Connection
+ * @param buffer Buffer to read into
+ * @param len    Maximum number of bytes to read
+ * @param err    Error structure to populate on failure
+ * @return Number of bytes read, 0 on EOF, -1 on error
+ */
+MTLS_API ssize_t mtls_conn_read_nonblocking(mtls_conn *conn, void *buffer, size_t len,
+                                            mtls_err *err);
+
+/**
+ * Non-blocking write to a connection.
+ *
+ * Returns the number of bytes accepted by OpenSSL (may be less than len on a
+ * partial write). If -1 and err->code == MTLS_ERR_WOULD_BLOCK, wait for
+ * writability and retry with the same buffer/offset.
+ *
+ * @param conn   Connection
+ * @param buffer Buffer to write from
+ * @param len    Number of bytes to write
+ * @param err    Error structure to populate on failure
+ * @return Number of bytes written, -1 on error
+ */
+MTLS_API ssize_t mtls_conn_write_nonblocking(mtls_conn *conn, const void *buffer, size_t len,
+                                             mtls_err *err);
+
 /*
  * =============================================================================
  * Connection State & Identity

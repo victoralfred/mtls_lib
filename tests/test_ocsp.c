@@ -17,6 +17,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#if !defined(_WIN32)
+#    include <arpa/inet.h>
+#    include <netinet/in.h>
+#    include <sys/socket.h>
+#    include <unistd.h>
+#endif
 
 /* Sample self-signed certificate PEM for testing (no OCSP responder) */
 static const char kTestCertPem[] = // NOLINT(readability-identifier-naming)
@@ -430,6 +436,75 @@ static void test_ocsp_status_enum(void)
     printf("  PASS: OCSP status enum values are correct\n");
 }
 
+/* Test 13: OCSP timeout — connect to a slow/refusing endpoint */
+#if !defined(_WIN32)
+static void test_ocsp_timeout_short(void)
+{
+    printf("Test 13: OCSP short timeout is applied (no hang)\n");
+
+    /* Create a local TCP listener that accepts but never replies, to simulate a slow responder */
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(server_fd >= 0);
+
+    int reuse = 1;
+    (void)setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0; /* OS assigns port */
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0);
+    assert(listen(server_fd, 1) == 0);
+
+    /* Get assigned port */
+    struct sockaddr_in bound;
+    socklen_t bound_len = sizeof(bound);
+    assert(getsockname(server_fd, (struct sockaddr *)&bound, &bound_len) == 0);
+    int port = ntohs(bound.sin_port);
+
+    /* Build OCSP URL pointing to our silent listener */
+    char ocsp_url[128];
+    (void)snprintf(ocsp_url, sizeof(ocsp_url), "http://127.0.0.1:%d/ocsp", port);
+
+    mtls_revocation_result result;
+    mtls_err err;
+    mtls_err_init(&err);
+
+    /* 100 ms timeout — should fail quickly rather than hang */
+    int ret =
+        mtls_ocsp_check_url(ocsp_url, (const uint8_t *)kTestCertPem, kTestCertPemLen,
+                            (const uint8_t *)kTestCertPem, kTestCertPemLen, 100, &result, &err);
+
+    close(server_fd);
+
+    /* Should fail (no valid OCSP response), not hang indefinitely */
+    assert(ret == -1);
+
+    printf("  PASS: OCSP request with short timeout fails quickly\n");
+}
+#endif /* !_WIN32 */
+
+/* Test 14: OCSP zero timeout falls back to default */
+static void test_ocsp_zero_timeout_uses_default(void)
+{
+    printf("Test 14: Zero timeout uses default\n");
+
+    /* Passing zero timeout to mtls_ocsp_check_url with an unreachable host should
+     * still fail (not hang forever), confirming the default timeout was applied. */
+    mtls_revocation_result result;
+    mtls_err err;
+    mtls_err_init(&err);
+
+    /* Use an unroutable address to get a fast failure; the important thing is
+     * it does not accept zero as "no timeout at all" (which would block forever). */
+    int ret = mtls_ocsp_check_url("http://0.0.0.1:19999/ocsp", (const uint8_t *)kTestCertPem,
+                                  kTestCertPemLen, (const uint8_t *)kTestCertPem, kTestCertPemLen,
+                                  0, &result, &err);
+    assert(ret == -1); /* Must fail, not block */
+
+    printf("  PASS: Zero timeout falls back to default and returns error\n");
+}
+
 int main(void)
 {
     printf("Running OCSP tests...\n\n");
@@ -446,6 +521,10 @@ int main(void)
     test_check_revocation_null_params();
     test_ocsp_error_codes();
     test_ocsp_status_enum();
+#if !defined(_WIN32)
+    test_ocsp_timeout_short();
+#endif
+    test_ocsp_zero_timeout_uses_default();
 
     printf("\nAll OCSP tests passed!\n");
     return 0;

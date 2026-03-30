@@ -898,6 +898,96 @@ void mtls_close(mtls_conn *conn)
     free(conn);
 }
 
+int mtls_conn_get_fd(const mtls_conn *conn)
+{
+    if (!conn || conn->sock == MTLS_INVALID_SOCKET) {
+        return -1;
+    }
+    return (int)conn->sock;
+}
+
+ssize_t mtls_conn_read_nonblocking(mtls_conn *conn, void *buffer, size_t len, mtls_err *err)
+{
+    if (!conn || !buffer) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Invalid arguments");
+        return -1;
+    }
+
+    if (len == 0) {
+        return 0;
+    }
+
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
+        MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Connection not established");
+        return -1;
+    }
+
+    if (len > (size_t)INT_MAX) {
+        len = (size_t)INT_MAX;
+    }
+
+    int bytes_read = SSL_read(conn->ssl, buffer, (int)len);
+    if (bytes_read > 0) {
+        return bytes_read;
+    }
+
+    int ssl_err = SSL_get_error(conn->ssl, bytes_read);
+    if (ssl_err == SSL_ERROR_ZERO_RETURN) {
+        atomic_store(&conn->state, MTLS_CONN_STATE_CLOSED);
+        return 0; /* EOF */
+    }
+    if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE) {
+        MTLS_ERR_SET(err, MTLS_ERR_WOULD_BLOCK, "SSL_read would block");
+        return -1;
+    }
+
+    MTLS_ERR_SET(err, MTLS_ERR_READ_FAILED, "SSL_read failed");
+    if (err) {
+        err->ssl_err = ERR_get_error();
+    }
+    return -1;
+}
+
+ssize_t mtls_conn_write_nonblocking(mtls_conn *conn, const void *buffer, size_t len, mtls_err *err)
+{
+    if (!conn || !buffer) {
+        MTLS_ERR_SET(err, MTLS_ERR_INVALID_ARGUMENT, "Invalid arguments");
+        return -1;
+    }
+
+    if (len == 0) {
+        return 0;
+    }
+
+    mtls_conn_state state = (mtls_conn_state)atomic_load(&conn->state);
+    if (state != MTLS_CONN_STATE_ESTABLISHED) {
+        MTLS_ERR_SET(err, MTLS_ERR_CONNECTION_CLOSED, "Connection not established");
+        return -1;
+    }
+
+    if (len > (size_t)INT_MAX) {
+        len = (size_t)INT_MAX;
+    }
+
+    int bytes_written = SSL_write(conn->ssl, buffer, (int)len);
+    if (bytes_written > 0) {
+        return bytes_written;
+    }
+
+    int ssl_err = SSL_get_error(conn->ssl, bytes_written);
+    if (ssl_err == SSL_ERROR_WANT_WRITE || ssl_err == SSL_ERROR_WANT_READ) {
+        MTLS_ERR_SET(err, MTLS_ERR_WOULD_BLOCK, "SSL_write would block");
+        return -1;
+    }
+
+    MTLS_ERR_SET(err, MTLS_ERR_WRITE_FAILED, "SSL_write failed");
+    if (err) {
+        err->ssl_err = ERR_get_error();
+    }
+    return -1;
+}
+
 mtls_conn_state mtls_get_state(const mtls_conn *conn)
 {
     return conn ? (mtls_conn_state)atomic_load(&conn->state) : MTLS_CONN_STATE_NONE;

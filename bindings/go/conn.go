@@ -303,11 +303,10 @@ func (ctx *Context) ConnectContext(c context.Context, addr string) (*Conn, error
 
 	select {
 	case <-c.Done():
-		// Context cancelled - wait for the connection attempt to complete
-		// and properly clean up any established connection
+		// Context cancelled - drain the goroutine result and close any
+		// connection that was established after the deadline fired.
 		go func() {
-			result := <-resultCh
-			if result.conn != nil {
+			if result := <-resultCh; result.conn != nil {
 				result.conn.Close()
 			}
 		}()

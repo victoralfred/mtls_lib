@@ -8,9 +8,24 @@ package mtls
 import "C"
 
 import (
+	"fmt"
 	"time"
 	"unsafe"
 )
+
+// maxAllowedSANs is the maximum number of SANs that can be configured.
+// Prevents unbounded C heap allocation from untrusted input.
+const maxAllowedSANs = 65536
+
+// cMalloc allocates n bytes of C heap memory and panics if allocation fails.
+// Use instead of C.malloc to avoid silent NULL dereferences.
+func cMalloc(n C.size_t) unsafe.Pointer {
+	p := C.malloc(n)
+	if p == nil {
+		panic(fmt.Sprintf("mtls: C.malloc(%d) returned nil: out of memory", n))
+	}
+	return p
+}
 
 // Config holds the configuration for creating an mTLS context.
 //
@@ -198,7 +213,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	// CA certificate - copy PEM data to C memory to avoid CGo pointer rule violation
 	if len(c.CACertPEM) > 0 {
-		caCertCopy := C.malloc(C.size_t(len(c.CACertPEM)))
+		caCertCopy := cMalloc(C.size_t(len(c.CACertPEM)))
 		allocations = append(allocations, caCertCopy)
 		C.memcpy(caCertCopy, unsafe.Pointer(&c.CACertPEM[0]), C.size_t(len(c.CACertPEM)))
 		cConfig.ca_cert_pem = (*C.uint8_t)(caCertCopy)
@@ -211,7 +226,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	// Client certificate - copy PEM data to C memory
 	if len(c.CertPEM) > 0 {
-		certCopy := C.malloc(C.size_t(len(c.CertPEM)))
+		certCopy := cMalloc(C.size_t(len(c.CertPEM)))
 		allocations = append(allocations, certCopy)
 		C.memcpy(certCopy, unsafe.Pointer(&c.CertPEM[0]), C.size_t(len(c.CertPEM)))
 		cConfig.cert_pem = (*C.uint8_t)(certCopy)
@@ -224,7 +239,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	// Private key - copy PEM data to C memory
 	if len(c.KeyPEM) > 0 {
-		keyCopy := C.malloc(C.size_t(len(c.KeyPEM)))
+		keyCopy := cMalloc(C.size_t(len(c.KeyPEM)))
 		allocations = append(allocations, keyCopy)
 		C.memcpy(keyCopy, unsafe.Pointer(&c.KeyPEM[0]), C.size_t(len(c.KeyPEM)))
 		cConfig.key_pem = (*C.uint8_t)(keyCopy)
@@ -243,19 +258,23 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	}
 
 	// Allowed SANs
-	if len(c.AllowedSANs) > 0 {
-		sanArray := C.malloc(C.size_t(len(c.AllowedSANs)) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+	if n := len(c.AllowedSANs); n > 0 {
+		if n > maxAllowedSANs {
+			// Truncate silently; callers should validate before calling toC.
+			n = maxAllowedSANs
+		}
+		sanArray := cMalloc(C.size_t(n) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
 		allocations = append(allocations, sanArray)
 
-		sanPtrs := (*[1 << 30]*C.char)(sanArray)[:len(c.AllowedSANs):len(c.AllowedSANs)]
-		for i, san := range c.AllowedSANs {
+		sanPtrs := unsafe.Slice((**C.char)(sanArray), n)
+		for i, san := range c.AllowedSANs[:n] {
 			cStr := C.CString(san)
 			allocations = append(allocations, unsafe.Pointer(cStr))
 			sanPtrs[i] = cStr
 		}
 
 		cConfig.allowed_sans = (**C.char)(sanArray)
-		cConfig.allowed_sans_count = C.size_t(len(c.AllowedSANs))
+		cConfig.allowed_sans_count = C.size_t(n)
 	}
 
 	// TLS versions
@@ -316,11 +335,11 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	}
 
 	// Certificate pinning settings
-	if len(c.PinSPKISHA256) > 0 {
-		pinArray := C.malloc(C.size_t(len(c.PinSPKISHA256)) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+	if n := len(c.PinSPKISHA256); n > 0 {
+		pinArray := cMalloc(C.size_t(n) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
 		allocations = append(allocations, pinArray)
 
-		pinPtrs := (*[1 << 30]*C.char)(pinArray)[:len(c.PinSPKISHA256):len(c.PinSPKISHA256)]
+		pinPtrs := unsafe.Slice((**C.char)(pinArray), n)
 		for i, pin := range c.PinSPKISHA256 {
 			cStr := C.CString(pin)
 			allocations = append(allocations, unsafe.Pointer(cStr))
@@ -328,14 +347,14 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		}
 
 		cConfig.pin_spki_sha256 = (**C.char)(pinArray)
-		cConfig.pin_spki_sha256_count = C.size_t(len(c.PinSPKISHA256))
+		cConfig.pin_spki_sha256_count = C.size_t(n)
 	}
 
-	if len(c.PinCertSHA256) > 0 {
-		pinArray := C.malloc(C.size_t(len(c.PinCertSHA256)) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+	if n := len(c.PinCertSHA256); n > 0 {
+		pinArray := cMalloc(C.size_t(n) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
 		allocations = append(allocations, pinArray)
 
-		pinPtrs := (*[1 << 30]*C.char)(pinArray)[:len(c.PinCertSHA256):len(c.PinCertSHA256)]
+		pinPtrs := unsafe.Slice((**C.char)(pinArray), n)
 		for i, pin := range c.PinCertSHA256 {
 			cStr := C.CString(pin)
 			allocations = append(allocations, unsafe.Pointer(cStr))
@@ -343,7 +362,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		}
 
 		cConfig.pin_cert_sha256 = (**C.char)(pinArray)
-		cConfig.pin_cert_sha256_count = C.size_t(len(c.PinCertSHA256))
+		cConfig.pin_cert_sha256_count = C.size_t(n)
 	}
 
 	cConfig.pin_require_match = C.bool(c.PinRequireMatch)
@@ -361,7 +380,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 		cConfig.ct_log_list_path = cStr
 	}
 	if len(c.CTLogListJSON) > 0 {
-		jsonCopy := C.malloc(C.size_t(len(c.CTLogListJSON)))
+		jsonCopy := cMalloc(C.size_t(len(c.CTLogListJSON)))
 		allocations = append(allocations, jsonCopy)
 		C.memcpy(jsonCopy, unsafe.Pointer(&c.CTLogListJSON[0]), C.size_t(len(c.CTLogListJSON)))
 		cConfig.ct_log_list_json = (*C.uint8_t)(jsonCopy)

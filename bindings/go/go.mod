@@ -1,3 +1,3 @@
-module github.com/yourusername/mtls-go
+module github.com/victoralfred/mtls-go
 
 go 1.21

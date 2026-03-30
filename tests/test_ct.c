@@ -13,6 +13,7 @@
 #include "mtls/mtls_ct.h"
 #include "mtls/mtls_error.h"
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -577,6 +578,65 @@ static void test_ct_validate_multiple_scts(void)
     printf("  PASS: Multiple SCT validation works\n");
 }
 
+/* Test 17: mtls_ct_extract_scts_from_conn NULL parameter rejection */
+static void test_ct_extract_conn_null_params(void)
+{
+    printf("Test 17: mtls_ct_extract_scts_from_conn NULL parameter rejection\n");
+
+    mtls_sct scts[MTLS_CT_MAX_SCTS];
+    size_t sct_count = 0;
+    mtls_err err;
+    mtls_err_init(&err);
+
+    /* NULL conn */
+    int ret = mtls_ct_extract_scts_from_conn(NULL, scts, MTLS_CT_MAX_SCTS, &sct_count, &err);
+    assert(ret == -1);
+    assert(err.code == MTLS_ERR_INVALID_ARGUMENT);
+
+    /* NULL scts — use a non-NULL sentinel; the function checks scts before dereferencing conn */
+    uintptr_t sentinel_val = 1U;
+    mtls_conn *dummy_ptr = (mtls_conn *)sentinel_val; /* NOLINT(performance-no-int-to-ptr) */
+    mtls_err_init(&err);
+    ret = mtls_ct_extract_scts_from_conn(dummy_ptr, NULL, MTLS_CT_MAX_SCTS, &sct_count, &err);
+    assert(ret == -1);
+    assert(err.code == MTLS_ERR_INVALID_ARGUMENT);
+
+    /* NULL sct_count */
+    mtls_err_init(&err);
+    ret = mtls_ct_extract_scts_from_conn(dummy_ptr, scts, MTLS_CT_MAX_SCTS, NULL, &err);
+    assert(ret == -1);
+    assert(err.code == MTLS_ERR_INVALID_ARGUMENT);
+
+    printf("  PASS: mtls_ct_extract_scts_from_conn rejects NULL parameters\n");
+}
+
+/* Test 18: mtls_ct_validate_conn NULL parameter rejection */
+static void test_ct_validate_conn_null_params(void)
+{
+    printf("Test 18: mtls_ct_validate_conn NULL parameter rejection\n");
+
+    mtls_ct_log_list log_list;
+    mtls_ct_log_list_init(&log_list);
+    mtls_ct_report report;
+    mtls_err err;
+    mtls_err_init(&err);
+
+    /* NULL conn */
+    int ret = mtls_ct_validate_conn(NULL, &log_list, 1, false, &report, &err);
+    assert(ret == -1);
+    assert(err.code == MTLS_ERR_INVALID_ARGUMENT);
+
+    /* NULL log_list — use a non-NULL sentinel pointer */
+    uintptr_t sentinel_val2 = 1U;
+    mtls_conn *dummy_ptr2 = (mtls_conn *)sentinel_val2; /* NOLINT(performance-no-int-to-ptr) */
+    mtls_err_init(&err);
+    ret = mtls_ct_validate_conn(dummy_ptr2, NULL, 1, false, &report, &err);
+    assert(ret == -1);
+    assert(err.code == MTLS_ERR_INVALID_ARGUMENT);
+
+    printf("  PASS: mtls_ct_validate_conn rejects NULL parameters\n");
+}
+
 int main(void)
 {
     printf("Running Certificate Transparency tests...\n\n");
@@ -598,6 +658,8 @@ int main(void)
     test_ct_validate_sct_known_log();
     test_ct_validate_sct_unknown_log();
     test_ct_validate_multiple_scts();
+    test_ct_extract_conn_null_params();
+    test_ct_validate_conn_null_params();
 
     printf("\nAll Certificate Transparency tests passed!\n");
     return 0;
