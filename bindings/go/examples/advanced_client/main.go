@@ -23,7 +23,7 @@ import (
 	"os"
 	"time"
 
-	mtls "github.com/yourusername/mtls-go"
+	mtls "github.com/victoralfred/mtls-go"
 )
 
 const (

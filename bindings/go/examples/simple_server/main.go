@@ -15,7 +15,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	mtls "github.com/yourusername/mtls-go"
+	mtls "github.com/victoralfred/mtls-go"
 )
 
 func main() {
