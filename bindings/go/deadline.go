@@ -6,6 +6,7 @@ package mtls
 import "C"
 
 import (
+	"io"
 	"runtime"
 	"time"
 	"unsafe"
@@ -240,7 +241,7 @@ func (c *Conn) ReadWithDeadline(p []byte, deadline *DeadlineCtx) (int, error) {
 		return 0, convertError(&cErr)
 	}
 	if n == 0 {
-		return 0, nil // EOF handled by caller checking error
+		return 0, io.EOF
 	}
 	return int(n), nil
 }
