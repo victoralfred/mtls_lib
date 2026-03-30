@@ -31,6 +31,110 @@ const (
 	EventKillSwitch
 )
 
+// Rate limiting events (21-23)
+const (
+	// EventRateLimitCheck is emitted when rate limit is checked.
+	EventRateLimitCheck EventType = 21
+	// EventRateLimitExceeded is emitted when rate limit is exceeded.
+	EventRateLimitExceeded EventType = 22
+	// EventRateLimitAllowed is emitted when request passes rate limiting.
+	EventRateLimitAllowed EventType = 23
+)
+
+// Deadline events (30-31)
+const (
+	// EventDeadlineStart is emitted when a deadline-aware operation starts.
+	EventDeadlineStart EventType = 30
+	// EventDeadlineExceeded is emitted when a deadline is exceeded.
+	EventDeadlineExceeded EventType = 31
+)
+
+// Connection pool events (40-45)
+const (
+	// EventPoolAcquireStart is emitted when pool acquire begins.
+	EventPoolAcquireStart EventType = 40
+	// EventPoolAcquireSuccess is emitted when pool acquire succeeds.
+	EventPoolAcquireSuccess EventType = 41
+	// EventPoolAcquireTimeout is emitted when pool acquire times out.
+	EventPoolAcquireTimeout EventType = 42
+	// EventPoolRelease is emitted when a connection is released to pool.
+	EventPoolRelease EventType = 43
+	// EventPoolConnCreated is emitted when a new pooled connection is created.
+	EventPoolConnCreated EventType = 44
+	// EventPoolConnClosed is emitted when a pooled connection is closed.
+	EventPoolConnClosed EventType = 45
+)
+
+// OCSP/CRL events (11-20)
+const (
+	// EventOCSPCheckStart is emitted when OCSP check begins.
+	EventOCSPCheckStart EventType = 11
+	// EventOCSPCheckSuccess is emitted when OCSP check succeeds.
+	EventOCSPCheckSuccess EventType = 12
+	// EventOCSPCheckFailure is emitted when OCSP check fails.
+	EventOCSPCheckFailure EventType = 13
+	// EventOCSPStapleVerified is emitted when OCSP staple is verified.
+	EventOCSPStapleVerified EventType = 14
+	// EventCRLCheckStart is emitted when CRL check begins.
+	EventCRLCheckStart EventType = 15
+	// EventCRLCheckSuccess is emitted when CRL check succeeds.
+	EventCRLCheckSuccess EventType = 16
+	// EventCRLCheckFailure is emitted when CRL check fails.
+	EventCRLCheckFailure EventType = 17
+	// EventCRLDownloadStart is emitted when CRL download begins.
+	EventCRLDownloadStart EventType = 18
+	// EventCRLDownloadSuccess is emitted when CRL download succeeds.
+	EventCRLDownloadSuccess EventType = 19
+	// EventCRLDownloadFailure is emitted when CRL download fails.
+	EventCRLDownloadFailure EventType = 20
+)
+
+// Certificate pinning events (60-62)
+const (
+	// EventPinCheckStart is emitted when certificate pinning check begins.
+	EventPinCheckStart EventType = 60
+	// EventPinCheckSuccess is emitted when certificate pinning check succeeds.
+	EventPinCheckSuccess EventType = 61
+	// EventPinCheckFailure is emitted when certificate pinning check fails.
+	EventPinCheckFailure EventType = 62
+)
+
+// HSM events (70-73)
+const (
+	// EventHSMInitStart is emitted when HSM initialization begins.
+	EventHSMInitStart EventType = 70
+	// EventHSMInitSuccess is emitted when HSM initialization succeeds.
+	EventHSMInitSuccess EventType = 71
+	// EventHSMInitFailure is emitted when HSM initialization fails.
+	EventHSMInitFailure EventType = 72
+	// EventHSMKeyLoaded is emitted when a key is loaded from HSM.
+	EventHSMKeyLoaded EventType = 73
+)
+
+// Async I/O events (50-53)
+const (
+	// EventAsyncConnectStart is emitted when async connect begins.
+	EventAsyncConnectStart EventType = 50
+	// EventAsyncConnectSuccess is emitted when async connect succeeds.
+	EventAsyncConnectSuccess EventType = 51
+	// EventAsyncConnectFailure is emitted when async connect fails.
+	EventAsyncConnectFailure EventType = 52
+	// EventAsyncOpCancelled is emitted when an async operation is cancelled.
+	EventAsyncOpCancelled EventType = 53
+)
+
+// Certificate Transparency events (80-83)
+const (
+	// EventCTCheckStart is emitted when CT verification begins.
+	EventCTCheckStart EventType = 80
+	// EventCTCheckSuccess is emitted when CT verification succeeds.
+	EventCTCheckSuccess EventType = 81
+	// EventCTCheckFailure is emitted when CT verification fails.
+	EventCTCheckFailure EventType = 82
+	// EventCTSCTValidated is emitted when an SCT is validated.
+	EventCTSCTValidated EventType = 83
+)
+
 // String returns a human-readable name for the event type.
 func (t EventType) String() string {
 	switch t {
@@ -54,6 +158,78 @@ func (t EventType) String() string {
 		return "Close"
 	case EventKillSwitch:
 		return "KillSwitch"
+	case EventOCSPCheckStart:
+		return "OCSPCheckStart"
+	case EventOCSPCheckSuccess:
+		return "OCSPCheckSuccess"
+	case EventOCSPCheckFailure:
+		return "OCSPCheckFailure"
+	case EventOCSPStapleVerified:
+		return "OCSPStapleVerified"
+	case EventCRLCheckStart:
+		return "CRLCheckStart"
+	case EventCRLCheckSuccess:
+		return "CRLCheckSuccess"
+	case EventCRLCheckFailure:
+		return "CRLCheckFailure"
+	case EventCRLDownloadStart:
+		return "CRLDownloadStart"
+	case EventCRLDownloadSuccess:
+		return "CRLDownloadSuccess"
+	case EventCRLDownloadFailure:
+		return "CRLDownloadFailure"
+	case EventPinCheckStart:
+		return "PinCheckStart"
+	case EventPinCheckSuccess:
+		return "PinCheckSuccess"
+	case EventPinCheckFailure:
+		return "PinCheckFailure"
+	case EventHSMInitStart:
+		return "HSMInitStart"
+	case EventHSMInitSuccess:
+		return "HSMInitSuccess"
+	case EventHSMInitFailure:
+		return "HSMInitFailure"
+	case EventHSMKeyLoaded:
+		return "HSMKeyLoaded"
+	case EventCTCheckStart:
+		return "CTCheckStart"
+	case EventCTCheckSuccess:
+		return "CTCheckSuccess"
+	case EventCTCheckFailure:
+		return "CTCheckFailure"
+	case EventCTSCTValidated:
+		return "CTSCTValidated"
+	case EventRateLimitCheck:
+		return "RateLimitCheck"
+	case EventRateLimitExceeded:
+		return "RateLimitExceeded"
+	case EventRateLimitAllowed:
+		return "RateLimitAllowed"
+	case EventDeadlineStart:
+		return "DeadlineStart"
+	case EventDeadlineExceeded:
+		return "DeadlineExceeded"
+	case EventPoolAcquireStart:
+		return "PoolAcquireStart"
+	case EventPoolAcquireSuccess:
+		return "PoolAcquireSuccess"
+	case EventPoolAcquireTimeout:
+		return "PoolAcquireTimeout"
+	case EventPoolRelease:
+		return "PoolRelease"
+	case EventPoolConnCreated:
+		return "PoolConnCreated"
+	case EventPoolConnClosed:
+		return "PoolConnClosed"
+	case EventAsyncConnectStart:
+		return "AsyncConnectStart"
+	case EventAsyncConnectSuccess:
+		return "AsyncConnectSuccess"
+	case EventAsyncConnectFailure:
+		return "AsyncConnectFailure"
+	case EventAsyncOpCancelled:
+		return "AsyncOpCancelled"
 	default:
 		return "Unknown"
 	}
@@ -61,17 +237,77 @@ func (t EventType) String() string {
 
 // IsSuccess returns true if the event type indicates success.
 func (t EventType) IsSuccess() bool {
-	return t == EventConnectSuccess || t == EventHandshakeSuccess
+	return t == EventConnectSuccess || t == EventHandshakeSuccess ||
+		t == EventOCSPCheckSuccess || t == EventOCSPStapleVerified ||
+		t == EventCRLCheckSuccess || t == EventCRLDownloadSuccess ||
+		t == EventPinCheckSuccess || t == EventHSMInitSuccess ||
+		t == EventCTCheckSuccess || t == EventRateLimitAllowed ||
+		t == EventAsyncConnectSuccess
 }
 
 // IsFailure returns true if the event type indicates failure.
 func (t EventType) IsFailure() bool {
-	return t == EventConnectFailure || t == EventHandshakeFailure
+	return t == EventConnectFailure || t == EventHandshakeFailure ||
+		t == EventOCSPCheckFailure || t == EventCRLCheckFailure ||
+		t == EventCRLDownloadFailure || t == EventPinCheckFailure ||
+		t == EventHSMInitFailure || t == EventCTCheckFailure ||
+		t == EventRateLimitExceeded || t == EventDeadlineExceeded ||
+		t == EventAsyncConnectFailure || t == EventAsyncOpCancelled
+}
+
+// IsAsync returns true if this is an async I/O event.
+func (t EventType) IsAsync() bool {
+	return t >= EventAsyncConnectStart && t <= EventAsyncOpCancelled
 }
 
 // IsIO returns true if the event type is an I/O event.
 func (t EventType) IsIO() bool {
 	return t == EventRead || t == EventWrite
+}
+
+// IsOCSP returns true if the event type is an OCSP event.
+func (t EventType) IsOCSP() bool {
+	return t >= EventOCSPCheckStart && t <= EventOCSPStapleVerified
+}
+
+// IsCRL returns true if the event type is a CRL event.
+func (t EventType) IsCRL() bool {
+	return t >= EventCRLCheckStart && t <= EventCRLDownloadFailure
+}
+
+// IsRevocation returns true if the event type is a revocation check event (OCSP or CRL).
+func (t EventType) IsRevocation() bool {
+	return t.IsOCSP() || t.IsCRL()
+}
+
+// IsPinning returns true if the event type is a certificate pinning event.
+func (t EventType) IsPinning() bool {
+	return t >= EventPinCheckStart && t <= EventPinCheckFailure
+}
+
+// IsHSM returns true if the event type is an HSM event.
+func (t EventType) IsHSM() bool {
+	return t >= EventHSMInitStart && t <= EventHSMKeyLoaded
+}
+
+// IsCT returns true if the event type is a Certificate Transparency event.
+func (t EventType) IsCT() bool {
+	return t >= EventCTCheckStart && t <= EventCTSCTValidated
+}
+
+// IsRateLimit returns true if the event type is a rate limiting event.
+func (t EventType) IsRateLimit() bool {
+	return t >= EventRateLimitCheck && t <= EventRateLimitAllowed
+}
+
+// IsDeadline returns true if the event type is a deadline event.
+func (t EventType) IsDeadline() bool {
+	return t >= EventDeadlineStart && t <= EventDeadlineExceeded
+}
+
+// IsPool returns true if the event type is a connection pool event.
+func (t EventType) IsPool() bool {
+	return t >= EventPoolAcquireStart && t <= EventPoolConnClosed
 }
 
 // Event represents an mTLS event emitted by the library.
@@ -139,6 +375,13 @@ func FilterIO() EventFilter {
 	}
 }
 
+// FilterRateLimit returns an EventFilter that includes only rate limiting events.
+func FilterRateLimit() EventFilter {
+	return func(e *Event) bool {
+		return e.Type.IsRateLimit()
+	}
+}
+
 // CombineFilters returns an EventFilter that applies all given filters (AND logic).
 func CombineFilters(filters ...EventFilter) EventFilter {
 	return func(e *Event) bool {
@@ -192,6 +435,11 @@ type EventMetrics struct {
 	PolicyErrors   uint64
 	IOErrors       uint64
 
+	// Rate limiting metrics
+	RateLimitChecks   uint64
+	RateLimitExceeded uint64
+	RateLimitAllowed  uint64
+
 	// Timing (cumulative)
 	TotalConnectDuration   time.Duration
 	TotalHandshakeDuration time.Duration
@@ -231,6 +479,12 @@ func (m *EventMetrics) Record(e *Event) {
 	case EventWrite:
 		m.WriteOps++
 		m.BytesWritten += e.Bytes
+	case EventRateLimitCheck:
+		m.RateLimitChecks++
+	case EventRateLimitExceeded:
+		m.RateLimitExceeded++
+	case EventRateLimitAllowed:
+		m.RateLimitAllowed++
 	}
 }
 

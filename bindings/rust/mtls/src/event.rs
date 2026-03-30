@@ -32,6 +32,86 @@ pub enum EventType {
     Close = 9,
     /// Kill switch triggered.
     KillSwitchTriggered = 10,
+    // OCSP/CRL events (11-20)
+    /// OCSP check started.
+    OcspCheckStart = 11,
+    /// OCSP check succeeded.
+    OcspCheckSuccess = 12,
+    /// OCSP check failed.
+    OcspCheckFailure = 13,
+    /// OCSP staple verified.
+    OcspStapleVerified = 14,
+    /// CRL check started.
+    CrlCheckStart = 15,
+    /// CRL check succeeded.
+    CrlCheckSuccess = 16,
+    /// CRL check failed.
+    CrlCheckFailure = 17,
+    /// CRL download started.
+    CrlDownloadStart = 18,
+    /// CRL download succeeded.
+    CrlDownloadSuccess = 19,
+    /// CRL download failed.
+    CrlDownloadFailure = 20,
+    // Certificate pinning events (60-62)
+    /// Pin check started.
+    PinCheckStart = 60,
+    /// Pin check succeeded.
+    PinCheckSuccess = 61,
+    /// Pin check failed.
+    PinCheckFailure = 62,
+    // HSM events (70-73)
+    /// HSM initialization started.
+    HsmInitStart = 70,
+    /// HSM initialization succeeded.
+    HsmInitSuccess = 71,
+    /// HSM initialization failed.
+    HsmInitFailure = 72,
+    /// HSM key loaded.
+    HsmKeyLoaded = 73,
+    // Rate limiting events (21-23)
+    /// Rate limit check.
+    RateLimitCheck = 21,
+    /// Rate limit exceeded.
+    RateLimitExceeded = 22,
+    /// Rate limit allowed.
+    RateLimitAllowed = 23,
+    // Deadline events (30-31)
+    /// Deadline-aware operation started.
+    DeadlineStart = 30,
+    /// Deadline exceeded.
+    DeadlineExceeded = 31,
+    // Connection pool events (40-45)
+    /// Pool acquire started.
+    PoolAcquireStart = 40,
+    /// Pool acquire succeeded.
+    PoolAcquireSuccess = 41,
+    /// Pool acquire timed out.
+    PoolAcquireTimeout = 42,
+    /// Connection released to pool.
+    PoolRelease = 43,
+    /// Connection created in pool.
+    PoolConnCreated = 44,
+    /// Connection closed in pool.
+    PoolConnClosed = 45,
+    // Async I/O events (50-53)
+    /// Async connect started.
+    AsyncConnectStart = 50,
+    /// Async connect succeeded.
+    AsyncConnectSuccess = 51,
+    /// Async connect failed.
+    AsyncConnectFailure = 52,
+    /// Async operation cancelled.
+    AsyncOpCancelled = 53,
+    // Certificate Transparency events (80-83)
+    /// CT check started.
+    CtCheckStart = 80,
+    /// CT check succeeded.
+    CtCheckSuccess = 81,
+    /// CT check failed.
+    CtCheckFailure = 82,
+    /// SCT validated.
+    CtSctValidated = 83,
     /// Unknown event type.
     Unknown = 0,
 }
@@ -52,12 +132,103 @@ impl EventType {
             mtls_sys::mtls_event_type::MTLS_EVENT_KILL_SWITCH_TRIGGERED => {
                 EventType::KillSwitchTriggered
             }
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_CHECK_START => EventType::OcspCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_CHECK_SUCCESS => EventType::OcspCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_CHECK_FAILURE => EventType::OcspCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_OCSP_STAPLE_VERIFIED => {
+                EventType::OcspStapleVerified
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_CHECK_START => EventType::CrlCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_CHECK_SUCCESS => EventType::CrlCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_CHECK_FAILURE => EventType::CrlCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_START => EventType::CrlDownloadStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_SUCCESS => {
+                EventType::CrlDownloadSuccess
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_CRL_DOWNLOAD_FAILURE => {
+                EventType::CrlDownloadFailure
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_START => EventType::PinCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_SUCCESS => EventType::PinCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_PIN_CHECK_FAILURE => EventType::PinCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_INIT_START => EventType::HsmInitStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_INIT_SUCCESS => EventType::HsmInitSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_INIT_FAILURE => EventType::HsmInitFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_HSM_KEY_LOADED => EventType::HsmKeyLoaded,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_START => EventType::CtCheckStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_SUCCESS => EventType::CtCheckSuccess,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_CHECK_FAILURE => EventType::CtCheckFailure,
+            mtls_sys::mtls_event_type::MTLS_EVENT_CT_SCT_VALIDATED => EventType::CtSctValidated,
+            mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_CHECK => EventType::RateLimitCheck,
+            mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_EXCEEDED => {
+                EventType::RateLimitExceeded
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_RATE_LIMIT_ALLOWED => {
+                EventType::RateLimitAllowed
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_DEADLINE_START => EventType::DeadlineStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_DEADLINE_EXCEEDED => EventType::DeadlineExceeded,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_ACQUIRE_START => EventType::PoolAcquireStart,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_ACQUIRE_SUCCESS => {
+                EventType::PoolAcquireSuccess
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_ACQUIRE_TIMEOUT => {
+                EventType::PoolAcquireTimeout
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_RELEASE => EventType::PoolRelease,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_CONN_CREATED => EventType::PoolConnCreated,
+            mtls_sys::mtls_event_type::MTLS_EVENT_POOL_CONN_CLOSED => EventType::PoolConnClosed,
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_CONNECT_START => {
+                EventType::AsyncConnectStart
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_CONNECT_SUCCESS => {
+                EventType::AsyncConnectSuccess
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_CONNECT_FAILURE => {
+                EventType::AsyncConnectFailure
+            }
+            mtls_sys::mtls_event_type::MTLS_EVENT_ASYNC_OP_CANCELLED => {
+                EventType::AsyncOpCancelled
+            }
         }
     }
 
     /// Check if this is an error-related event.
     pub fn is_error(&self) -> bool {
-        matches!(self, EventType::ConnectFailure | EventType::HandshakeFailed)
+        matches!(
+            self,
+            EventType::ConnectFailure
+                | EventType::HandshakeFailed
+                | EventType::OcspCheckFailure
+                | EventType::CrlCheckFailure
+                | EventType::CrlDownloadFailure
+                | EventType::PinCheckFailure
+                | EventType::HsmInitFailure
+                | EventType::CtCheckFailure
+                | EventType::RateLimitExceeded
+                | EventType::DeadlineExceeded
+                | EventType::PoolAcquireTimeout
+                | EventType::AsyncConnectFailure
+        )
+    }
+
+    /// Check if this is a success event.
+    pub fn is_success(&self) -> bool {
+        matches!(
+            self,
+            EventType::ConnectSuccess
+                | EventType::HandshakeSuccess
+                | EventType::OcspCheckSuccess
+                | EventType::OcspStapleVerified
+                | EventType::CrlCheckSuccess
+                | EventType::CrlDownloadSuccess
+                | EventType::PinCheckSuccess
+                | EventType::HsmInitSuccess
+                | EventType::CtCheckSuccess
+                | EventType::RateLimitAllowed
+                | EventType::PoolAcquireSuccess
+                | EventType::AsyncConnectSuccess
+        )
     }
 
     /// Check if this is a connection lifecycle event.
@@ -71,6 +242,112 @@ impl EventType {
                 | EventType::HandshakeSuccess
                 | EventType::HandshakeFailed
                 | EventType::Close
+        )
+    }
+
+    /// Check if this is an OCSP event.
+    pub fn is_ocsp(&self) -> bool {
+        matches!(
+            self,
+            EventType::OcspCheckStart
+                | EventType::OcspCheckSuccess
+                | EventType::OcspCheckFailure
+                | EventType::OcspStapleVerified
+        )
+    }
+
+    /// Check if this is a CRL event.
+    pub fn is_crl(&self) -> bool {
+        matches!(
+            self,
+            EventType::CrlCheckStart
+                | EventType::CrlCheckSuccess
+                | EventType::CrlCheckFailure
+                | EventType::CrlDownloadStart
+                | EventType::CrlDownloadSuccess
+                | EventType::CrlDownloadFailure
+        )
+    }
+
+    /// Check if this is a revocation event (OCSP or CRL).
+    pub fn is_revocation(&self) -> bool {
+        self.is_ocsp() || self.is_crl()
+    }
+
+    /// Check if this is an I/O event.
+    pub fn is_io(&self) -> bool {
+        matches!(self, EventType::Read | EventType::Write)
+    }
+
+    /// Check if this is a certificate pinning event.
+    pub fn is_pinning(&self) -> bool {
+        matches!(
+            self,
+            EventType::PinCheckStart | EventType::PinCheckSuccess | EventType::PinCheckFailure
+        )
+    }
+
+    /// Check if this is a Certificate Transparency event.
+    pub fn is_ct(&self) -> bool {
+        matches!(
+            self,
+            EventType::CtCheckStart
+                | EventType::CtCheckSuccess
+                | EventType::CtCheckFailure
+                | EventType::CtSctValidated
+        )
+    }
+
+    /// Check if this is an HSM event.
+    pub fn is_hsm(&self) -> bool {
+        matches!(
+            self,
+            EventType::HsmInitStart
+                | EventType::HsmInitSuccess
+                | EventType::HsmInitFailure
+                | EventType::HsmKeyLoaded
+        )
+    }
+
+    /// Check if this is a rate limiting event.
+    pub fn is_rate_limit(&self) -> bool {
+        matches!(
+            self,
+            EventType::RateLimitCheck
+                | EventType::RateLimitExceeded
+                | EventType::RateLimitAllowed
+        )
+    }
+
+    /// Check if this is a deadline event.
+    pub fn is_deadline(&self) -> bool {
+        matches!(
+            self,
+            EventType::DeadlineStart | EventType::DeadlineExceeded
+        )
+    }
+
+    /// Check if this is a connection pool event.
+    pub fn is_pool(&self) -> bool {
+        matches!(
+            self,
+            EventType::PoolAcquireStart
+                | EventType::PoolAcquireSuccess
+                | EventType::PoolAcquireTimeout
+                | EventType::PoolRelease
+                | EventType::PoolConnCreated
+                | EventType::PoolConnClosed
+        )
+    }
+
+    /// Check if this is an async I/O event.
+    pub fn is_async(&self) -> bool {
+        matches!(
+            self,
+            EventType::AsyncConnectStart
+                | EventType::AsyncConnectSuccess
+                | EventType::AsyncConnectFailure
+                | EventType::AsyncOpCancelled
         )
     }
 }
@@ -88,6 +365,42 @@ impl std::fmt::Display for EventType {
             EventType::Write => "Write",
             EventType::Close => "Close",
             EventType::KillSwitchTriggered => "KillSwitchTriggered",
+            EventType::OcspCheckStart => "OcspCheckStart",
+            EventType::OcspCheckSuccess => "OcspCheckSuccess",
+            EventType::OcspCheckFailure => "OcspCheckFailure",
+            EventType::OcspStapleVerified => "OcspStapleVerified",
+            EventType::CrlCheckStart => "CrlCheckStart",
+            EventType::CrlCheckSuccess => "CrlCheckSuccess",
+            EventType::CrlCheckFailure => "CrlCheckFailure",
+            EventType::CrlDownloadStart => "CrlDownloadStart",
+            EventType::CrlDownloadSuccess => "CrlDownloadSuccess",
+            EventType::CrlDownloadFailure => "CrlDownloadFailure",
+            EventType::PinCheckStart => "PinCheckStart",
+            EventType::PinCheckSuccess => "PinCheckSuccess",
+            EventType::PinCheckFailure => "PinCheckFailure",
+            EventType::HsmInitStart => "HsmInitStart",
+            EventType::HsmInitSuccess => "HsmInitSuccess",
+            EventType::HsmInitFailure => "HsmInitFailure",
+            EventType::HsmKeyLoaded => "HsmKeyLoaded",
+            EventType::CtCheckStart => "CtCheckStart",
+            EventType::CtCheckSuccess => "CtCheckSuccess",
+            EventType::CtCheckFailure => "CtCheckFailure",
+            EventType::CtSctValidated => "CtSctValidated",
+            EventType::RateLimitCheck => "RateLimitCheck",
+            EventType::RateLimitExceeded => "RateLimitExceeded",
+            EventType::RateLimitAllowed => "RateLimitAllowed",
+            EventType::DeadlineStart => "DeadlineStart",
+            EventType::DeadlineExceeded => "DeadlineExceeded",
+            EventType::PoolAcquireStart => "PoolAcquireStart",
+            EventType::PoolAcquireSuccess => "PoolAcquireSuccess",
+            EventType::PoolAcquireTimeout => "PoolAcquireTimeout",
+            EventType::PoolRelease => "PoolRelease",
+            EventType::PoolConnCreated => "PoolConnCreated",
+            EventType::PoolConnClosed => "PoolConnClosed",
+            EventType::AsyncConnectStart => "AsyncConnectStart",
+            EventType::AsyncConnectSuccess => "AsyncConnectSuccess",
+            EventType::AsyncConnectFailure => "AsyncConnectFailure",
+            EventType::AsyncOpCancelled => "AsyncOpCancelled",
             EventType::Unknown => "Unknown",
         };
         write!(f, "{}", name)
@@ -319,10 +632,171 @@ mod tests {
     }
 
     #[test]
+    fn test_ocsp_crl_event_categories() {
+        // OCSP events
+        assert!(EventType::OcspCheckStart.is_ocsp());
+        assert!(EventType::OcspCheckSuccess.is_ocsp());
+        assert!(EventType::OcspCheckFailure.is_ocsp());
+        assert!(EventType::OcspStapleVerified.is_ocsp());
+        assert!(!EventType::CrlCheckStart.is_ocsp());
+
+        // CRL events
+        assert!(EventType::CrlCheckStart.is_crl());
+        assert!(EventType::CrlCheckSuccess.is_crl());
+        assert!(EventType::CrlCheckFailure.is_crl());
+        assert!(EventType::CrlDownloadStart.is_crl());
+        assert!(EventType::CrlDownloadSuccess.is_crl());
+        assert!(EventType::CrlDownloadFailure.is_crl());
+        assert!(!EventType::OcspCheckStart.is_crl());
+
+        // Revocation (either OCSP or CRL)
+        assert!(EventType::OcspCheckStart.is_revocation());
+        assert!(EventType::CrlCheckStart.is_revocation());
+        assert!(!EventType::ConnectStart.is_revocation());
+
+        // Success/error categorization
+        assert!(EventType::OcspCheckSuccess.is_success());
+        assert!(EventType::OcspStapleVerified.is_success());
+        assert!(EventType::CrlCheckSuccess.is_success());
+        assert!(EventType::CrlDownloadSuccess.is_success());
+
+        assert!(EventType::OcspCheckFailure.is_error());
+        assert!(EventType::CrlCheckFailure.is_error());
+        assert!(EventType::CrlDownloadFailure.is_error());
+    }
+
+    #[test]
+    fn test_ocsp_crl_event_display() {
+        assert_eq!(format!("{}", EventType::OcspCheckStart), "OcspCheckStart");
+        assert_eq!(format!("{}", EventType::CrlDownloadSuccess), "CrlDownloadSuccess");
+    }
+
+    #[test]
+    fn test_io_event_category() {
+        assert!(EventType::Read.is_io());
+        assert!(EventType::Write.is_io());
+        assert!(!EventType::ConnectStart.is_io());
+    }
+
+    #[test]
     fn test_callback_registry() {
         let id = register_callback(Box::new(|_| {}));
         assert!(id > 0);
 
         unregister_callback(id);
+    }
+
+    #[test]
+    fn test_ct_event_categories() {
+        // CT events
+        assert!(EventType::CtCheckStart.is_ct());
+        assert!(EventType::CtCheckSuccess.is_ct());
+        assert!(EventType::CtCheckFailure.is_ct());
+        assert!(EventType::CtSctValidated.is_ct());
+        assert!(!EventType::ConnectStart.is_ct());
+
+        // Success/error categorization
+        assert!(EventType::CtCheckSuccess.is_success());
+        assert!(EventType::CtCheckFailure.is_error());
+    }
+
+    #[test]
+    fn test_ct_event_display() {
+        assert_eq!(format!("{}", EventType::CtCheckStart), "CtCheckStart");
+        assert_eq!(format!("{}", EventType::CtCheckSuccess), "CtCheckSuccess");
+        assert_eq!(format!("{}", EventType::CtCheckFailure), "CtCheckFailure");
+        assert_eq!(format!("{}", EventType::CtSctValidated), "CtSctValidated");
+    }
+
+    #[test]
+    fn test_hsm_event_categories() {
+        // HSM events
+        assert!(EventType::HsmInitStart.is_hsm());
+        assert!(EventType::HsmInitSuccess.is_hsm());
+        assert!(EventType::HsmInitFailure.is_hsm());
+        assert!(EventType::HsmKeyLoaded.is_hsm());
+        assert!(!EventType::ConnectStart.is_hsm());
+
+        // Success/error categorization
+        assert!(EventType::HsmInitSuccess.is_success());
+        assert!(EventType::HsmInitFailure.is_error());
+    }
+
+    #[test]
+    fn test_hsm_event_display() {
+        assert_eq!(format!("{}", EventType::HsmInitStart), "HsmInitStart");
+        assert_eq!(format!("{}", EventType::HsmInitSuccess), "HsmInitSuccess");
+        assert_eq!(format!("{}", EventType::HsmInitFailure), "HsmInitFailure");
+        assert_eq!(format!("{}", EventType::HsmKeyLoaded), "HsmKeyLoaded");
+    }
+
+    #[test]
+    fn test_deadline_event_categories() {
+        // Deadline events
+        assert!(EventType::DeadlineStart.is_deadline());
+        assert!(EventType::DeadlineExceeded.is_deadline());
+        assert!(!EventType::ConnectStart.is_deadline());
+
+        // Error categorization
+        assert!(EventType::DeadlineExceeded.is_error());
+        assert!(!EventType::DeadlineStart.is_error());
+    }
+
+    #[test]
+    fn test_deadline_event_display() {
+        assert_eq!(format!("{}", EventType::DeadlineStart), "DeadlineStart");
+        assert_eq!(format!("{}", EventType::DeadlineExceeded), "DeadlineExceeded");
+    }
+
+    #[test]
+    fn test_pool_event_categories() {
+        // Pool events
+        assert!(EventType::PoolAcquireStart.is_pool());
+        assert!(EventType::PoolAcquireSuccess.is_pool());
+        assert!(EventType::PoolAcquireTimeout.is_pool());
+        assert!(EventType::PoolRelease.is_pool());
+        assert!(EventType::PoolConnCreated.is_pool());
+        assert!(EventType::PoolConnClosed.is_pool());
+        assert!(!EventType::ConnectStart.is_pool());
+
+        // Success/error categorization
+        assert!(EventType::PoolAcquireSuccess.is_success());
+        assert!(EventType::PoolAcquireTimeout.is_error());
+        assert!(!EventType::PoolRelease.is_success());
+        assert!(!EventType::PoolRelease.is_error());
+    }
+
+    #[test]
+    fn test_pool_event_display() {
+        assert_eq!(format!("{}", EventType::PoolAcquireStart), "PoolAcquireStart");
+        assert_eq!(format!("{}", EventType::PoolAcquireSuccess), "PoolAcquireSuccess");
+        assert_eq!(format!("{}", EventType::PoolAcquireTimeout), "PoolAcquireTimeout");
+        assert_eq!(format!("{}", EventType::PoolRelease), "PoolRelease");
+        assert_eq!(format!("{}", EventType::PoolConnCreated), "PoolConnCreated");
+        assert_eq!(format!("{}", EventType::PoolConnClosed), "PoolConnClosed");
+    }
+
+    #[test]
+    fn test_async_event_categories() {
+        // Async events
+        assert!(EventType::AsyncConnectStart.is_async());
+        assert!(EventType::AsyncConnectSuccess.is_async());
+        assert!(EventType::AsyncConnectFailure.is_async());
+        assert!(EventType::AsyncOpCancelled.is_async());
+        assert!(!EventType::ConnectStart.is_async());
+
+        // Success/error categorization
+        assert!(EventType::AsyncConnectSuccess.is_success());
+        assert!(EventType::AsyncConnectFailure.is_error());
+        assert!(!EventType::AsyncConnectStart.is_success());
+        assert!(!EventType::AsyncConnectStart.is_error());
+    }
+
+    #[test]
+    fn test_async_event_display() {
+        assert_eq!(format!("{}", EventType::AsyncConnectStart), "AsyncConnectStart");
+        assert_eq!(format!("{}", EventType::AsyncConnectSuccess), "AsyncConnectSuccess");
+        assert_eq!(format!("{}", EventType::AsyncConnectFailure), "AsyncConnectFailure");
+        assert_eq!(format!("{}", EventType::AsyncOpCancelled), "AsyncOpCancelled");
     }
 }

@@ -58,6 +58,44 @@ if(UNIX)
     mtls_add_test(test_observability)
 endif()
 
+# OCSP/CRL revocation tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_revocation_cache)
+    mtls_add_test(test_ocsp)
+    mtls_add_test(test_crl)
+endif()
+
+# Certificate pinning tests
+mtls_add_test(test_pinning)
+
+# Certificate Transparency tests
+mtls_add_test(test_ct)
+
+# HSM integration tests (Unix only due to dlopen)
+if(UNIX)
+    mtls_add_test(test_hsm)
+endif()
+
+# Rate limiting tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_rate_limit)
+endif()
+
+# Deadline handling tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_deadline)
+endif()
+
+# Connection pool tests (pthread-dependent, Unix only)
+if(UNIX)
+    mtls_add_test(test_pool)
+endif()
+
+# Async I/O tests (epoll-dependent, Linux only)
+if(MTLS_PLATFORM_LINUX)
+    mtls_add_test(test_async)
+endif()
+
 # Add more tests here (examples)
 # mtls_add_test(test_error)
 # mtls_add_test(test_config)

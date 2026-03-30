@@ -20,6 +20,12 @@
 extern "C" {
 #endif
 
+/* Forward declaration for revocation cache */
+struct mtls_revocation_cache;
+
+/* Forward declaration for rate limiter */
+struct mtls_rate_limiter;
+
 /*
  * Internal context structure
  */
@@ -34,7 +40,17 @@ struct mtls_ctx {
     char *cert_path;
     char *key_path;
     char *crl_path;
+    char *ocsp_url;
+    char *crl_url;
     char **allowed_sans;
+
+    /* Revocation checking */
+    struct mtls_revocation_cache *revocation_cache; /* OCSP/CRL response cache */
+    void *crl_data;                                 /* Cached CRL data */
+    size_t crl_data_len;                            /* Length of CRL data */
+
+    /* Rate limiting */
+    struct mtls_rate_limiter *rate_limiter; /* Connection rate limiter */
 };
 
 /*
@@ -67,6 +83,23 @@ SSL_CTX *mtls_tls_get_ssl_ctx(void *tls_ctx); // NOLINT(misc-include-cleaner)
 
 /* Note: mtls_validate_peer_sans is now in public API (mtls.h) */
 /* Note: Other identity functions are declared in public API (mtls.h) */
+
+/**
+ * Get the underlying socket file descriptor from a connection
+ *
+ * This is an internal function for use by the async module to access
+ * the socket fd for event loop registration.
+ *
+ * @param conn Connection to get fd from
+ * @return Socket file descriptor, or -1 if invalid
+ */
+static inline int mtls_internal_get_socket_fd(const mtls_conn *conn)
+{
+    if (!conn) {
+        return -1;
+    }
+    return (int)conn->sock;
+}
 
 /*
  * Helper function to emit observability events
@@ -122,8 +155,21 @@ static inline void mtls_emit_event(mtls_ctx *ctx, const mtls_event *event)
 
     /* Validate event data before invoking callback to prevent callback issues
      * from invalid event types or corrupted data.
+     * Valid ranges: Connection (1-10), OCSP/CRL (11-20), Rate Limit (21-23),
+     *               Deadline (30-31), Pool (40-45), Pinning (60-62), HSM (70-73), CT (80-83)
      */
-    if (event->type < MTLS_EVENT_CONNECT_START || event->type > MTLS_EVENT_KILL_SWITCH_TRIGGERED) {
+    bool valid_event =
+        (event->type >= MTLS_EVENT_CONNECT_START && event->type <= MTLS_EVENT_RATE_LIMIT_ALLOWED) ||
+        (event->type >= MTLS_EVENT_DEADLINE_START && event->type <= MTLS_EVENT_DEADLINE_EXCEEDED) ||
+        (event->type >= MTLS_EVENT_POOL_ACQUIRE_START &&
+         event->type <= MTLS_EVENT_POOL_CONN_CLOSED) ||
+        (event->type >= MTLS_EVENT_ASYNC_CONNECT_START &&
+         event->type <= MTLS_EVENT_ASYNC_OP_CANCELLED) ||
+        (event->type >= MTLS_EVENT_PIN_CHECK_START &&
+         event->type <= MTLS_EVENT_PIN_CHECK_FAILURE) ||
+        (event->type >= MTLS_EVENT_HSM_INIT_START && event->type <= MTLS_EVENT_HSM_KEY_LOADED) ||
+        (event->type >= MTLS_EVENT_CT_CHECK_START && event->type <= MTLS_EVENT_CT_SCT_VALIDATED);
+    if (!valid_event) {
         /* Invalid event type - skip emission to prevent callback issues.
          * This should never happen in normal operation, but protects against
          * memory corruption or programming errors.

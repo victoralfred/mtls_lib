@@ -51,3 +51,7 @@ required-features = ["async-tokio"]
 default = []
 stress = []
 async-tokio = ["dep:tokio", "dep:futures"]
+# True non-blocking async via tokio::io::unix::AsyncFd (Linux/macOS only).
+# Requires the C library to expose mtls_conn_get_fd / mtls_conn_{read,write}_nonblocking.
+# More efficient than async-tokio at high concurrency (no thread pool).
+async-tokio-native = ["dep:tokio", "dep:futures"]

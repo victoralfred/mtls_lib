@@ -8,9 +8,24 @@ package mtls
 import "C"
 
 import (
+	"fmt"
 	"time"
 	"unsafe"
 )
+
+// maxAllowedSANs is the maximum number of SANs that can be configured.
+// Prevents unbounded C heap allocation from untrusted input.
+const maxAllowedSANs = 65536
+
+// cMalloc allocates n bytes of C heap memory and panics if allocation fails.
+// Use instead of C.malloc to avoid silent NULL dereferences.
+func cMalloc(n C.size_t) unsafe.Pointer {
+	p := C.malloc(n)
+	if p == nil {
+		panic(fmt.Sprintf("mtls: C.malloc(%d) returned nil: out of memory", n))
+	}
+	return p
+}
 
 // Config holds the configuration for creating an mTLS context.
 //
@@ -54,9 +69,69 @@ type Config struct {
 	RequireClientCert bool // Require client certificate (server mode, default: true)
 	VerifyHostname    bool // Verify hostname against certificate (default: true)
 
-	// OCSP settings (optional)
-	EnableOCSP bool // Enable OCSP stapling
+	// OCSP settings
+	EnableOCSP        bool          // Enable OCSP checking
+	EnableOCSPStapling bool         // Enable OCSP stapling
+	OCSPURL           string        // Explicit OCSP responder URL (optional)
+	OCSPTimeout       time.Duration // OCSP check timeout (default: 5s)
+	RequireOCSP       bool          // Fail if OCSP check fails
+
+	// CRL settings
+	EnableCRL         bool          // Enable CRL checking
+	CRLURL            string        // URL to download CRL from
+	CRLRefreshInterval time.Duration // CRL refresh interval (default: 24h)
+	RequireCRL        bool          // Fail if CRL check fails
+
+	// Revocation cache settings
+	RevocationCacheTTL        time.Duration // Cache TTL (default: 1h)
+	RevocationCacheMaxEntries int           // Max cache entries (default: 10000)
+
+	// Certificate pinning settings
+	PinSPKISHA256      []string // SPKI SHA-256 pins (base64-encoded)
+	PinCertSHA256      []string // Certificate SHA-256 pins (base64-encoded)
+	PinRequireMatch    bool     // Require at least one pin match (default: true if pins set)
+	PinIncludeLeafOnly bool     // Only check leaf certificate (default: false)
+
+	// Certificate Transparency settings
+	EnableCT           bool   // Enable CT verification
+	RequireCT          bool   // Fail if CT verification fails
+	CTMinSCTs          int    // Minimum valid SCTs required (default: 2)
+	CTLogListPath      string // Path to CT log list JSON file
+	CTLogListJSON      []byte // CT log list JSON data in memory
+	CTAllowUnknownLogs bool   // Allow SCTs from unknown logs (default: false)
+
+	// HSM settings
+	HSMEnabled    bool   // Use HSM for private key operations
+	HSMType       HSMType // HSM type (PKCS11 or ENGINE)
+	HSMModulePath string // Path to PKCS#11 module (.so/.dll)
+	HSMSlotID     string // Slot ID
+	HSMTokenLabel string // Token label (alternative to slot ID)
+	HSMKeyID      string // Key ID (hex string)
+	HSMKeyLabel   string // Key label (alternative to key ID)
+	HSMPIN        string // PIN for login
+	HSMEngineID   string // ENGINE ID (for ENGINE mode)
+
+	// Rate limiting settings
+	RateLimitEnabled      bool   // Enable rate limiting
+	RateLimitMaxConnPerSec uint64 // Global rate limit (0 = unlimited)
+	RateLimitPerClient    uint64 // Per-client rate limit (0 = unlimited)
+	RateLimitBurstSize    uint64 // Global burst allowance (default: 10)
+	RateLimitPerClientBurst uint64 // Per-client burst (default: 5)
+	RateLimitByIP         bool   // Use IP address as client ID (default: true)
+	RateLimitByCN         bool   // Use certificate CN as client ID
 }
+
+// HSMType represents the HSM interface type.
+type HSMType int
+
+const (
+	// HSMNone indicates no HSM (use file-based keys).
+	HSMNone HSMType = 0
+	// HSMPKCS11 indicates PKCS#11 interface.
+	HSMPKCS11 HSMType = 1
+	// HSMEngine indicates OpenSSL ENGINE interface.
+	HSMEngine HSMType = 2
+)
 
 // Validate checks the configuration for errors.
 //
@@ -138,7 +213,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	// CA certificate - copy PEM data to C memory to avoid CGo pointer rule violation
 	if len(c.CACertPEM) > 0 {
-		caCertCopy := C.malloc(C.size_t(len(c.CACertPEM)))
+		caCertCopy := cMalloc(C.size_t(len(c.CACertPEM)))
 		allocations = append(allocations, caCertCopy)
 		C.memcpy(caCertCopy, unsafe.Pointer(&c.CACertPEM[0]), C.size_t(len(c.CACertPEM)))
 		cConfig.ca_cert_pem = (*C.uint8_t)(caCertCopy)
@@ -151,7 +226,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	// Client certificate - copy PEM data to C memory
 	if len(c.CertPEM) > 0 {
-		certCopy := C.malloc(C.size_t(len(c.CertPEM)))
+		certCopy := cMalloc(C.size_t(len(c.CertPEM)))
 		allocations = append(allocations, certCopy)
 		C.memcpy(certCopy, unsafe.Pointer(&c.CertPEM[0]), C.size_t(len(c.CertPEM)))
 		cConfig.cert_pem = (*C.uint8_t)(certCopy)
@@ -164,7 +239,7 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 
 	// Private key - copy PEM data to C memory
 	if len(c.KeyPEM) > 0 {
-		keyCopy := C.malloc(C.size_t(len(c.KeyPEM)))
+		keyCopy := cMalloc(C.size_t(len(c.KeyPEM)))
 		allocations = append(allocations, keyCopy)
 		C.memcpy(keyCopy, unsafe.Pointer(&c.KeyPEM[0]), C.size_t(len(c.KeyPEM)))
 		cConfig.key_pem = (*C.uint8_t)(keyCopy)
@@ -183,19 +258,23 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	}
 
 	// Allowed SANs
-	if len(c.AllowedSANs) > 0 {
-		sanArray := C.malloc(C.size_t(len(c.AllowedSANs)) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+	if n := len(c.AllowedSANs); n > 0 {
+		if n > maxAllowedSANs {
+			// Truncate silently; callers should validate before calling toC.
+			n = maxAllowedSANs
+		}
+		sanArray := cMalloc(C.size_t(n) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
 		allocations = append(allocations, sanArray)
 
-		sanPtrs := (*[1 << 30]*C.char)(sanArray)[:len(c.AllowedSANs):len(c.AllowedSANs)]
-		for i, san := range c.AllowedSANs {
+		sanPtrs := unsafe.Slice((**C.char)(sanArray), n)
+		for i, san := range c.AllowedSANs[:n] {
 			cStr := C.CString(san)
 			allocations = append(allocations, unsafe.Pointer(cStr))
 			sanPtrs[i] = cStr
 		}
 
 		cConfig.allowed_sans = (**C.char)(sanArray)
-		cConfig.allowed_sans_count = C.size_t(len(c.AllowedSANs))
+		cConfig.allowed_sans_count = C.size_t(n)
 	}
 
 	// TLS versions
@@ -221,7 +300,141 @@ func (c *Config) toC() (*C.mtls_config, []unsafe.Pointer) {
 	cConfig.kill_switch_enabled = C.bool(c.KillSwitchEnabled)
 	cConfig.require_client_cert = C.bool(c.RequireClientCert)
 	cConfig.verify_hostname = C.bool(c.VerifyHostname)
+
+	// OCSP settings
 	cConfig.enable_ocsp = C.bool(c.EnableOCSP)
+	cConfig.enable_ocsp_stapling = C.bool(c.EnableOCSPStapling)
+	if c.OCSPURL != "" {
+		cStr := C.CString(c.OCSPURL)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.ocsp_url = cStr
+	}
+	if c.OCSPTimeout > 0 {
+		cConfig.ocsp_timeout_ms = C.uint32_t(c.OCSPTimeout.Milliseconds())
+	}
+	cConfig.require_ocsp = C.bool(c.RequireOCSP)
+
+	// CRL settings
+	cConfig.enable_crl = C.bool(c.EnableCRL)
+	if c.CRLURL != "" {
+		cStr := C.CString(c.CRLURL)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.crl_url = cStr
+	}
+	if c.CRLRefreshInterval > 0 {
+		cConfig.crl_refresh_seconds = C.uint32_t(c.CRLRefreshInterval.Seconds())
+	}
+	cConfig.require_crl = C.bool(c.RequireCRL)
+
+	// Revocation cache settings
+	if c.RevocationCacheTTL > 0 {
+		cConfig.revocation_cache_ttl_seconds = C.uint32_t(c.RevocationCacheTTL.Seconds())
+	}
+	if c.RevocationCacheMaxEntries > 0 {
+		cConfig.revocation_cache_max_entries = C.size_t(c.RevocationCacheMaxEntries)
+	}
+
+	// Certificate pinning settings
+	if n := len(c.PinSPKISHA256); n > 0 {
+		pinArray := cMalloc(C.size_t(n) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+		allocations = append(allocations, pinArray)
+
+		pinPtrs := unsafe.Slice((**C.char)(pinArray), n)
+		for i, pin := range c.PinSPKISHA256 {
+			cStr := C.CString(pin)
+			allocations = append(allocations, unsafe.Pointer(cStr))
+			pinPtrs[i] = cStr
+		}
+
+		cConfig.pin_spki_sha256 = (**C.char)(pinArray)
+		cConfig.pin_spki_sha256_count = C.size_t(n)
+	}
+
+	if n := len(c.PinCertSHA256); n > 0 {
+		pinArray := cMalloc(C.size_t(n) * C.size_t(unsafe.Sizeof((*C.char)(nil))))
+		allocations = append(allocations, pinArray)
+
+		pinPtrs := unsafe.Slice((**C.char)(pinArray), n)
+		for i, pin := range c.PinCertSHA256 {
+			cStr := C.CString(pin)
+			allocations = append(allocations, unsafe.Pointer(cStr))
+			pinPtrs[i] = cStr
+		}
+
+		cConfig.pin_cert_sha256 = (**C.char)(pinArray)
+		cConfig.pin_cert_sha256_count = C.size_t(n)
+	}
+
+	cConfig.pin_require_match = C.bool(c.PinRequireMatch)
+	cConfig.pin_include_leaf_only = C.bool(c.PinIncludeLeafOnly)
+
+	// Certificate Transparency settings
+	cConfig.enable_ct = C.bool(c.EnableCT)
+	cConfig.require_ct = C.bool(c.RequireCT)
+	if c.CTMinSCTs > 0 {
+		cConfig.ct_min_scts = C.size_t(c.CTMinSCTs)
+	}
+	if c.CTLogListPath != "" {
+		cStr := C.CString(c.CTLogListPath)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.ct_log_list_path = cStr
+	}
+	if len(c.CTLogListJSON) > 0 {
+		jsonCopy := cMalloc(C.size_t(len(c.CTLogListJSON)))
+		allocations = append(allocations, jsonCopy)
+		C.memcpy(jsonCopy, unsafe.Pointer(&c.CTLogListJSON[0]), C.size_t(len(c.CTLogListJSON)))
+		cConfig.ct_log_list_json = (*C.uint8_t)(jsonCopy)
+		cConfig.ct_log_list_json_len = C.size_t(len(c.CTLogListJSON))
+	}
+	cConfig.ct_allow_unknown_logs = C.bool(c.CTAllowUnknownLogs)
+
+	// HSM settings
+	cConfig.hsm_enabled = C.bool(c.HSMEnabled)
+	cConfig.hsm_type = C.int(c.HSMType)
+	if c.HSMModulePath != "" {
+		cStr := C.CString(c.HSMModulePath)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_module_path = cStr
+	}
+	if c.HSMSlotID != "" {
+		cStr := C.CString(c.HSMSlotID)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_slot_id = cStr
+	}
+	if c.HSMTokenLabel != "" {
+		cStr := C.CString(c.HSMTokenLabel)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_token_label = cStr
+	}
+	if c.HSMKeyID != "" {
+		cStr := C.CString(c.HSMKeyID)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_key_id = cStr
+	}
+	if c.HSMKeyLabel != "" {
+		cStr := C.CString(c.HSMKeyLabel)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_key_label = cStr
+	}
+	if c.HSMPIN != "" {
+		cStr := C.CString(c.HSMPIN)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_pin = cStr
+	}
+	if c.HSMEngineID != "" {
+		cStr := C.CString(c.HSMEngineID)
+		allocations = append(allocations, unsafe.Pointer(cStr))
+		cConfig.hsm_engine_id = cStr
+	}
+
+	// Rate limiting settings
+	cConfig.rate_limit_enabled = C.bool(c.RateLimitEnabled)
+	cConfig.rate_limit_max_conn_per_sec = C.uint64_t(c.RateLimitMaxConnPerSec)
+	cConfig.rate_limit_per_client = C.uint64_t(c.RateLimitPerClient)
+	cConfig.rate_limit_burst_size = C.uint64_t(c.RateLimitBurstSize)
+	cConfig.rate_limit_per_client_burst = C.uint64_t(c.RateLimitPerClientBurst)
+	cConfig.rate_limit_by_ip = C.bool(c.RateLimitByIP)
+	cConfig.rate_limit_by_cn = C.bool(c.RateLimitByCN)
 
 	return &cConfig, allocations
 }

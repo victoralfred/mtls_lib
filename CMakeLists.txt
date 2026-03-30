@@ -134,6 +134,14 @@ set(MTLS_SOURCES
     src/mtls_listener.c
     src/mtls_tls.c
     src/mtls_identity.c
+    src/mtls_ocsp.c
+    src/mtls_pinning.c
+    src/mtls_ct.c
+    src/mtls_hsm.c
+    src/mtls_rate_limit.c
+    src/mtls_deadline.c
+    src/mtls_pool.c
+    src/mtls_async.c
 )
 
 # Platform-specific sources

@@ -7,6 +7,7 @@
 #include "mtls/mtls_types.h"
 #include "mtls/mtls_error.h"
 #include "mtls/mtls_config.h"
+#include "mtls/mtls_rate_limit.h"
 #include "internal/mtls_internal.h"
 #include "internal/platform.h"
 #include <stdlib.h>
@@ -189,6 +190,45 @@ mtls_conn *mtls_accept(mtls_listener *listener, mtls_err *err)
     platform_format_addr(&conn->remote_addr, remote_addr_str, sizeof(remote_addr_str));
     event.remote_addr = remote_addr_str;
     event.conn = conn;
+
+    /* Check rate limiting if enabled */
+    if (listener->ctx->rate_limiter) {
+        /* Emit RATE_LIMIT_CHECK event */
+        event.type = MTLS_EVENT_RATE_LIMIT_CHECK;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(listener->ctx, &event);
+
+        /* Use IP address (from remote_addr_str) as client identifier */
+        mtls_err rl_err;
+        mtls_err_init(&rl_err);
+        if (mtls_rate_limiter_acquire(listener->ctx->rate_limiter, remote_addr_str, &rl_err) < 0) {
+            /* Rate limit exceeded */
+            if (err) {
+                *err = rl_err;
+            }
+
+            /* Emit RATE_LIMIT_EXCEEDED event */
+            event.type = MTLS_EVENT_RATE_LIMIT_EXCEEDED;
+            event.error_code = (int)rl_err.code;
+            event.timestamp_us = platform_get_time_us();
+            mtls_emit_event(listener->ctx, &event);
+
+            /* Emit CONNECT_FAILURE event */
+            event.type = MTLS_EVENT_CONNECT_FAILURE;
+            event.duration_us = event.timestamp_us - start_time;
+            mtls_emit_event(listener->ctx, &event);
+
+            platform_socket_close(conn->sock);
+            free(conn);
+            return NULL;
+        }
+
+        /* Emit RATE_LIMIT_ALLOWED event */
+        event.type = MTLS_EVENT_RATE_LIMIT_ALLOWED;
+        event.error_code = 0;
+        event.timestamp_us = platform_get_time_us();
+        mtls_emit_event(listener->ctx, &event);
+    }
 
     /* Create SSL object */
     SSL_CTX *ssl_ctx = mtls_tls_get_ssl_ctx(listener->ctx->tls_ctx);

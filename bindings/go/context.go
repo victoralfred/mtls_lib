@@ -6,6 +6,8 @@ package mtls
 import "C"
 
 import (
+	"context"
+	"net"
 	"runtime"
 	"sync"
 )
@@ -196,6 +198,36 @@ func (c *Context) SetKillSwitch(enabled bool) {
 	if c.ctx != nil {
 		C.mtls_ctx_set_kill_switch(c.ctx, C.bool(enabled))
 	}
+}
+
+// DialNetConn connects to addr and returns the connection wrapped as a net.Conn.
+// This is a convenience wrapper for use with libraries that expect a net.Conn.
+func (c *Context) DialNetConn(addr string) (net.Conn, error) {
+	conn, err := c.Connect(addr)
+	if err != nil {
+		return nil, err
+	}
+	return NewNetConn(conn), nil
+}
+
+// DialContext connects to addr with context cancellation support and returns
+// the connection wrapped as a net.Conn.
+func (c *Context) DialContext(ctx context.Context, addr string) (net.Conn, error) {
+	conn, err := c.ConnectContext(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+	return NewNetConn(conn), nil
+}
+
+// ListenNet creates a listener and returns it wrapped as a net.Listener.
+// This is a convenience wrapper for use with libraries that expect a net.Listener.
+func (c *Context) ListenNet(addr string) (net.Listener, error) {
+	l, err := c.Listen(addr)
+	if err != nil {
+		return nil, err
+	}
+	return NewNetListener(l), nil
 }
 
 // IsKillSwitchEnabled returns true if the kill-switch is enabled.

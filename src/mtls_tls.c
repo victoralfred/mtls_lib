@@ -9,6 +9,7 @@
 #include "mtls/mtls_types.h"
 #include "mtls/mtls_error.h"
 #include "mtls/mtls_config.h"
+#include "mtls/mtls_hsm.h"
 #include "internal/platform.h"
 #include <stdlib.h>
 #include <string.h>
@@ -225,6 +226,17 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
         }
     }
 
+    /* Load certificate and key from HSM if enabled */
+    if (config->hsm_enabled && config->hsm_ctx) {
+        if (mtls_hsm_configure_ssl_ctx(config->hsm_ctx, ssl_ctx, err) != 0) {
+            /* Error already set by mtls_hsm_configure_ssl_ctx */
+            SSL_CTX_free(ssl_ctx);
+            return NULL;
+        }
+        /* HSM configured - skip file/PEM loading, go straight to verification */
+        goto verify_cert_key;
+    }
+
     /* Load client/server certificate and key if provided */
     if (config->cert_pem) {
         /* Validate PEM data length */
@@ -333,8 +345,9 @@ void *mtls_tls_ctx_create(const mtls_config *config, mtls_err *err)
         }
     }
 
+verify_cert_key:
     /* Verify certificate and key match */
-    if (config->cert_path || config->cert_pem) {
+    if (config->cert_path || config->cert_pem || config->hsm_enabled) {
         if (!SSL_CTX_check_private_key(ssl_ctx)) {
             set_ssl_error(
                 err, MTLS_ERR_CERT_KEY_MISMATCH,

@@ -58,7 +58,46 @@ pub struct Config {
     pub(crate) kill_switch_enabled: bool,
     pub(crate) require_client_cert: bool,
     pub(crate) verify_hostname: bool,
+
+    // OCSP settings
     pub(crate) enable_ocsp: bool,
+    pub(crate) enable_ocsp_stapling: bool,
+    pub(crate) ocsp_url: Option<String>,
+    pub(crate) ocsp_timeout: Duration,
+    pub(crate) require_ocsp: bool,
+
+    // CRL settings
+    pub(crate) enable_crl: bool,
+    pub(crate) crl_url: Option<String>,
+    pub(crate) crl_refresh_interval: Duration,
+    pub(crate) require_crl: bool,
+
+    // Revocation cache settings
+    pub(crate) revocation_cache_ttl: Duration,
+    pub(crate) revocation_cache_max_entries: usize,
+
+    // Certificate pinning settings
+    pub(crate) pin_spki_sha256: Vec<String>,
+    pub(crate) pin_cert_sha256: Vec<String>,
+    pub(crate) pin_require_match: bool,
+    pub(crate) pin_include_leaf_only: bool,
+
+    // Certificate Transparency settings
+    pub(crate) enable_ct: bool,
+    pub(crate) require_ct: bool,
+    pub(crate) ct_min_scts: usize,
+    pub(crate) ct_log_list_path: Option<String>,
+    pub(crate) ct_log_list_json: Option<Vec<u8>>,
+    pub(crate) ct_allow_unknown_logs: bool,
+
+    // Rate limiting settings
+    pub(crate) rate_limit_enabled: bool,
+    pub(crate) rate_limit_max_conn_per_sec: u64,
+    pub(crate) rate_limit_per_client: u64,
+    pub(crate) rate_limit_burst_size: u64,
+    pub(crate) rate_limit_per_client_burst: u64,
+    pub(crate) rate_limit_by_ip: bool,
+    pub(crate) rate_limit_by_cn: bool,
 }
 
 impl Default for Config {
@@ -80,7 +119,43 @@ impl Default for Config {
             kill_switch_enabled: false,
             require_client_cert: true,
             verify_hostname: true,
+            // OCSP settings
             enable_ocsp: false,
+            enable_ocsp_stapling: false,
+            ocsp_url: None,
+            ocsp_timeout: Duration::from_secs(5),
+            require_ocsp: false,
+            // CRL settings
+            enable_crl: false,
+            crl_url: None,
+            crl_refresh_interval: Duration::from_secs(86400),
+            require_crl: false,
+            // Revocation cache settings
+            revocation_cache_ttl: Duration::from_secs(3600),
+            revocation_cache_max_entries: 10000,
+
+            // Certificate pinning settings
+            pin_spki_sha256: Vec::new(),
+            pin_cert_sha256: Vec::new(),
+            pin_require_match: false,
+            pin_include_leaf_only: false,
+
+            // Certificate Transparency settings
+            enable_ct: false,
+            require_ct: false,
+            ct_min_scts: 2,
+            ct_log_list_path: None,
+            ct_log_list_json: None,
+            ct_allow_unknown_logs: false,
+
+            // Rate limiting settings
+            rate_limit_enabled: false,
+            rate_limit_max_conn_per_sec: 0,
+            rate_limit_per_client: 0,
+            rate_limit_burst_size: 10,
+            rate_limit_per_client_burst: 5,
+            rate_limit_by_ip: true,
+            rate_limit_by_cn: false,
         }
     }
 }
@@ -123,6 +198,8 @@ impl Config {
             config,
             allocations: Vec::new(),
             san_array: None,
+            pin_spki_array: None,
+            pin_cert_array: None,
         };
 
         // CA certificate
@@ -206,7 +283,85 @@ impl Config {
         guard.config.kill_switch_enabled = self.kill_switch_enabled;
         guard.config.require_client_cert = self.require_client_cert;
         guard.config.verify_hostname = self.verify_hostname;
+
+        // OCSP settings
         guard.config.enable_ocsp = self.enable_ocsp;
+        guard.config.enable_ocsp_stapling = self.enable_ocsp_stapling;
+        if let Some(ref url) = self.ocsp_url {
+            let c_str = to_c_string(url)?;
+            guard.config.ocsp_url = c_str.as_ptr();
+            guard.allocations.push(c_str);
+        }
+        guard.config.ocsp_timeout_ms = self.ocsp_timeout.as_millis().min(u32::MAX as u128) as u32;
+        guard.config.require_ocsp = self.require_ocsp;
+
+        // CRL settings
+        guard.config.enable_crl = self.enable_crl;
+        if let Some(ref url) = self.crl_url {
+            let c_str = to_c_string(url)?;
+            guard.config.crl_url = c_str.as_ptr();
+            guard.allocations.push(c_str);
+        }
+        guard.config.crl_refresh_seconds = self.crl_refresh_interval.as_secs().min(u32::MAX as u64) as u32;
+        guard.config.require_crl = self.require_crl;
+
+        // Revocation cache settings
+        guard.config.revocation_cache_ttl_seconds = self.revocation_cache_ttl.as_secs().min(u32::MAX as u64) as u32;
+        guard.config.revocation_cache_max_entries = self.revocation_cache_max_entries;
+
+        // Certificate pinning settings
+        if !self.pin_spki_sha256.is_empty() {
+            let mut pin_ptrs: Vec<*const i8> = Vec::with_capacity(self.pin_spki_sha256.len());
+            for pin in &self.pin_spki_sha256 {
+                let c_str = to_c_string(pin)?;
+                pin_ptrs.push(c_str.as_ptr());
+                guard.allocations.push(c_str);
+            }
+            let pin_array = pin_ptrs.into_boxed_slice();
+            guard.config.pin_spki_sha256 = pin_array.as_ptr() as *mut *const i8;
+            guard.config.pin_spki_sha256_count = pin_array.len();
+            guard.pin_spki_array = Some(pin_array);
+        }
+
+        if !self.pin_cert_sha256.is_empty() {
+            let mut pin_ptrs: Vec<*const i8> = Vec::with_capacity(self.pin_cert_sha256.len());
+            for pin in &self.pin_cert_sha256 {
+                let c_str = to_c_string(pin)?;
+                pin_ptrs.push(c_str.as_ptr());
+                guard.allocations.push(c_str);
+            }
+            let pin_array = pin_ptrs.into_boxed_slice();
+            guard.config.pin_cert_sha256 = pin_array.as_ptr() as *mut *const i8;
+            guard.config.pin_cert_sha256_count = pin_array.len();
+            guard.pin_cert_array = Some(pin_array);
+        }
+
+        guard.config.pin_require_match = self.pin_require_match;
+        guard.config.pin_include_leaf_only = self.pin_include_leaf_only;
+
+        // Certificate Transparency settings
+        guard.config.enable_ct = self.enable_ct;
+        guard.config.require_ct = self.require_ct;
+        guard.config.ct_min_scts = self.ct_min_scts;
+        if let Some(ref path) = self.ct_log_list_path {
+            let c_str = to_c_string(path)?;
+            guard.config.ct_log_list_path = c_str.as_ptr();
+            guard.allocations.push(c_str);
+        }
+        if let Some(ref json) = self.ct_log_list_json {
+            guard.config.ct_log_list_json = json.as_ptr();
+            guard.config.ct_log_list_json_len = json.len();
+        }
+        guard.config.ct_allow_unknown_logs = self.ct_allow_unknown_logs;
+
+        // Rate limiting settings
+        guard.config.rate_limit_enabled = self.rate_limit_enabled;
+        guard.config.rate_limit_max_conn_per_sec = self.rate_limit_max_conn_per_sec;
+        guard.config.rate_limit_per_client = self.rate_limit_per_client;
+        guard.config.rate_limit_burst_size = self.rate_limit_burst_size;
+        guard.config.rate_limit_per_client_burst = self.rate_limit_per_client_burst;
+        guard.config.rate_limit_by_ip = self.rate_limit_by_ip;
+        guard.config.rate_limit_by_cn = self.rate_limit_by_cn;
 
         Ok(guard)
     }
@@ -329,9 +484,181 @@ impl ConfigBuilder {
         self
     }
 
-    /// Enable or disable OCSP stapling.
+    /// Enable or disable OCSP checking.
     pub fn enable_ocsp(mut self, enabled: bool) -> Self {
         self.config.enable_ocsp = enabled;
+        self
+    }
+
+    /// Enable or disable OCSP stapling.
+    pub fn enable_ocsp_stapling(mut self, enabled: bool) -> Self {
+        self.config.enable_ocsp_stapling = enabled;
+        self
+    }
+
+    /// Set explicit OCSP responder URL.
+    pub fn ocsp_url(mut self, url: impl Into<String>) -> Self {
+        self.config.ocsp_url = Some(url.into());
+        self
+    }
+
+    /// Set OCSP check timeout.
+    pub fn ocsp_timeout(mut self, timeout: Duration) -> Self {
+        self.config.ocsp_timeout = timeout;
+        self
+    }
+
+    /// Require OCSP check to pass (fail connection if OCSP fails).
+    pub fn require_ocsp(mut self, require: bool) -> Self {
+        self.config.require_ocsp = require;
+        self
+    }
+
+    /// Enable or disable CRL checking.
+    pub fn enable_crl(mut self, enabled: bool) -> Self {
+        self.config.enable_crl = enabled;
+        self
+    }
+
+    /// Set CRL download URL.
+    pub fn crl_url(mut self, url: impl Into<String>) -> Self {
+        self.config.crl_url = Some(url.into());
+        self
+    }
+
+    /// Set CRL refresh interval.
+    pub fn crl_refresh_interval(mut self, interval: Duration) -> Self {
+        self.config.crl_refresh_interval = interval;
+        self
+    }
+
+    /// Require CRL check to pass (fail connection if CRL fails).
+    pub fn require_crl(mut self, require: bool) -> Self {
+        self.config.require_crl = require;
+        self
+    }
+
+    /// Set revocation cache TTL.
+    pub fn revocation_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.config.revocation_cache_ttl = ttl;
+        self
+    }
+
+    /// Set maximum number of entries in revocation cache.
+    pub fn revocation_cache_max_entries(mut self, max: usize) -> Self {
+        self.config.revocation_cache_max_entries = max;
+        self
+    }
+
+    /// Add SPKI SHA-256 pins (base64-encoded).
+    pub fn pin_spki_sha256<I, S>(mut self, pins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.config.pin_spki_sha256 = pins.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    /// Add certificate SHA-256 pins (base64-encoded).
+    pub fn pin_cert_sha256<I, S>(mut self, pins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.config.pin_cert_sha256 = pins.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    /// Require at least one pin match (default: true if pins are set).
+    pub fn pin_require_match(mut self, require: bool) -> Self {
+        self.config.pin_require_match = require;
+        self
+    }
+
+    /// Only check leaf certificate (default: false, checks entire chain).
+    pub fn pin_include_leaf_only(mut self, leaf_only: bool) -> Self {
+        self.config.pin_include_leaf_only = leaf_only;
+        self
+    }
+
+    /// Enable or disable Certificate Transparency verification.
+    pub fn enable_ct(mut self, enabled: bool) -> Self {
+        self.config.enable_ct = enabled;
+        self
+    }
+
+    /// Require CT verification to pass (fail connection if CT fails).
+    pub fn require_ct(mut self, require: bool) -> Self {
+        self.config.require_ct = require;
+        self
+    }
+
+    /// Set minimum number of valid SCTs required (default: 2).
+    pub fn ct_min_scts(mut self, min: usize) -> Self {
+        self.config.ct_min_scts = min;
+        self
+    }
+
+    /// Set CT log list file path (Chrome/Apple JSON format).
+    pub fn ct_log_list_path(mut self, path: impl AsRef<Path>) -> Self {
+        self.config.ct_log_list_path = Some(path.as_ref().to_string_lossy().into_owned());
+        self.config.ct_log_list_json = None;
+        self
+    }
+
+    /// Set CT log list JSON data in memory.
+    pub fn ct_log_list_json(mut self, json: impl Into<Vec<u8>>) -> Self {
+        self.config.ct_log_list_json = Some(json.into());
+        self.config.ct_log_list_path = None;
+        self
+    }
+
+    /// Allow SCTs from unknown logs (default: false).
+    pub fn ct_allow_unknown_logs(mut self, allow: bool) -> Self {
+        self.config.ct_allow_unknown_logs = allow;
+        self
+    }
+
+    /// Enable or disable rate limiting.
+    pub fn rate_limit_enabled(mut self, enabled: bool) -> Self {
+        self.config.rate_limit_enabled = enabled;
+        self
+    }
+
+    /// Set global rate limit (connections per second, 0 = unlimited).
+    pub fn rate_limit_max_conn_per_sec(mut self, limit: u64) -> Self {
+        self.config.rate_limit_max_conn_per_sec = limit;
+        self
+    }
+
+    /// Set per-client rate limit (connections per second, 0 = unlimited).
+    pub fn rate_limit_per_client(mut self, limit: u64) -> Self {
+        self.config.rate_limit_per_client = limit;
+        self
+    }
+
+    /// Set global burst size (default: 10).
+    pub fn rate_limit_burst_size(mut self, burst: u64) -> Self {
+        self.config.rate_limit_burst_size = burst;
+        self
+    }
+
+    /// Set per-client burst size (default: 5).
+    pub fn rate_limit_per_client_burst(mut self, burst: u64) -> Self {
+        self.config.rate_limit_per_client_burst = burst;
+        self
+    }
+
+    /// Use IP address for rate limiting (default: true).
+    pub fn rate_limit_by_ip(mut self, by_ip: bool) -> Self {
+        self.config.rate_limit_by_ip = by_ip;
+        self
+    }
+
+    /// Use certificate CN for rate limiting (default: false).
+    pub fn rate_limit_by_cn(mut self, by_cn: bool) -> Self {
+        self.config.rate_limit_by_cn = by_cn;
         self
     }
 
@@ -365,6 +692,8 @@ pub(crate) struct CConfigGuard {
     pub config: mtls_sys::mtls_config,
     allocations: Vec<CString>,
     san_array: Option<Box<[*const i8]>>,
+    pin_spki_array: Option<Box<[*const i8]>>,
+    pin_cert_array: Option<Box<[*const i8]>>,
 }
 
 impl CConfigGuard {

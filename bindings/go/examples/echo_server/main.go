@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	mtls "github.com/yourusername/mtls-go"
+	mtls "github.com/victoralfred/mtls-go"
 )
 
 // ServerStats tracks server statistics

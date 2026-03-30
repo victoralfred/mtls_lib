@@ -27,9 +27,16 @@ const (
 	ErrCACertParseFailed ErrorCode = 105
 	ErrCertParseFailed   ErrorCode = 106
 	ErrKeyParseFailed    ErrorCode = 107
-	ErrCertKeyMismatch   ErrorCode = 108
-	ErrOutOfMemory       ErrorCode = 109
-	ErrCtxNotInitialized ErrorCode = 110
+	ErrCertKeyMismatch     ErrorCode = 108
+	ErrOutOfMemory         ErrorCode = 109
+	ErrCtxNotInitialized   ErrorCode = 110
+	ErrHSMInitFailed       ErrorCode = 111
+	ErrHSMPinRequired      ErrorCode = 112
+	ErrHSMPinInvalid       ErrorCode = 113
+	ErrHSMKeyNotFound      ErrorCode = 114
+	ErrHSMOperationFailed  ErrorCode = 115
+	ErrHSMSlotNotFound     ErrorCode = 116
+	ErrHSMModuleNotFound   ErrorCode = 117
 
 	// Connection/network errors (2xx)
 	ErrConnectFailed      ErrorCode = 200
@@ -42,8 +49,12 @@ const (
 	ErrConnectionRefused  ErrorCode = 207
 	ErrNetworkUnreachable ErrorCode = 208
 	ErrHostUnreachable    ErrorCode = 209
-	ErrAddressInUse       ErrorCode = 210
-	ErrInvalidAddress     ErrorCode = 211
+	ErrAddressInUse        ErrorCode = 210
+	ErrInvalidAddress      ErrorCode = 211
+	ErrPoolExhausted       ErrorCode = 212
+	ErrPoolAcquireTimeout  ErrorCode = 213
+	ErrPoolClosed          ErrorCode = 214
+	ErrConnUnhealthy       ErrorCode = 215
 
 	// TLS/certificate errors (3xx)
 	ErrTLSInitFailed        ErrorCode = 300
@@ -59,6 +70,22 @@ const (
 	ErrNoPeerCert           ErrorCode = 310
 	ErrHostnameMismatch     ErrorCode = 311
 	ErrTLSShutdownFailed    ErrorCode = 312
+	ErrOCSPFailed           ErrorCode = 313
+	ErrOCSPTimeout          ErrorCode = 314
+	ErrOCSPResponderError   ErrorCode = 315
+	ErrCRLFailed            ErrorCode = 316
+	ErrCRLDownloadFailed    ErrorCode = 317
+	ErrCRLExpired           ErrorCode = 318
+	ErrCRLParseFailed       ErrorCode = 319
+	ErrPinValidationFailed  ErrorCode = 320
+	ErrPinInvalidFormat     ErrorCode = 321
+	ErrPinComputeFailed     ErrorCode = 322
+	ErrCTValidationFailed   ErrorCode = 323
+	ErrCTNoSCTs             ErrorCode = 324
+	ErrCTInsufficientSCTs   ErrorCode = 325
+	ErrCTInvalidSCT         ErrorCode = 326
+	ErrCTUnknownLog         ErrorCode = 327
+	ErrCTLogListParse       ErrorCode = 328
 
 	// Identity/verification errors (4xx)
 	ErrIdentityMismatch  ErrorCode = 400
@@ -72,17 +99,25 @@ const (
 	ErrKillSwitchEnabled    ErrorCode = 500
 	ErrPolicyDenied         ErrorCode = 501
 	ErrConnectionNotAllowed ErrorCode = 502
+	ErrRateLimited          ErrorCode = 503
+	ErrRateLimitGlobal      ErrorCode = 504
+	ErrRateLimitClient      ErrorCode = 505
 
 	// I/O errors (6xx)
-	ErrReadFailed       ErrorCode = 600
-	ErrWriteFailed      ErrorCode = 601
-	ErrConnectionClosed ErrorCode = 602
-	ErrConnectionReset  ErrorCode = 603
-	ErrReadTimeout      ErrorCode = 604
-	ErrWriteTimeout     ErrorCode = 605
-	ErrWouldBlock       ErrorCode = 606
-	ErrPartialWrite     ErrorCode = 607
-	ErrEOF              ErrorCode = 608
+	ErrReadFailed        ErrorCode = 600
+	ErrWriteFailed       ErrorCode = 601
+	ErrConnectionClosed  ErrorCode = 602
+	ErrConnectionReset   ErrorCode = 603
+	ErrReadTimeout       ErrorCode = 604
+	ErrWriteTimeout      ErrorCode = 605
+	ErrWouldBlock        ErrorCode = 606
+	ErrPartialWrite      ErrorCode = 607
+	ErrEOF               ErrorCode = 608
+	ErrDeadlineExceeded  ErrorCode = 609
+	ErrCancelled         ErrorCode = 610
+	ErrAsyncPending      ErrorCode = 611
+	ErrAsyncCancelled    ErrorCode = 612
+	ErrEventLoopError    ErrorCode = 613
 
 	// Internal/unknown errors (9xx)
 	ErrInternal       ErrorCode = 900
@@ -180,6 +215,29 @@ func (e *Error) IsRecoverable() bool {
 		e.Code == ErrReadTimeout ||
 		e.Code == ErrWriteTimeout ||
 		e.Code == ErrWouldBlock
+}
+
+// IsRateLimit returns true if this is a rate limiting error.
+func (e *Error) IsRateLimit() bool {
+	return e.Code == ErrRateLimited ||
+		e.Code == ErrRateLimitGlobal ||
+		e.Code == ErrRateLimitClient
+}
+
+// IsDeadline returns true if this is a deadline/cancellation error.
+func (e *Error) IsDeadline() bool {
+	return e.Code == ErrDeadlineExceeded ||
+		e.Code == ErrCancelled
+}
+
+// IsPool returns true if this is a connection pool error.
+func (e *Error) IsPool() bool {
+	return e.Code >= ErrPoolExhausted && e.Code <= ErrConnUnhealthy
+}
+
+// IsAsync returns true if this is an async I/O error.
+func (e *Error) IsAsync() bool {
+	return e.Code >= ErrAsyncPending && e.Code <= ErrEventLoopError
 }
 
 // HasTLSError returns true if this error contains OpenSSL error information.
@@ -287,6 +345,68 @@ func IsIOError(err error) bool {
 func IsRecoverableError(err error) bool {
 	if e, ok := err.(*Error); ok {
 		return e.IsRecoverable()
+	}
+	return false
+}
+
+// IsRateLimitError returns true if err is an mTLS rate limiting error.
+func IsRateLimitError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsRateLimit()
+	}
+	return false
+}
+
+// IsDeadlineError returns true if err is an mTLS deadline/cancellation error.
+func IsDeadlineError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsDeadline()
+	}
+	return false
+}
+
+// IsPoolError returns true if err is an mTLS connection pool error.
+func IsPoolError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsPool()
+	}
+	return false
+}
+
+// IsAsyncError returns true if err is an mTLS async I/O error.
+func IsAsyncError(err error) bool {
+	if e, ok := err.(*Error); ok {
+		return e.IsAsync()
+	}
+	return false
+}
+
+// Sentinel errors for use with errors.Is and errors.As.
+//
+// These variables let callers match specific mTLS error categories without
+// importing the numeric code constants:
+//
+//	if errors.Is(err, mtls.ErrConnectFailed) { ... }
+//	var tlsErr *mtls.Error
+//	if errors.As(err, &tlsErr) && tlsErr.IsTLS() { ... }
+var (
+	ErrSentinelConnectFailed    = &Error{Code: ErrConnectFailed}
+	ErrSentinelTLSHandshake     = &Error{Code: ErrTLSHandshakeFailed}
+	ErrSentinelCertExpired      = &Error{Code: ErrCertExpired}
+	ErrSentinelCertRevoked      = &Error{Code: ErrCertRevoked}
+	ErrSentinelHostnameMismatch = &Error{Code: ErrHostnameMismatch}
+	ErrSentinelKillSwitch       = &Error{Code: ErrKillSwitchEnabled}
+	ErrSentinelRateLimited      = &Error{Code: ErrRateLimited}
+	ErrSentinelConnectionClosed = &Error{Code: ErrConnectionClosed}
+	ErrSentinelDeadline         = &Error{Code: ErrDeadlineExceeded}
+	ErrSentinelWouldBlock       = &Error{Code: ErrWouldBlock}
+)
+
+// Is implements errors.Is support. Two *Error values are equal when their
+// Code fields match. This allows using sentinel variables with errors.Is.
+func (e *Error) Is(target error) bool {
+	if t, ok := target.(*Error); ok {
+		return e.Code == t.Code
 	}
 	return false
 }

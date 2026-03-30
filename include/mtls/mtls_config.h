@@ -20,6 +20,7 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct mtls_err mtls_err;
+typedef struct mtls_hsm_ctx mtls_hsm_ctx;
 
 /*
  * Maximum number of allowed SANs in configuration
@@ -42,6 +43,7 @@ typedef struct mtls_err mtls_err;
  *
  * If both path and PEM are provided, PEM takes precedence.
  */
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 typedef struct mtls_config {
     /* CA certificate (required) */
     const char *ca_cert_path;   /* Path to CA certificate file */
@@ -76,9 +78,61 @@ typedef struct mtls_config {
     bool require_client_cert; /* Require client certificate (server mode) */
     bool verify_hostname;     /* Verify hostname against certificate */
 
-    /* Revocation checking (optional, not implemented in Phase 1) */
-    bool enable_ocsp;     /* Enable OCSP stapling */
-    const char *crl_path; /* Path to CRL file */
+    /* OCSP configuration */
+    bool enable_ocsp;          /* Enable OCSP checking */
+    bool enable_ocsp_stapling; /* Request OCSP stapling from server */
+    const char *ocsp_url;      /* Override OCSP responder URL */
+    uint32_t ocsp_timeout_ms;  /* OCSP request timeout (0 = default 5000ms) */
+    bool require_ocsp;         /* Fail if OCSP check fails */
+
+    /* CRL configuration */
+    bool enable_crl;              /* Enable CRL checking */
+    const char *crl_path;         /* Path to local CRL file */
+    const char *crl_url;          /* URL to download CRL from */
+    uint32_t crl_refresh_seconds; /* CRL refresh interval (0 = default 86400s) */
+    bool require_crl;             /* Fail if CRL check fails */
+
+    /* Revocation cache configuration */
+    uint32_t revocation_cache_ttl_seconds; /* Cache TTL (0 = default 3600s) */
+    size_t revocation_cache_max_entries;   /* Max cache entries (0 = default 10000) */
+
+    /* Certificate pinning configuration */
+    const char **pin_spki_sha256; /* Array of base64 SPKI hashes */
+    size_t pin_spki_sha256_count; /* Number of SPKI pins */
+    const char **pin_cert_sha256; /* Array of base64 cert hashes */
+    size_t pin_cert_sha256_count; /* Number of cert pins */
+    bool pin_require_match;       /* Require at least one pin match (default: true if pins set) */
+    bool pin_include_leaf_only;   /* Only check leaf certificate (default: false) */
+
+    /* Certificate Transparency configuration */
+    bool enable_ct;                  /* Enable CT verification */
+    bool require_ct;                 /* Fail if CT verification fails */
+    size_t ct_min_scts;              /* Minimum valid SCTs required (default: 2) */
+    const char *ct_log_list_path;    /* Path to CT log list JSON file */
+    const uint8_t *ct_log_list_json; /* CT log list JSON data in memory */
+    size_t ct_log_list_json_len;     /* Length of CT log list JSON data */
+    bool ct_allow_unknown_logs;      /* Allow SCTs from unknown logs (default: false) */
+
+    /* HSM configuration */
+    bool hsm_enabled;            /* Use HSM for private key operations */
+    int hsm_type;                /* HSM type (MTLS_HSM_PKCS11 or MTLS_HSM_ENGINE) */
+    const char *hsm_module_path; /* Path to PKCS#11 module (.so/.dll) */
+    const char *hsm_slot_id;     /* Slot ID or label */
+    const char *hsm_token_label; /* Token label (alternative to slot_id) */
+    const char *hsm_key_id;      /* Key ID (hex string) */
+    const char *hsm_key_label;   /* Key label (alternative to key_id) */
+    const char *hsm_pin;         /* PIN for login (NULL = use callback) */
+    const char *hsm_engine_id;   /* ENGINE ID (for ENGINE mode) */
+    mtls_hsm_ctx *hsm_ctx;       /* Pre-initialized HSM context (optional) */
+
+    /* Rate limiting configuration */
+    bool rate_limit_enabled;              /* Enable rate limiting */
+    uint64_t rate_limit_max_conn_per_sec; /* Global rate limit (0 = unlimited) */
+    uint64_t rate_limit_per_client;       /* Per-client rate limit (0 = unlimited) */
+    uint64_t rate_limit_burst_size;       /* Global burst allowance (default: 10) */
+    uint64_t rate_limit_per_client_burst; /* Per-client burst (default: 5) */
+    bool rate_limit_by_ip;                /* Use IP address as client ID (default: true) */
+    bool rate_limit_by_cn;                /* Use certificate CN as client ID */
 
     /* Observability */
     mtls_observers observers; /* Event callbacks */

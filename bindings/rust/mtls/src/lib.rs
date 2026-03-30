@@ -83,6 +83,8 @@ pub use listener::{Listener, ListenerShutdownHandle};
 // Async re-exports
 #[cfg(feature = "async-tokio")]
 pub use conn::AsyncConn;
+#[cfg(all(feature = "async-tokio-native", unix))]
+pub use conn::AsyncFdConn;
 
 /// Returns the library version string.
 pub fn version() -> String {

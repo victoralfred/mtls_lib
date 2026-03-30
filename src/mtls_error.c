@@ -127,6 +127,20 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_OUT_OF_MEMORY";
     case MTLS_ERR_CTX_NOT_INITIALIZED:
         return "MTLS_ERR_CTX_NOT_INITIALIZED";
+    case MTLS_ERR_HSM_INIT_FAILED:
+        return "MTLS_ERR_HSM_INIT_FAILED";
+    case MTLS_ERR_HSM_PIN_REQUIRED:
+        return "MTLS_ERR_HSM_PIN_REQUIRED";
+    case MTLS_ERR_HSM_PIN_INVALID:
+        return "MTLS_ERR_HSM_PIN_INVALID";
+    case MTLS_ERR_HSM_KEY_NOT_FOUND:
+        return "MTLS_ERR_HSM_KEY_NOT_FOUND";
+    case MTLS_ERR_HSM_OPERATION_FAILED:
+        return "MTLS_ERR_HSM_OPERATION_FAILED";
+    case MTLS_ERR_HSM_SLOT_NOT_FOUND:
+        return "MTLS_ERR_HSM_SLOT_NOT_FOUND";
+    case MTLS_ERR_HSM_MODULE_NOT_FOUND:
+        return "MTLS_ERR_HSM_MODULE_NOT_FOUND";
 
     /* Connection errors */
     case MTLS_ERR_CONNECT_FAILED:
@@ -153,6 +167,14 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_ADDRESS_IN_USE";
     case MTLS_ERR_INVALID_ADDRESS:
         return "MTLS_ERR_INVALID_ADDRESS";
+    case MTLS_ERR_POOL_EXHAUSTED:
+        return "MTLS_ERR_POOL_EXHAUSTED";
+    case MTLS_ERR_POOL_ACQUIRE_TIMEOUT:
+        return "MTLS_ERR_POOL_ACQUIRE_TIMEOUT";
+    case MTLS_ERR_POOL_CLOSED:
+        return "MTLS_ERR_POOL_CLOSED";
+    case MTLS_ERR_CONN_UNHEALTHY:
+        return "MTLS_ERR_CONN_UNHEALTHY";
 
     /* TLS errors */
     case MTLS_ERR_TLS_INIT_FAILED:
@@ -181,6 +203,38 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_HOSTNAME_MISMATCH";
     case MTLS_ERR_TLS_SHUTDOWN_FAILED:
         return "MTLS_ERR_TLS_SHUTDOWN_FAILED";
+    case MTLS_ERR_OCSP_FAILED:
+        return "MTLS_ERR_OCSP_FAILED";
+    case MTLS_ERR_OCSP_TIMEOUT:
+        return "MTLS_ERR_OCSP_TIMEOUT";
+    case MTLS_ERR_OCSP_RESPONDER_ERROR:
+        return "MTLS_ERR_OCSP_RESPONDER_ERROR";
+    case MTLS_ERR_CRL_FAILED:
+        return "MTLS_ERR_CRL_FAILED";
+    case MTLS_ERR_CRL_DOWNLOAD_FAILED:
+        return "MTLS_ERR_CRL_DOWNLOAD_FAILED";
+    case MTLS_ERR_CRL_EXPIRED:
+        return "MTLS_ERR_CRL_EXPIRED";
+    case MTLS_ERR_CRL_PARSE_FAILED:
+        return "MTLS_ERR_CRL_PARSE_FAILED";
+    case MTLS_ERR_PIN_VALIDATION_FAILED:
+        return "MTLS_ERR_PIN_VALIDATION_FAILED";
+    case MTLS_ERR_PIN_INVALID_FORMAT:
+        return "MTLS_ERR_PIN_INVALID_FORMAT";
+    case MTLS_ERR_PIN_COMPUTE_FAILED:
+        return "MTLS_ERR_PIN_COMPUTE_FAILED";
+    case MTLS_ERR_CT_VALIDATION_FAILED:
+        return "MTLS_ERR_CT_VALIDATION_FAILED";
+    case MTLS_ERR_CT_NO_SCTS:
+        return "MTLS_ERR_CT_NO_SCTS";
+    case MTLS_ERR_CT_INSUFFICIENT_SCTS:
+        return "MTLS_ERR_CT_INSUFFICIENT_SCTS";
+    case MTLS_ERR_CT_INVALID_SCT:
+        return "MTLS_ERR_CT_INVALID_SCT";
+    case MTLS_ERR_CT_UNKNOWN_LOG:
+        return "MTLS_ERR_CT_UNKNOWN_LOG";
+    case MTLS_ERR_CT_LOG_LIST_PARSE:
+        return "MTLS_ERR_CT_LOG_LIST_PARSE";
 
     /* Identity errors */
     case MTLS_ERR_IDENTITY_MISMATCH:
@@ -203,6 +257,12 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_POLICY_DENIED";
     case MTLS_ERR_CONNECTION_NOT_ALLOWED:
         return "MTLS_ERR_CONNECTION_NOT_ALLOWED";
+    case MTLS_ERR_RATE_LIMITED:
+        return "MTLS_ERR_RATE_LIMITED";
+    case MTLS_ERR_RATE_LIMIT_GLOBAL:
+        return "MTLS_ERR_RATE_LIMIT_GLOBAL";
+    case MTLS_ERR_RATE_LIMIT_CLIENT:
+        return "MTLS_ERR_RATE_LIMIT_CLIENT";
 
     /* I/O errors */
     case MTLS_ERR_READ_FAILED:
@@ -223,6 +283,16 @@ const char *mtls_err_code_name(mtls_error_code code)
         return "MTLS_ERR_PARTIAL_WRITE";
     case MTLS_ERR_EOF:
         return "MTLS_ERR_EOF";
+    case MTLS_ERR_DEADLINE_EXCEEDED:
+        return "MTLS_ERR_DEADLINE_EXCEEDED";
+    case MTLS_ERR_CANCELLED:
+        return "MTLS_ERR_CANCELLED";
+    case MTLS_ERR_ASYNC_PENDING:
+        return "MTLS_ERR_ASYNC_PENDING";
+    case MTLS_ERR_ASYNC_CANCELLED:
+        return "MTLS_ERR_ASYNC_CANCELLED";
+    case MTLS_ERR_EVENTLOOP_ERROR:
+        return "MTLS_ERR_EVENTLOOP_ERROR";
 
     /* Internal errors */
     case MTLS_ERR_INTERNAL:
